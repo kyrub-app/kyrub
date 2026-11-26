@@ -424,3 +424,33 @@ test('infrastructure diagnostic never reads remote ERP and returns only explicit
   assert.match(workspace,/MAU real indisponível/);
   assert.doesNotMatch(workspace,/fixturePaidMinor\s*\//);
 });
+
+
+test('Control Plane configured efficiency is tied to runtime polling, never presented as measured usage or savings',async()=>{
+ const {notificationPollInterval,projectNotificationPollingPolicy}=await import('../shared/platformEfficiencyPolicy');
+ assert.equal(notificationPollInterval(false,false),15000);
+ assert.equal(notificationPollInterval(false,true),15000);
+ assert.equal(notificationPollInterval(true,true),15000);
+ assert.equal(notificationPollInterval(true,false),60000);
+ assert.deepEqual(projectNotificationPollingPolicy(),{foregroundPerHour:240,hiddenWithoutAlertsPerHour:60,basis:'configured_interval'});
+ const ui=readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx','utf8');
+ assert.match(ui,/projectNotificationPollingPolicy\(\)/);
+ assert.match(ui,/Não são medições de uso, faturas ou economia financeira comprovada/);
+ assert.match(ui,/Não medidos/);
+});
+
+test('Control Plane describes scoped efficiency without turning configuration into financial evidence',()=>{
+  const ui=readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx','utf8');
+  const purchases=readFileSync('src/components/store/StorePurchasePayableBridge.tsx','utf8');
+  const margins=readFileSync('src/components/store/StoreResultsMarginsWorkspace.tsx','utf8');
+  const history=readFileSync('server/payments/storeFinanceHistoryRouter.ts','utf8');
+  assert.match(ui,/2 → 1 consultas de compras; consulta financeira separada/);
+  assert.match(ui,/2 → 1 apurações de pedidos; cálculo por produto preservado/);
+  assert.doesNotMatch(purchases,/\/api\/store-procurement\?storeId=/);
+  assert.match(margins,/&includeProducts=true/);
+  assert.match(history,/activeCaptureRecoveries\.delete\(storeId\)/);
+  assert.match(ui,/não o total de leituras faturáveis/);
+  assert.match(ui,/Sem cobertura completa ou com zero usuários ativos, o indicador permanece indisponível/);
+  assert.match(ui,/Registros de teste e estimativas não substituem evidências reais/);
+  assert.doesNotMatch(ui,/fixturePaidMinor\s*\//);
+});

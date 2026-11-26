@@ -47,6 +47,7 @@ const mapError = (error: unknown): { status: number; message: string } => {
     return { status: 401, message: 'Faça login novamente para acessar o atendimento local.' };
   }
   if (
+    ['STORE_ACCESS_DENIED','STORE_ERP_AGE_REQUIRED','STORE_FINANCE_AGE_REQUIRED','second_factor_required','reauthentication_required'].includes(message) ||
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'LOCAL_PAYMENT_INTENT_FORBIDDEN' ||
     message === 'LOCAL_PIX_PROVIDER_FORBIDDEN'
@@ -236,6 +237,7 @@ export const createLocalAttendanceRouter = (): Router => {
         storeId,
       });
       const result = await createLocalPaymentIntent({
+        authorization:request.get('authorization')??'',
         authenticatedUserId: representation.authenticatedUserId,
         value: request.body,
       });
@@ -255,6 +257,7 @@ export const createLocalAttendanceRouter = (): Router => {
         storeId,
       });
       const result = await attachMercadoPagoPixToLocalIntent({
+        authorization:request.get('authorization')??'',
         authenticatedUserId: representation.authenticatedUserId,
         value: request.body,
       });

@@ -1,4 +1,5 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { evaluateStoredCapabilityAgeAccess } from '../../shared/ageEligibility.js';
+import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 
@@ -6,6 +7,20 @@ import { createHash } from 'node:crypto';
 
 const ROOT = 'kyrub_admin/control_plane';
 const validUid = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+
+/** Staged independently of social rollout. Never mutate commercial records
+ * when an enabled or malformed eligibility control denies the actor.
+ */
+async function requireStoreCreationEligibility(tx:Transaction,uid:string){
+  const control=await tx.get(adminDb.doc('erp_age_release_private/current'));
+  if(!control.exists)return; // Compatibility until an approved cutover.
+  if(control.get('schemaVersion')!==1||control.get('mode')!=='verified_adult_only')
+    throw Error('FREE_STORE_AGE_REQUIRED');
+  const age=await tx.get(adminDb.doc('age_eligibility_private/'+uid));
+  if(!evaluateStoredCapabilityAgeAccess({actorUid:uid,record:age.data(),capability:'store_erp',policy:'verified_adult_only'}))
+    throw Error('FREE_STORE_AGE_REQUIRED');
+}
+
 
 /**
  * Idempotent initial Free eligibility for the authenticated "Criar minha loja"
@@ -26,6 +41,7 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   const entitlementRef = adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
   const subscriptionRef = adminDb.doc(`${ROOT}/store_subscriptions/${uid}`);
   const provisioned = await adminDb.runTransaction(async tx => {
+    await requireStoreCreationEligibility(tx,uid);
     const [privateDoc, entitlementDoc, subscriptionDoc] = await Promise.all([
       tx.get(privateRef), tx.get(entitlementRef), tx.get(subscriptionRef),
     ]);
@@ -100,27 +116,31 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
  */
 async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' | 'business'): Promise<string> {
   const privateRef = adminDb.doc(`users/${uid}/stores/${uid}`);
-  const ownerStores = await adminDb.collection('stores').where('ownerId', '==', uid).get();
-  const privateSnapshot = await privateRef.get();
-  const linked = privateSnapshot.get('canonicalStoreId');
-  if (linked != null && (typeof linked !== 'string' || !validUid(linked))) {
-    throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
-  }
-  if (ownerStores.docs.length > 1) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
-  const existing = ownerStores.docs[0];
-  if (existing && linked && linked !== existing.id) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
-  if (existing && existing.get('legacyTenantId') && existing.get('legacyTenantId') !== uid) {
-    throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
-  }
-  if (linked && !existing) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
-  const canonicalId = existing?.id ??
-    `store-${createHash('sha256').update(uid).digest('hex').slice(0, 24)}`;
-  const canonicalRef = adminDb.doc(`stores/${canonicalId}`);
+  const ownerQuery = adminDb.collection('stores').where('ownerId', '==', uid);
   const firstStoreEventRef = adminDb.doc(`users/${uid}/verifiedStoreEvents/first_store_created`);
-  await adminDb.runTransaction(async tx => {
-    const [personal, canonical, firstStoreEvent] = await Promise.all([
-      tx.get(privateRef), tx.get(canonicalRef), tx.get(firstStoreEventRef),
+  // Resolve both identity mirrors from the same transaction snapshot. A
+  // concurrent first click can otherwise publish the private link between
+  // separate reads, yielding a false conflict despite a valid canonical store.
+  return adminDb.runTransaction(async tx => {
+    await requireStoreCreationEligibility(tx,uid);
+    const [ownerStores, personal, firstStoreEvent] = await Promise.all([
+      tx.get(ownerQuery), tx.get(privateRef), tx.get(firstStoreEventRef),
     ]);
+    const linked = personal.get('canonicalStoreId');
+    if (linked != null && (typeof linked !== 'string' || !validUid(linked))) {
+      throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    }
+    if (ownerStores.docs.length > 1) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    const existing = ownerStores.docs[0];
+    if (existing && linked && linked !== existing.id) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    if (existing && existing.get('legacyTenantId') && existing.get('legacyTenantId') !== uid) {
+      throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    }
+    if (linked && !existing) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    const canonicalId = existing?.id ??
+      `store-${createHash('sha256').update(uid).digest('hex').slice(0, 24)}`;
+    const canonicalRef = adminDb.doc(`stores/${canonicalId}`);
+    const canonical = await tx.get(canonicalRef);
     if (!personal.exists || personal.get('ownerId') !== uid ||
         (personal.get('canonicalStoreId') && personal.get('canonicalStoreId') !== canonicalId) ||
         (canonical.exists && (canonical.get('ownerId') !== uid ||
@@ -170,6 +190,6 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
       canonicalStoreLinkedAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
+    return canonicalId;
   });
-  return canonicalId;
 }

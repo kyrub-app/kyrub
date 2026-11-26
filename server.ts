@@ -1,3 +1,5 @@
+import { createAgeScreeningRouter } from './server/identity/ageScreeningRouter.js';
+import { personalCenterEmulatorsReady, createPersonalCenterEmulatorRouter } from './server/gamification/personalCenterEmulatorRouter.js';
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import path from "path";
@@ -54,6 +56,9 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
+if (process.env.KYRUB_AGE_SCREENING_EMULATOR === 'true' && process.env.NODE_ENV === 'test') {
+  app.use('/api/onboarding/age', createAgeScreeningRouter());
+}
 app.use('/api/admin/global-challenges', createGlobalChallengeAdminRouter());
 app.use(
   express.json({
@@ -272,6 +277,70 @@ app.use(
   createStoreCustomerChatRouter()
 );
 
+if (personalCenterEmulatorsReady(process.env)) app.use('/api', createPersonalCenterEmulatorRouter());
+if (process.env.KYRUB_PROFILE_COMPLETION_PILOT==='true'&&process.env.NODE_ENV==='test'&&
+    process.env.GCLOUD_PROJECT==='demo-kyrub-welcome'&&process.env.GOOGLE_CLOUD_PROJECT==='demo-kyrub-welcome'&&
+    process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
+    process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
+    !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  app.use('/api',async (req,res,next)=>{
+    if(req.path!=='/profile-completion-pilot'){next();return;}
+    const {adminDb,adminAuth}=await import('./server/firebaseAdmin.js');
+    const {createProfileCompletionEmulatorRouter}=await import('./server/gamification/profileCompletionEmulatorRouter.js');
+    createProfileCompletionEmulatorRouter(adminDb,adminAuth)(req,res,next);
+  });
+}
+
+// Isolated staff-directory transport; one router per server, retaining quota.
+if(process.env.KYRUB_STAFF_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'&&
+   process.env.GCLOUD_PROJECT==='demo-kyrub-welcome'&&process.env.GOOGLE_CLOUD_PROJECT==='demo-kyrub-welcome'&&
+   process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
+   process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
+   !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS){
+  let routerPromise:Promise<ReturnType<typeof import('./server/identity/storeStaffDirectoryEmulatorRouter.js').createStaffDirectoryEmulatorRouter>>|undefined;
+  app.use('/api',async(req,res,next)=>{
+    if(!req.path.startsWith('/staff-directory-pilot/')){next();return;}
+    try{
+      routerPromise??=Promise.all([import('./server/firebaseAdmin.js'),import('./server/identity/storeStaffDirectoryEmulatorRouter.js')])
+        .then(([{adminDb,adminAuth},{createStaffDirectoryEmulatorRouter}])=>createStaffDirectoryEmulatorRouter(adminDb,adminAuth));
+      (await routerPromise)(req,res,next);
+    }catch{routerPromise=undefined;res.set('Cache-Control','private, no-store').sendStatus(503);}
+  });
+}
+
+// Local-only social directory; preserve the same quota instance per listener.
+if(process.env.KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'&&
+   process.env.GCLOUD_PROJECT==='demo-kyrub-welcome'&&process.env.GOOGLE_CLOUD_PROJECT==='demo-kyrub-welcome'&&
+   process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
+   process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
+   !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS){
+  let socialRouterPromise:Promise<ReturnType<typeof import('./server/identity/socialDirectoryEmulatorRouter.js').createSocialDirectoryEmulatorRouter>>|undefined;
+  app.use('/api',async(req,res,next)=>{
+    if(!req.path.startsWith('/social-directory-pilot/')){next();return;}
+    try{
+      socialRouterPromise??=Promise.all([import('./server/firebaseAdmin.js'),import('./server/identity/socialDirectoryEmulatorRouter.js')])
+        .then(([{adminDb,adminAuth},{createSocialDirectoryEmulatorRouter}])=>createSocialDirectoryEmulatorRouter(adminDb,adminAuth));
+      (await socialRouterPromise)(req,res,next);
+    }catch{socialRouterPromise=undefined;res.set('Cache-Control','private, no-store').sendStatus(503);}
+  });
+}
+
+if(process.env.KYRUB_ADMIN_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'&&
+   process.env.GCLOUD_PROJECT==='demo-kyrub-welcome'&&process.env.GOOGLE_CLOUD_PROJECT==='demo-kyrub-welcome'&&
+   process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
+   process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
+   !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS){
+  let adminDirectoryRouterPromise:Promise<ReturnType<typeof import('./server/identity/adminDirectoryEmulatorRouter.js').createAdminDirectoryEmulatorRouter>>|undefined;
+  app.use('/api',async(req,res,next)=>{
+    if(!req.path.startsWith('/admin-directory-pilot/')){next();return;}
+    try{
+      adminDirectoryRouterPromise??=Promise.all([import('./server/firebaseAdmin.js'),import('./server/identity/adminDirectoryEmulatorRouter.js')])
+        .then(([{adminDb,adminAuth},{createAdminDirectoryEmulatorRouter}])=>createAdminDirectoryEmulatorRouter(adminDb,adminAuth));
+      (await adminDirectoryRouterPromise)(req,res,next);
+    }catch{adminDirectoryRouterPromise=undefined;res.set('Cache-Control','private, no-store').sendStatus(503);}
+  });
+}
+
 app.use(
   "/api/notifications",
   integrationRateLimiter,
@@ -345,6 +414,33 @@ if (process.env.NODE_ENV !== 'production' &&
     process.env.GOOGLE_CLOUD_PROJECT === 'kyrub-security-test' &&
     process.env.FIREBASE_PROJECT_ID === 'kyrub-security-test' &&
     process.env.KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+  // Local browser acceptance: real catalogue projection, emulator-issued ID
+  // token only, no production authentication fallback or mutation.
+  if (!process.env.VERCEL && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON &&
+      !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    app.get('/api/action-execute', async (request, response) => {
+      response.setHeader('cache-control', 'no-store');
+      if (request.query.transport !== 'global-challenge-catalog' || Object.keys(request.query).length !== 1) {
+        response.status(404).json({ code: 'UNKNOWN_TRANSPORT' }); return;
+      }
+      const token = /^Bearer\s+(\S+)$/i.exec(request.headers.authorization ?? '')?.[1];
+      if (!token) { response.status(401).json({ code: 'AUTH_REQUIRED' }); return; }
+      const { adminAuth, adminDb } = await import('./server/firebaseAdmin.js');
+      if ((adminDb as typeof adminDb & {projectId?: string}).projectId !== 'kyrub-security-test') {
+        response.status(503).json({ code: 'QA_PROJECT_MISMATCH' }); return;
+      }
+      let uid: string;
+      try {
+        const identity = await adminAuth.verifyIdToken(token);
+        if (identity.aud !== 'kyrub-security-test' || !identity.uid) throw Error('QA_AUTH_INVALID');
+        uid = identity.uid;
+      } catch { response.status(401).json({ code: 'AUTH_INVALID' }); return; }
+      try {
+        const { readUserPlatformChallengeCatalog } = await import('./server/gamification/userPlatformChallengeCatalogService.js');
+        response.status(200).json(await readUserPlatformChallengeCatalog(adminDb, uid));
+      } catch { response.status(503).json({ code: 'CHALLENGE_CATALOG_UNAVAILABLE' }); }
+    });
+  }
   app.post('/api/action-execute', async (request, response) => {
     if (request.query.transport !== 'first-store-publication') {
       response.status(404).json({ error: 'UNKNOWN_TRANSPORT' });
@@ -409,6 +505,16 @@ app.get(
 app.all('/api/pitangas', async (req, res) => {
   const { handlePitangaAccountRequest } = await import('./server/gamification/pitangaAccountHandler.js');
   await handlePitangaAccountRequest(req, res);
+});
+
+app.get('/api/legal-documents/:type', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  const type = req.params.type;
+  if (type !== 'terms' && type !== 'privacy') { res.status(404).json({error:'LEGAL_DOCUMENT_NOT_FOUND'}); return; }
+  try {
+    const { readPublicLegalDocument } = await import('./server/governance/publicLegalDocumentService.js');
+    res.json({document: await readPublicLegalDocument(type)});
+  } catch { res.status(503).json({error:'LEGAL_DOCUMENT_UNAVAILABLE'}); }
 });
 
 app.get("/api/health", (_req, res) => {

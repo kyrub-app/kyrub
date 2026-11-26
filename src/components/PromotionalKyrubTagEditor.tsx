@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
+import {TAG_PUBLICATION_TERMS_VERSION,TAG_PUBLICATION_TERMS_TEXT,TAG_PUBLICATION_ACKNOWLEDGEMENT} from '../../shared/kyrubTagPublicationTerms';
 import {auth} from '../utils/firebase';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PromotionalSosContact} from '../../shared/kyrubTagPromotional';
 import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
@@ -9,6 +10,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
  const [presentation,setPresentation]=useState<PromotionalTagPresentation>(initial.presentation??EMPTY_PROMOTIONAL_PRESENTATION);
  const [recoveryCode,setRecoveryCode]=useState(oneTimeRecoveryCode??'');
  const [busy,setBusy]=useState(false);
+ const [accepted,setAccepted]=useState(false);
  const [notice,setNotice]=useState('');
  const [coverPreview,setCoverPreview]=useState('');
  const [avatarPreview,setAvatarPreview]=useState('');
@@ -33,6 +35,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
  // Initial owner record is stable for the editor lifetime.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[initial.id]);
+ useEffect(()=>setAccepted(false),[presentation]);
  const set=(key:'name'|'occupation'|'about',value:string)=>setPresentation(current=>({...current,[key]:value}));
  const contacts=presentation.emergencyContacts??[];
  const emptyContact=():PromotionalSosContact=>({name:'',relationship:'',phone:'',whatsapp:false,shareInSos:false,consentConfirmed:false});
@@ -46,7 +49,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    const result=await uploadPromotionalTagImage(file,tag.id,slot);
    setPresentation(current=>({...current,[slot==='cover'?'coverPath':'avatarPath']:result.path}));
    setPreview(slot,result.previewUrl);
-   setNotice('Foto preparada. Toque em Salvar e publicar para atualizar seu cartão.');
+   setNotice('Foto preparada. Salve de forma privada ou publique se estiver autorizado.');
   }catch(e){setNotice(e instanceof Error?e.message:'Não foi possível enviar esta foto.');}
   finally{setUploading(false);}
  }
@@ -54,7 +57,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
   setPresentation(current=>({...current,[slot==='cover'?'coverPath':'avatarPath']:''}));
   setPreview(slot,'');
  }
- async function execute(action:'configure-promotional'|'block-promotional'|'unblock-promotional',extras:Record<string,unknown>={}){
+ async function execute(action:'configure-promotional'|'publish-promotional'|'block-promotional'|'unblock-promotional',extras:Record<string,unknown>={}){
   if(busy||!auth.currentUser)return;
   setBusy(true);setNotice('');
   try{
@@ -63,12 +66,13 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
     method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
     body:JSON.stringify({action,...extras})
    });
-   if(!res.ok)throw Error('TAG_FAILED');
+   if(!res.ok){const body=await res.json().catch(()=>({}));throw Error(body.error??'TAG_FAILED');}
    const updated=await res.json() as OwnedKyrubTag;
    if(updated.id!==tag.id||updated.distribution!=='promotional')throw Error('TAG_FAILED');
    setTag(updated);
-   setNotice(action==='configure-promotional'?'Sua apresentação foi publicada.':action==='block-promotional'?'Sua tag foi bloqueada. Seu cartão não está mais público.':'Bloqueio removido. Revise e publique a apresentação para reativá-la.');
-  }catch{setNotice('Não foi possível concluir. Confira sua sessão e tente novamente.');}
+   setAccepted(false);
+   setNotice(action==='publish-promotional'&&updated.enabled?'Sua apresentação foi publicada.':action==='configure-promotional'?'Apresentação salva de forma privada.':action==='block-promotional'?'Sua tag foi bloqueada. Seu cartão não está mais público.':'Bloqueio removido. Revise e publique a apresentação para reativá-la.');
+  }catch(error){setNotice(error instanceof Error&&error.message==='TAG_PUBLICATION_AGE_REQUIRED'?'A publicação depende da confirmação de maioridade e da liberação da campanha. Você pode salvar de forma privada.':error instanceof Error&&error.message==='TAG_PUBLICATION_TERMS_REQUIRED'?'Confirme o aviso de responsabilidade antes de publicar.':'Não foi possível concluir. Confira sua sessão e tente novamente.');}
   finally{setBusy(false);}
  }
  async function rotateRecovery(){
@@ -157,7 +161,13 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    {contacts.length<2&&<button type="button" disabled={busy||uploading} className="min-h-11 rounded-xl border border-[#34443B] px-3"
     onClick={()=>setPresentation(current=>({...current,emergencyContacts:[...(current.emergencyContacts??[]),emptyContact()]}))}>+ Adicionar contato de emergência</button>}
   </section>
-  <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-3 font-bold text-[#121A17] disabled:opacity-50" disabled={busy||uploading||tag.blocked} onClick={()=>void execute('configure-promotional',{presentation})}>Salvar e publicar minha apresentação</button>
+  <button type="button" className="min-h-11 w-full rounded-xl border border-[#34443B] p-3 text-sm disabled:opacity-50" disabled={busy||uploading||tag.blocked} onClick={()=>void execute('configure-promotional',{presentation})}>Salvar de forma privada{tag.enabled?' e retirar cartão público':''}</button>
+  <section className="space-y-2 rounded-xl border border-[#34443B] p-3 text-sm">
+   <strong>Responsabilidade pelas informações publicadas</strong>
+   <p>{TAG_PUBLICATION_TERMS_TEXT}</p>
+   <label className="flex items-start gap-2"><input type="checkbox" checked={accepted} disabled={busy||uploading||tag.blocked} onChange={e=>setAccepted(e.target.checked)}/>{TAG_PUBLICATION_ACKNOWLEDGEMENT}</label>
+  </section>
+  <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-3 font-bold text-[#121A17] disabled:opacity-50" disabled={!accepted||busy||uploading||tag.blocked} onClick={()=>void execute('publish-promotional',{presentation,acceptance:{accepted:true,version:TAG_PUBLICATION_TERMS_VERSION}})}>Publicar minha Kyrub Tag</button>
   <button type="button" className="min-h-11 w-full rounded-xl border border-[#34443B] p-3 text-sm disabled:opacity-50" disabled={busy} onClick={()=>void rotateRecovery()}>Gerar novo código de recuperação</button>
   {tag.blocked?
    <button type="button" className="min-h-11 w-full rounded-xl border border-amber-600/60 p-3 disabled:opacity-50" disabled={busy} onClick={()=>void execute('unblock-promotional')}>Desbloquear minha Tag</button>:

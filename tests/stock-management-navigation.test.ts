@@ -167,3 +167,48 @@ describe('stock management navigation', () => {
     assert.match(vercel, /surface=procurement&path=:path\*/);
   });
 });
+
+
+test('stock workspace resets drafts by store and fences outdated stock reads', () => {
+  const router=readFileSync('src/components/RetailerPanelRuntimeRouter.tsx','utf8');
+  assert.match(router,/<LazyStockRuntime key=\{retailerProps\.activeRetailerId\} storeId=\{retailerProps\.activeRetailerId\}/);
+  const replenishment=readFileSync('src/components/store/StorePurchaseWorkspace.tsx','utf8');
+  assert.equal((replenishment.match(/if\(stopped\|\|auth\.currentUser\?\.uid!==user\.uid\)return;/g)??[]).length,2);
+  assert.match(replenishment,/return \(\) => \{stopped=true;unsubscribe\(\);\};/);
+  assert.match(replenishment,/setCatalog\(\[\]\);\s*console\.warn/);
+  const timeline=readFileSync('src/components/store/StoreInventoryMovementTimeline.tsx','utf8');
+  assert.match(timeline,/pendingRead\.current\?\.abort\(\)/);
+  assert.match(timeline,/signal: controller\.signal/);
+  assert.match(timeline,/pendingRead\.current===controller&&auth\.currentUser\?\.uid===user\.uid/);
+  assert.match(timeline,/if\(!isCurrent\(\)\)return;\s*setMovements\(Array\.isArray/);
+  assert.match(timeline,/return \(\)=>\{pendingRead\.current\?\.abort\(\);pendingRead\.current=null;\};/);
+});
+
+
+test('procurement and payable bridge cancel obsolete reads but preserve confirmed server writes', () => {
+  const procurement=readFileSync('src/components/store/StoreProcurementWorkspace.tsx','utf8');
+  const payables=readFileSync('src/components/store/StorePurchasePayableBridge.tsx','utf8');
+  for(const source of [procurement,payables]){
+    assert.match(source,/scope\.current===context&&pendingRead\.current===controller&&!controller\.signal\.aborted&&auth\.currentUser\?\.uid===uid/);
+    assert.match(source,/scope\.current=null;pendingRead\.current\?\.abort\(\);pendingRead\.current=null;/);
+    assert.match(source,/scope\.current===context&&auth\.currentUser\?\.uid===uid/);
+    assert.match(source,/signal:controller\.signal/);
+  }
+  assert.match(procurement,/if\(next\.storeId!==storeId\)throw new Error/);
+  assert.match(procurement,/await work\(\);\s*if\(!isCurrent\(\)\)return;\s*setNotice\(successMessage\)/);
+  assert.match(payables,/if\(!isCurrent\(\)\)return;\s*setFeedback\(result\.status/);
+  assert.match(payables,/setPayables\(\[\]\);\s*setFinanceReady\(false\);/);
+});
+
+test('purchase and payable panels share one procurement overview without a second procurement GET',()=>{
+  const stock=readFileSync('src/components/store/StockDirectRuntime.tsx','utf8');
+  const procurement=readFileSync('src/components/store/StoreProcurementWorkspace.tsx','utf8');
+  const payables=readFileSync('src/components/store/StorePurchasePayableBridge.tsx','utf8');
+  assert.match(stock,/renderPurchaseFinance=\{\(overview, procurementLoading, refreshProcurement\)/);
+  assert.match(procurement,/renderPurchaseFinance\?\.\(overview,loading\|\|busy,load\)/);
+  assert.match(payables,/const \{purchases,suppliers\}=overview/);
+  assert.doesNotMatch(payables,/\/api\/store-procurement\?storeId=/);
+  assert.match(payables,/\/api\/store-finance\?storeId=/);
+  assert.match(payables,/Promise\.all\(\[refreshProcurement\(\),load\(\)\]\)/);
+  assert.match(payables,/procurementLoading\|\|!financeReady\) return;/);
+});

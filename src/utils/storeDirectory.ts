@@ -396,8 +396,21 @@ export const subscribeToUserStoreAccess = (
   let ownedStores = new Map<string, CanonicalStoreRecord>();
   let memberships = new Map<string, StoreMemberDirectoryRecord>();
   let cancelled = false;
+  let accessGeneration=0;
+  const pendingStoreReads=new Map<string,Promise<CanonicalStoreRecord|null>>();
+  const readStore=(storeId:string)=>{
+    const pending=pendingStoreReads.get(storeId);
+    if(pending)return pending;
+    const request=getDoc(doc(db,getStoreDocumentPath(storeId))).then(snapshot=>{
+      const parsed=parseCanonicalStore(snapshot.data());
+      return parsed?.id===storeId?parsed:null;
+    }).finally(()=>{if(pendingStoreReads.get(storeId)===request)pendingStoreReads.delete(storeId);});
+    pendingStoreReads.set(storeId,request);
+    return request;
+  };
 
   const publish = async (): Promise<void> => {
+    const generation=++accessGeneration;
     const memberEntries = Array.from(memberships.values()).filter(
       member => member.status !== 'removed'
     );
@@ -408,8 +421,7 @@ export const subscribeToUserStoreAccess = (
     const loadedStores = await Promise.all(
       missingStoreIds.map(async storeId => {
         try {
-          const snapshot = await getDoc(doc(db, getStoreDocumentPath(storeId)));
-          return parseCanonicalStore(snapshot.data());
+          return await readStore(storeId);
         } catch {
           const member = memberships.get(storeId);
           return member
@@ -429,7 +441,7 @@ export const subscribeToUserStoreAccess = (
       })
     );
 
-    if (cancelled) return;
+    if (cancelled||generation!==accessGeneration) return;
     const storeMap = new Map(ownedStores);
     loadedStores.forEach(store => {
       if (store) storeMap.set(store.id, store);
@@ -475,7 +487,7 @@ export const subscribeToUserStoreAccess = (
       ownedStores = new Map(
         snapshot.docs.flatMap(storeSnapshot => {
           const parsed = parseCanonicalStore(storeSnapshot.data());
-          return parsed ? [[parsed.id, parsed] as const] : [];
+          return parsed&&parsed.id===storeSnapshot.id&&parsed.ownerId===userId ? [[parsed.id, parsed] as const] : [];
         })
       );
       void publish();
@@ -489,7 +501,7 @@ export const subscribeToUserStoreAccess = (
       memberships = new Map(
         snapshot.docs.flatMap(memberSnapshot => {
           const parsed = parseStoreMemberDirectoryRecord(memberSnapshot.data());
-          return parsed ? [[parsed.storeId, parsed] as const] : [];
+          return parsed&&parsed.userId===userId&&memberSnapshot.id===userId&&memberSnapshot.ref.parent.parent?.id===parsed.storeId&&parsed.role!=='owner' ? [[parsed.storeId, parsed] as const] : [];
         })
       );
       void publish();

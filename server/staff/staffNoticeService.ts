@@ -34,9 +34,9 @@ export const resolveStaffActor = async (authorization: string, legacyStoreId: st
   const identity = await verifyFirebaseIdToken(token);
   const tenant = await adminDb.doc('tenants/' + legacyStoreId).get();
   const canonicalStoreId = clean(tenant.get('canonicalStoreId'));
-  if (!safeStoreId(canonicalStoreId)) throw new Error('STAFF_NOTICE_STORE_INVALID');
+  if (!safeStoreId(canonicalStoreId)||(tenant.get('ownerId')!==undefined&&tenant.get('ownerId')!==legacyStoreId)) throw new Error('STAFF_NOTICE_STORE_INVALID');
   const store = await adminDb.doc('stores/' + canonicalStoreId).get();
-  if (!store.exists || clean(store.get('ownerId')) !== legacyStoreId) {
+  if (!store.exists || clean(store.get('ownerId')) !== legacyStoreId || (store.get('id')!==undefined&&store.get('id')!==canonicalStoreId) || (store.get('legacyTenantId')!==undefined&&store.get('legacyTenantId')!==legacyStoreId)) {
     throw new Error('STAFF_NOTICE_STORE_INVALID');
   }
   if (identity.uid === legacyStoreId) {
@@ -44,11 +44,20 @@ export const resolveStaffActor = async (authorization: string, legacyStoreId: st
   }
   const member = await adminDb.doc(`stores/${canonicalStoreId}/members/${identity.uid}`).get();
   const parsed = parseStoreMember(member.data());
-  if (!parsed || parsed.userId !== identity.uid || parsed.storeId !== canonicalStoreId || parsed.status !== 'active') {
+  if (!parsed || parsed.userId !== identity.uid || parsed.storeId !== canonicalStoreId || parsed.status !== 'active'||parsed.role==='owner') {
     throw new Error('STAFF_NOTICE_FORBIDDEN');
   }
   return { uid: identity.uid, role: parsed.role, legacyStoreId, canonicalStoreId };
 };
+
+/** Preserve older tenant links without an ownerId field, but reject explicit conflicts. */
+export async function recheckStaffActor(actor:Actor,tx:FirebaseFirestore.Transaction,code='STAFF_NOTICE_FORBIDDEN'){
+  const [tenant,store]=await Promise.all([tx.get(adminDb.doc('tenants/'+actor.legacyStoreId)),tx.get(adminDb.doc('stores/'+actor.canonicalStoreId))]);
+  if(!tenant.exists||tenant.get('canonicalStoreId')!==actor.canonicalStoreId||(tenant.get('ownerId')!==undefined&&tenant.get('ownerId')!==actor.legacyStoreId)||!store.exists||store.get('ownerId')!==actor.legacyStoreId||(store.get('id')!==undefined&&store.get('id')!==actor.canonicalStoreId)||(store.get('legacyTenantId')!==undefined&&store.get('legacyTenantId')!==actor.legacyStoreId))throw Error(code);
+  if(actor.role==='owner'){if(actor.uid!==actor.legacyStoreId)throw Error(code);return;}
+  const member=parseStoreMember((await tx.get(adminDb.doc('stores/'+actor.canonicalStoreId+'/members/'+actor.uid))).data());
+  if(!member||member.userId!==actor.uid||member.storeId!==actor.canonicalStoreId||member.status!=='active'||member.role!==actor.role)throw Error(code);
+}
 
 const collectionFor = (actor: Actor) =>
   adminDb.collection(`stores/${actor.canonicalStoreId}/staffNotices`);
@@ -114,6 +123,7 @@ export const publishAuthorizedStaffNotice = async (input: {
   };
   return adminDb.runTransaction(async tx => {
     const previous = await tx.get(noticeRef);
+    await recheckStaffActor(actor,tx);
     // A manager may lose access between the initial token check and the
     // transaction. Validate the current membership inside the same snapshot
     // used for the publication, before any notice or notification writes.
@@ -144,7 +154,7 @@ export const publishAuthorizedStaffNotice = async (input: {
     const recipients = currentMemberships.filter(doc => {
       const member = parseStoreMember(doc.data());
       return member?.status === 'active' && member.userId === doc.id &&
-        member.storeId === actor.canonicalStoreId &&
+        member.storeId === actor.canonicalStoreId && member.role!=='owner' &&
         doc.id !== actor.uid && canReadStaffNotice(member.role, notice);
     });
     tx.create(noticeRef, notice);
@@ -180,6 +190,7 @@ export const acknowledgeAuthorizedStaffNotice = async (input: {
     const [noticeDoc, existing] = await Promise.all([
       tx.get(noticeRef), tx.get(receiptRef),
     ]);
+    await recheckStaffActor(actor,tx);
     const notice = noticeDoc.data() as StaffNotice | undefined;
     if (!notice || notice.legacyStoreId !== actor.legacyStoreId ||
         notice.canonicalStoreId !== actor.canonicalStoreId ||

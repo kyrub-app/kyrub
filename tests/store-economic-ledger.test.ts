@@ -279,3 +279,54 @@ describe('store economic ledger', () => {
     assert.match(productService, /existing\.sourceFingerprint !== sourceFingerprint/);
   });
 });
+
+test('finance margins and history fence obsolete requests and preserve manual reconciliation precedence',()=>{
+  const margins=readFileSync('src/components/store/StoreResultsMarginsWorkspace.tsx','utf8');
+  const history=readFileSync('src/components/store/StoreFinanceHistoryWorkspace.tsx','utf8');
+  assert.equal((margins.match(/await user\.getIdToken\(\)/g)??[]).length,1);
+  assert.match(margins,/payload\.storeId!==storeId\|\|signal\.aborted\|\|auth\.currentUser!==user/);
+  assert.match(margins,/request\.current===controller&&!controller\.signal\.aborted&&auth\.currentUser===user/);
+  assert.match(margins,/if\(!current\(\)\)return;\s*setOrders\(null\);\s*setProducts\(null\)/);
+  assert.match(history,/if\(append&&\(!cursor\|\|pageRequest\.current\)\)return/);
+  assert.match(history,/pageRequest\.current===controller&&!controller\.signal\.aborted&&auth\.currentUser===user/);
+  assert.match(history,/new Map\(\[\.\.\.previous,\.\.\.nextItems\]\.map\(item=>\[item\.id,item\]\)\)/);
+  assert.match(history,/reconciliationRequestedRef\.current\.has\(item\.paymentId\)/);
+  assert.match(history,/reconciliationReads\.current\.get\(paymentId\)\?\.abort\(\)/);
+  assert.match(history,/if\(!context\|\|!user\|\|manualPending\.current\)return/);
+  assert.match(history,/payload\.reconciliation\.paymentId!==input\.paymentId/);
+});
+
+test('combined profitability reuses the authorized order calculation without a second ledger scan',()=>{
+  const router=readFileSync('server/payments/storeOrderProfitabilityRouter.ts','utf8');
+  const products=readFileSync('server/payments/storeProductProfitabilityService.ts','utf8');
+  const client=readFileSync('src/components/store/StoreResultsMarginsWorkspace.tsx','utf8');
+  const transport=readFileSync('server/payments/storePromotionServerlessTransport.ts','utf8');
+  const route=router.slice(router.indexOf("router.get('/'"),router.indexOf("router.get('/products'"));
+  assert.ok(route.indexOf('await requireOwner')<route.indexOf('await reconcileStoreOrderProfitability(storeId)'));
+  assert.equal((route.match(/await reconcileStoreOrderProfitability\(storeId\)/g)??[]).length,1);
+  assert.match(route,/await reconcileStoreProductProfitability\(storeId, profitability\)/);
+  assert.match(route,/json\(\{ storeId, orders: profitability, products \}\)/);
+  assert.match(products,/sharedOrderOverview && sharedOrderOverview\.storeId !== storeId/);
+  assert.match(products,/sharedOrderOverview \?\? await reconcileStoreOrderProfitability\(storeId\)/);
+  assert.match(client,/&includeProducts=true/);
+  assert.doesNotMatch(client,/\/api\/store-finance\/profitability\/products\?/);
+  assert.match(client,/result\.orders\?\.storeId!==storeId\|\|result\.products\?\.storeId!==storeId/);
+  assert.match(transport,/params\.append\(key, value\)/);
+});
+
+test('period and history recovery share only in-flight work and do not overwrite canonical entries',()=>{
+  const source=readFileSync('server/payments/storeFinanceHistoryRouter.ts','utf8');
+  const recovery=source.slice(source.indexOf('const recoverAllMissingCanonicalPaidCaptures'),source.indexOf('type HistoryItem ='));
+  assert.match(recovery,/adminDb\.runTransaction\(async transaction =>/);
+  assert.match(recovery,/await transaction\.getAll\(\.\.\.refs\)/);
+  assert.match(recovery,/if \(existing\[index\]\?\.exists\) return;\s*transaction\.create/);
+  assert.doesNotMatch(recovery,/\bbatch\.set\(|\btransaction\.set\(/);
+  assert.match(recovery,/activeCaptureRecoveries\.get\(storeId\)/);
+  assert.match(recovery,/if \(existing\) return existing/);
+  assert.match(recovery,/\.finally\(\(\) => \{\s*if \(activeCaptureRecoveries\.get\(storeId\) === pending\) activeCaptureRecoveries\.delete\(storeId\)/);
+  const route=source.slice(source.indexOf("router.get('/',"));
+  assert.equal((route.match(/await recoverCanonicalPaidCaptures\(storeId\)/g)??[]).length,2);
+  assert.ok(route.indexOf('await requireOwner')<route.indexOf('await recoverCanonicalPaidCaptures'));
+  assert.ok(route.indexOf('decodeCursor(request.query.cursor)')<route.lastIndexOf('await recoverCanonicalPaidCaptures'));
+  assert.match(source,/complete: true/);
+});

@@ -1,4 +1,5 @@
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
 import { resolveOrderReleaseDecision } from '../../shared/orderReleasePolicy';
 
 export type AttendanceReviewItemInput = {
@@ -179,7 +180,8 @@ const mergedNote = (current: string, extra: string): string =>
 export const reviewAttendanceOrderAuthoritatively = async (
   tenantId: string,
   orderId: string,
-  rawInput: unknown
+  rawInput: unknown,
+  humanUid?:string
 ): Promise<AttendanceReviewResult> => {
   const normalizedTenantId = clean(tenantId, 180);
   const normalizedOrderId = clean(orderId, 180);
@@ -190,6 +192,7 @@ export const reviewAttendanceOrderAuthoritatively = async (
   const operatorName = await operatorLabel(normalizedTenantId);
 
   return adminDb.runTransaction(async transaction => {
+    if(humanUid)await requireHumanOrderOperation(transaction,normalizedTenantId,humanUid,input.action==='reject'?'orders.cancel':'orders.transfer');
     const orderReference = adminDb.doc(orderPath(normalizedTenantId, normalizedOrderId));
     const tenantReference = adminDb.doc(`tenants/${normalizedTenantId}`);
     const [orderSnapshot, tenantSnapshot] = await Promise.all([

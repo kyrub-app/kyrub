@@ -53,3 +53,10 @@ export function assertTagPilotWriteIsolated():void{
  if(currentTagPilotIsolation()==='unsafe'||!tagPilotClientMatchesServer())
   throw Error('TAG_PILOT_PROJECT_UNSAFE');
 }
+
+/** Branch URLs survive ordinary preview deployments; immutable deployment URLs do not. */
+export function stableTagPilotHost(env:NodeJS.ProcessEnv=process.env):string|null{
+ const host=env.VERCEL_BRANCH_URL?.trim();
+ if(env.VERCEL_ENV!=='preview'||!host||host===env.VERCEL_URL||!(/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/.test(host)))return null;
+ return host;
+}

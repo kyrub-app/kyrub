@@ -30,6 +30,7 @@ const mapError = (error: unknown): { status: number; message: string } => {
     return { status: 401, message: 'Faça login novamente para operar os recebimentos.' };
   }
   if (
+    ['STORE_ACCESS_DENIED','STORE_ERP_AGE_REQUIRED','STORE_FINANCE_AGE_REQUIRED','second_factor_required','reauthentication_required'].includes(message) ||
     message === 'STORE_REPRESENTATION_FORBIDDEN' ||
     message === 'LOCAL_STORE_PIX_FORBIDDEN' ||
     message === 'LOCAL_STORE_PIX_CONFIRM_FORBIDDEN'
@@ -157,6 +158,7 @@ export const createLocalStoreOwnedPixRouter = (): Router => {
         storeId,
       });
       const result = await confirmStoreOwnedPixLocalPayment({
+        authorization:request.get('authorization')??'',
         authenticatedUserId: representation.authenticatedUserId,
         value: request.body,
       });

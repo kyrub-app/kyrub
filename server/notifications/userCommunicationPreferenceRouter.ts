@@ -1,3 +1,5 @@
+import {adminAuth} from '../firebaseAdmin.js';
+import {freelanceNotificationPreviewEnabled} from './freelanceNotificationService.js';
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import type { UserCommunicationCategoryPreferences } from '../../shared/userCommunicationPreferences.js';
@@ -12,6 +14,10 @@ const bearerToken = (authorization: string): string =>
 const requireIdentity = async (authorization: string) => {
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
+  if(process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){
+    if(!freelanceNotificationPreviewEnabled())throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+    try{return await adminAuth.verifyIdToken(token,true);}catch{throw Error('AUTH_REQUIRED');}
+  }
   return verifyFirebaseIdToken(token);
 };
 
@@ -37,6 +43,7 @@ const categoriesFromBody = (
       ? true : boolean(data.community_group_invite),
     user_forward: data.user_forward === undefined
       ? true : boolean(data.user_forward),
+    freelance: data.freelance === undefined ? false : boolean(data.freelance),
   };
 };
 

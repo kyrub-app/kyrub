@@ -106,7 +106,12 @@ test('freelance applications and vacancy creation require approved profiles', ()
   assert.match(result, /hasApprovedIdentityProfile\('requester'\)/);
   assert.match(result, /hasApprovedIdentityProfile\('freelancer'\)/);
   assert.match(result, /hasRole\(\['owner', 'manager', 'staff'\]\)/);
-  assert.match(result, /existing\(\)\.userId == request\.auth\.uid/);
+  assert.match(result, /data\.get\('userId', ''\) == request\.auth\.uid/);
+  assert.ok(result.includes("candiId.matches('^[A-Za-z0-9]{20}__' + request.auth.uid + '$');"));
+  assert.ok(result.includes("incoming().vagaId.matches('^[A-Za-z0-9]{20}$')"));
+  assert.ok(result.includes("candiId == incoming().vagaId + '__' + request.auth.uid"));
+  assert.ok(result.includes("incoming().userId == existing().userId"));
+  assert.equal(result.split('match /candidaturas/{candiId}').length, 2);
   assert.doesNotMatch(result, /allow update, delete: if isSignedIn\(\);/);
 });
 

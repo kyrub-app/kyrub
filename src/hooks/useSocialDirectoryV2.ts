@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type SetStateAction } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { db, auth } from '../utils/firebase';
 import {
   collection,
@@ -12,6 +13,8 @@ import {
   where
 } from 'firebase/firestore';
 import { Friend } from '../types';
+import {socialDirectoryPilotEnabled} from '../utils/socialDirectoryPilot';
+import {useLiveAuthorIdentities} from './useLiveAuthorIdentities';
 
 const STORAGE_KEYS = {
   FAVORITE_STORES: 'kyrub_favorite_stores'
@@ -54,20 +57,42 @@ interface UseSocialDirectoryOptions {
   triggerToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+// Bind all transient directory data to the exact Auth session, not just a
+// boolean login state. Stale subscription callbacks cannot repopulate it.
+const EMPTY_DIRECTORY:never[]=[];
+function useSessionDirectoryState<T>(session:User|null){
+  const [state,setState]=useState<{session:User|null;items:T[]}>(()=>({session,items:[]}));
+  const setItems=useCallback((update:SetStateAction<T[]>)=>{
+    if(!session||auth.currentUser!==session)return;
+    setState(previous=>{
+      if(auth.currentUser!==session)return previous;
+      const items=previous.session===session?previous.items:EMPTY_DIRECTORY;
+      return {session,items:typeof update==='function'?update(items):update};
+    });
+  },[session]);
+  return [session&&auth.currentUser===session&&state.session===session?state.items:EMPTY_DIRECTORY,setItems] as const;
+}
+
 export function useSocialDirectoryV2({
   profileName,
   profilePhotoUrl,
-  profileAddress,
   accountTypeLojista,
   accountTypeEntregador,
   isLoggedIn,
   triggerToast
 }: UseSocialDirectoryOptions) {
   // Social states
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [dbUsers, setDbUsers] = useState<any[]>([]);
-  const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
-  const [connections, setConnections] = useState<ConnectionDocument[]>([]);
+  const [session,setSession]=useState(()=>auth.currentUser);
+  useEffect(()=>onAuthStateChanged(auth,setSession),[]);
+  const [friends,setFriends]=useSessionDirectoryState<Friend>(session);
+  const [dbUsers,setDbUsers]=useSessionDirectoryState<any>(session);
+  const [connectionRequests,setConnectionRequests]=useSessionDirectoryState<any>(session);
+  const [connections,setConnections]=useSessionDirectoryState<ConnectionDocument>(session);
+  // Accepted/pending contacts are not necessarily in the current discovery page.
+  // Resolve their current public identity independently; a missing projection
+  // must never restore a saved avatar, role or biography in the protected pilot.
+  const protectedDirectory=socialDirectoryPilotEnabled();
+  const contactIdentities=useLiveAuthorIdentities(protectedDirectory&&session?connections.map(connection=>connection.senderId===session.uid?connection.receiverId:connection.senderId):[]);
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.FAVORITE_STORES);
@@ -82,9 +107,9 @@ export function useSocialDirectoryV2({
   }, [favoriteStoreIds]);
 
   useEffect(() => {
-    const currentUser = auth.currentUser;
+    const currentUser = session;
 
-    if (!isLoggedIn || !currentUser) {
+    if (!isLoggedIn || !currentUser || auth.currentUser!==currentUser) {
       setConnections([]);
       return;
     }
@@ -94,26 +119,30 @@ export function useSocialDirectoryV2({
       where('participantIds', 'array-contains', currentUser.uid)
     );
 
-    return onSnapshot(
+    let active=true;
+    const stop=onSnapshot(
       connectionsQuery,
       snapshot => {
+        if(!active||auth.currentUser!==currentUser)return;
         setConnections(
           snapshot.docs.map(snapshotDoc => ({
-            id: snapshotDoc.id,
-            ...(snapshotDoc.data() as Omit<ConnectionDocument, 'id'>)
-          }))
+            ...(snapshotDoc.data() as Omit<ConnectionDocument, 'id'>),
+            id: snapshotDoc.id
+          })).filter(item=>item.senderId===currentUser.uid||item.receiverId===currentUser.uid)
         );
       },
       error => {
+        if(!active||auth.currentUser!==currentUser)return;
         console.error('Falha ao escutar conexões:', error);
         setConnections([]);
       }
     );
-  }, [isLoggedIn]);
+    return ()=>{active=false;stop();};
+  }, [isLoggedIn,session,setConnections]);
   useEffect(() => {
-    const currentUid = auth.currentUser?.uid;
+    const currentUid = session?.uid;
 
-    if (!isLoggedIn || !currentUid) {
+    if (!isLoggedIn || !currentUid || auth.currentUser!==session) {
       setFriends([]);
       setConnectionRequests([]);
       return;
@@ -161,30 +190,20 @@ export function useSocialDirectoryV2({
         return {
           id: otherUid,
           name:
-            dbUser?.name ||
-            dbUser?.email ||
+            (protectedDirectory?contactIdentities[otherUid]?.name:dbUser?.name) ||
             snapshotName ||
             previousFriend?.name ||
             'Usuário do Kyrub',
-          role: dbUser
+          role: protectedDirectory?'Kairubido':dbUser
             ? getUserRole(dbUser)
             : snapshotRole ||
             previousFriend?.role ||
             'Cliente',
           added: true,
-          avatar:
-            dbUser?.photoUrl ||
-            snapshotAvatar ||
-            previousFriend?.avatar ||
-            '',
-          bio:
-            dbUser?.bio ||
-            dbUser?.whatsapp ||
-            snapshotBio ||
-            previousFriend?.bio ||
-            '',
-          isProfileVisible:
-            dbUser?.isProfileVisible !== false,
+          avatar: protectedDirectory?(contactIdentities[otherUid]?.avatar||''):
+            dbUser?.photoUrl || snapshotAvatar || previousFriend?.avatar || '',
+          bio: protectedDirectory?'':dbUser?.bio || snapshotBio || previousFriend?.bio || '',
+          isProfileVisible: protectedDirectory?Boolean(contactIdentities[otherUid]?.name):dbUser?.isProfileVisible === true,
           favorited: previousFriend?.favorited ?? false,
           connectionStatus: 'accepted',
           connectionId: connection.id
@@ -207,34 +226,26 @@ export function useSocialDirectoryV2({
           id: connection.senderId,
           connectionId: connection.id,
           name:
-            sender?.name ||
-            sender?.email ||
+            (protectedDirectory?contactIdentities[connection.senderId]?.name:sender?.name) ||
             connection.senderName ||
             'Usuário do Kyrub',
-          role: sender
+          role: protectedDirectory?'Kairubido':sender
             ? getUserRole(sender)
             : connection.senderRole || 'Cliente',
-          avatar:
-            sender?.photoUrl ||
-            connection.senderAvatar ||
-            '',
-          bio:
-            sender?.bio ||
-            sender?.whatsapp ||
-            connection.senderBio ||
-            '',
+          avatar: protectedDirectory?(contactIdentities[connection.senderId]?.avatar||''):sender?.photoUrl || connection.senderAvatar || '',
+          bio: protectedDirectory?'':sender?.bio || connection.senderBio || '',
           connectionStatus: 'pending_received'
         };
       });
 
     setConnectionRequests(incomingRequests);
-  }, [connections, dbUsers, isLoggedIn]);
+  }, [connections, dbUsers, isLoggedIn,session,setFriends,setConnectionRequests,protectedDirectory,contactIdentities]);
 
   // Connect / Disconnect Friends
   const handleToggleFriend = async (friendId: string) => {
     const currentUser = auth.currentUser;
 
-    if (!currentUser) {
+    if (!currentUser || currentUser!==session) {
       triggerToast('Faça login para conectar com outros usuários!', 'error');
       return;
     }
@@ -268,7 +279,7 @@ export function useSocialDirectoryV2({
 
       const targetUser = dbUsers.find(user => user.id === friendId);
 
-      if (!targetUser) {
+      if (!targetUser || targetUser.isProfileVisible!==true) {
         triggerToast('Não foi possível localizar este usuário.', 'error');
         return;
       }
@@ -287,21 +298,21 @@ export function useSocialDirectoryV2({
         senderName:
           profileName ||
           currentUser.displayName ||
-          currentUser.email ||
           'Usuário do Kyrub',
-        senderRole,
-        senderAvatar: profilePhotoUrl || currentUser.photoURL || '',
-        senderBio: profileAddress || '',
+        // The protected directory hydrates current presentation separately.
+        // Keep historical names for attribution, but never persist photos,
+        // biographies or account roles in new connection snapshots.
+        ...(protectedDirectory ? {} : {
+          senderRole,
+          senderAvatar: profilePhotoUrl || currentUser.photoURL || '',
+          senderBio: '',
+          receiverRole: getUserRole(targetUser),
+          receiverAvatar: targetUser.photoUrl || '',
+          receiverBio: targetUser.bio || '',
+        }),
         receiverName:
           targetUser.name ||
-          targetUser.email ||
           'Usuário do Kyrub',
-        receiverRole: getUserRole(targetUser),
-        receiverAvatar: targetUser.photoUrl || '',
-        receiverBio:
-          targetUser.bio ||
-          targetUser.whatsapp ||
-          '',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
@@ -315,13 +326,14 @@ export function useSocialDirectoryV2({
 
   // Get Suggested Friends
   const getSuggestions = () => {
-    const currentUid = auth.currentUser?.uid;
+    if(!session||auth.currentUser!==session)return [];
+    const currentUid = session.uid;
 
     return dbUsers
       .filter(
         user =>
           user.id !== currentUid &&
-          user.isProfileVisible !== false
+          user.isProfileVisible === true
       )
       .map(user => {
         const connection = connections.find(item =>
@@ -344,11 +356,11 @@ export function useSocialDirectoryV2({
 
         return {
           id: user.id,
-          name: user.name || user.email || 'Usuário do Kyrub',
+          name: user.name || 'Usuário do Kyrub',
           role: getUserRole(user),
           added: connectionStatus === 'accepted',
           avatar: user.photoUrl || '',
-          bio: user.bio || user.whatsapp || '',
+          bio: user.bio || '',
           isProfileVisible: true,
           favorited: existingFriend?.favorited ?? false,
           connectionStatus,
@@ -389,7 +401,7 @@ export function useSocialDirectoryV2({
   const handleAcceptRequest = async (request: any) => {
     const currentUser = auth.currentUser;
 
-    if (!currentUser) return;
+    if (!currentUser || currentUser!==session) return;
 
     const connectionId =
       request.connectionId ||
@@ -422,7 +434,7 @@ export function useSocialDirectoryV2({
   ) => {
     const currentUser = auth.currentUser;
 
-    if (!currentUser) return;
+    if (!currentUser || currentUser!==session) return;
 
     const connectionId = getConnectionId(
       currentUser.uid,

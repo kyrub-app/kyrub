@@ -19,9 +19,16 @@ describe('Finance Results & Margins workspace', () => {
     assert.match(workspace, /Financeiro · Resultados & Margens/);
   });
 
-  test('loads canonical order and product profitability through authorized server endpoints', () => {
-    assert.match(workspace, /\/api\/store-finance\/profitability\?\$\{query\}/);
-    assert.match(workspace, /\/api\/store-finance\/profitability\/products\?\$\{query\}/);
+  test('loads canonical order and product profitability through one authorized combined server request', () => {
+    assert.match(workspace, /\/api\/store-finance\/profitability\?\$\{query\}&includeProducts=true/);
+    assert.doesNotMatch(workspace, /\/api\/store-finance\/profitability\/products\?/);
+    const router = readFileSync('server/payments/storeOrderProfitabilityRouter.ts', 'utf8');
+    const combined = router.slice(router.indexOf("router.get('/'"), router.indexOf("router.get('/products'"));
+    assert.ok(combined.indexOf('await requireOwner') < combined.indexOf('await reconcileStoreOrderProfitability(storeId)'));
+    assert.match(combined, /await reconcileStoreProductProfitability\(storeId, profitability\)/);
+    assert.match(combined, /json\(\{ storeId, orders: profitability, products \}\)/);
+    assert.match(router, /router\.get\('\/products'/);
+    assert.match(workspace, /result\.orders\?\.storeId!==storeId\|\|result\.products\?\.storeId!==storeId/);
     assert.match(workspace, /auth\.currentUser/);
     assert.match(workspace, /getIdToken\(\)/);
     assert.match(workspace, /Authorization: `Bearer \$\{token\}`/);

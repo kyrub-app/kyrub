@@ -1,4 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
+import type {RefundOwnerAuthority} from '../identity/refundOwnerAuthorization.js';
 import {
   calculateAuthoritativeCancellationAmount,
   loadCommercialRefundAuthority,
@@ -82,9 +83,13 @@ export const cancelOrderItemsWithAuthoritativeRefund = async (input: {
   reason: string;
   alternative?: string;
   selections: unknown;
+  authority?:RefundOwnerAuthority;
 }): Promise<OrderItemCancellationResult> => {
   const storeId = clean(input.storeId);
   const orderId = clean(input.orderId);
+  // The common mutation service now validates frozen commercial evidence
+  // inside its transaction, including exact replays. Avoid a stale outer read.
+  if(input.authority)return cancelOrderItemsWithLegacyCompatibleRefund(input);
   const authority = await loadCommercialRefundAuthority(storeId, orderId);
 
   if (authority) {

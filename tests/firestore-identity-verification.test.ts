@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -17,6 +18,11 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  where,
+  writeBatch,
+  orderBy,
+  documentId,
+  startAfter,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
@@ -162,4 +168,183 @@ test('compliance can review a bounded list and approve requested profiles', asyn
       updatedAt: serverTimestamp(),
     })
   );
+});
+
+
+test('staged Renda age gate requires civil identity AND verified adulthood for direct hiring', async()=>{
+  const requesterId='requester-age',freelancerId='freelancer-age';
+  const requester=environment.authenticatedContext(requesterId,{role:'owner'}).firestore();
+  const freelancer=environment.authenticatedContext(freelancerId).firestore();
+  const vacancy=doc(requester,'vagas','AgeVacancy0000000001');
+  const application=doc(freelancer,'candidaturas','AgeVacancy0000000001__freelancer-age');
+  const vacancyPayload={ownerId:requesterId,title:'Vaga de homologacao',status:'open'};
+  const applicationPayload={userId:freelancerId,vagaId:'AgeVacancy0000000001',ownerId:requesterId,status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+  const age=async(uid:string,status:string,recordUid=uid)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid:recordUid,status});
+    });
+  };
+  const approve=async(uid:string,profile:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'identity_verifications',uid),{uid,status:'approved',approvedProfiles:[profile]});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'renda_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await approve(requesterId,'requester');
+  await approve(freelancerId,'freelancer');
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await assertFails(setDoc(application,applicationPayload));
+  await age(requesterId,'declared_adult');
+  await age(freelancerId,'inconclusive');
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await assertFails(setDoc(application,applicationPayload));
+  await age(requesterId,'verified_adult',freelancerId);
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await age(requesterId,'verified_adult');
+  await age(freelancerId,'verified_adult');
+  await approve(requesterId,'freelancer');
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await approve(requesterId,'requester');
+  await assertSucceeds(setDoc(vacancy,vacancyPayload));
+  await approve(freelancerId,'requester');
+  await assertFails(setDoc(application,applicationPayload));
+  await approve(freelancerId,'freelancer');
+  await assertFails(setDoc(application,{...applicationPayload,userId:requesterId}));
+  await assertSucceeds(setDoc(application,applicationPayload));
+  await age(freelancerId,'suspended');
+  await assertFails(setDoc(doc(freelancer,'candidaturas','AgeVacancy0000000001__freelancer-age-other'),applicationPayload));
+  await assertFails(setDoc(doc(requester,'renda_age_release_private','current'),{mode:'disabled'}));
+});
+
+
+test('freelance vacancy and application ownership cannot be forged or used across contractors',async()=>{
+  const ownerId='hiring-owner',otherId='hiring-other',workerId='hiring-worker';
+  const owner=environment.authenticatedContext(ownerId,{role:'owner'}).firestore();
+  const other=environment.authenticatedContext(otherId,{role:'owner'}).firestore();
+  const worker=environment.authenticatedContext(workerId).firestore();
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    for(const [uid,profile] of [[ownerId,'requester'],[otherId,'requester'],[workerId,'freelancer']]){
+      await setDoc(doc(db,'identity_verifications',uid),{uid,status:'approved',approvedProfiles:[profile]});
+      await setDoc(doc(db,'age_eligibility_private',uid),{uid,status:'verified_adult'});
+    }
+    await setDoc(doc(db,'renda_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const vacancy=(db:any)=>doc(db,'vagas','OwnedVacancy00000001');
+  await assertFails(setDoc(vacancy(other),{ownerId,title:'Impersonacao'}));
+  await assertSucceeds(setDoc(vacancy(owner),{ownerId,title:'Vaga real',status:'open'}));
+  await assertFails(updateDoc(vacancy(other),{title:'Alteracao indevida'}));
+  await assertFails(deleteDoc(vacancy(other)));
+  await assertFails(updateDoc(vacancy(owner),{ownerId:otherId}));
+  const application=(db:any)=>doc(db,'candidaturas','OwnedVacancy00000001__hiring-worker');
+  const payload={ownerId,userId:workerId,vagaId:'OwnedVacancy00000001',status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
+  await assertFails(setDoc(application(worker),{...payload,ownerId:otherId}));
+  await assertFails(setDoc(application(worker),{...payload,vagaId:'missing'}));
+  await assertFails(setDoc(application(worker),{...payload,status:'accepted'}));
+  await assertFails(setDoc(application(worker),{...payload,paymentStatus:'paid'}));
+  await assertFails(getDoc(application(other)));
+  await assertSucceeds(getDoc(application(worker))); // own absent deterministic receipt
+  await assertFails(setDoc(doc(worker,'candidaturas','duplicate-key'),payload));
+  await assertSucceeds(setDoc(application(worker),payload));
+  await assertFails(setDoc(application(worker),payload)); // cannot overwrite receipt
+  await assertSucceeds(getDocs(query(collection(worker,'candidaturas'),where('userId','==',workerId),limit(50))));
+  await assertSucceeds(getDocs(query(collection(owner,'candidaturas'),where('ownerId','==',ownerId),limit(50))));
+  await assertFails(getDocs(query(collection(other,'candidaturas'),where('ownerId','==',ownerId),limit(50))));
+  await assertFails(updateDoc(application(worker),{status:'accepted'}));
+  await assertFails(getDoc(application(other)));
+  await assertSucceeds(getDoc(application(owner)));
+  await assertSucceeds(getDoc(application(worker)));
+  await assertFails(updateDoc(application(other),{status:'accepted'}));
+  await assertFails(updateDoc(application(worker),{ownerId:otherId}));
+  await assertFails(updateDoc(application(worker),{vagaId:'missing'}));
+  await assertFails(deleteDoc(application(other)));
+  const transition=(db:any,status:string)=>updateDoc(application(db),{status,updatedAt:serverTimestamp()});
+  await assertFails(transition(owner,'completed'));
+  await assertFails(transition(worker,'completion_requested'));
+  await assertSucceeds(transition(owner,'accepted'));
+  await assertFails(deleteDoc(application(worker)));
+  await assertFails(transition(owner,'completion_requested'));
+  await assertFails(transition(worker,'completed'));
+  await assertSucceeds(transition(worker,'completion_requested'));
+  await assertFails(transition(worker,'completed'));
+  await assertFails(transition(other,'completed'));
+  await assertSucceeds(transition(owner,'accepted')); // request returned for review
+  await assertSucceeds(transition(worker,'completion_requested'));
+  await assertFails(updateDoc(application(owner),{status:'completed',paymentStatus:'paid',updatedAt:serverTimestamp()}));
+  await assertSucceeds(transition(owner,'completed'));
+  await assertFails(transition(owner,'accepted'));
+  await assertFails(deleteDoc(application(worker)));
+  await assertSucceeds(deleteDoc(vacancy(owner)));
+  await assertSucceeds(getDoc(application(owner)));
+  await assertSucceeds(getDoc(application(worker)));
+});
+
+
+test('hiring negotiations are private, append-only and survive completion', async()=>{
+  const ownerId='negotiation-owner',workerId='negotiation-worker',outsiderId='negotiation-outsider';
+  const owner=environment.authenticatedContext(ownerId,{role:'owner'}).firestore();
+  const worker=environment.authenticatedContext(workerId).firestore();
+  const outsider=environment.authenticatedContext(outsiderId,{role:'owner'}).firestore();
+  const admin=environment.authenticatedContext('negotiation-admin',{role:'admin'}).firestore();
+  const vacancyId='Negotiation000000001';
+  const applicationId=vacancyId+'__'+workerId;
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    for(const [uid,profile] of [[ownerId,'requester'],[workerId,'freelancer'],[outsiderId,'requester']]){
+      await setDoc(doc(db,'identity_verifications',uid),{uid,status:'approved',approvedProfiles:[profile]});
+      await setDoc(doc(db,'age_eligibility_private',uid),{uid,status:'verified_adult'});
+    }
+    await setDoc(doc(db,'renda_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await assertSucceeds(setDoc(doc(owner,'vagas',vacancyId),{ownerId,title:'Teste',status:'open'}));
+  await assertSucceeds(setDoc(doc(worker,'candidaturas',applicationId),{ownerId,userId:workerId,vagaId:vacancyId,status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+  const ref=(db:any,id='message-one')=>doc(db,'candidaturas',applicationId,'messages',id);
+  const payload=(senderId:string,receiverId:string,text:string)=>({senderId,receiverId,text,createdAt:serverTimestamp()});
+  await assertSucceeds(setDoc(ref(worker),payload(workerId,ownerId,'Proposta de horário')));
+  await assertSucceeds(setDoc(ref(owner,'message-two'),payload(ownerId,workerId,'Horário confirmado')));
+  await assertFails(setDoc(ref(outsider,'message-three'),payload(outsiderId,ownerId,'Intrusão')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(ownerId,workerId,'Autor falso')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(workerId,outsiderId,'Destinatário falso')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(workerId,ownerId,'')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(workerId,ownerId,'x'.repeat(4001))));
+  await assertFails(setDoc(ref(worker,'message-three'),{...payload(workerId,ownerId,'Data falsa'),createdAt:Timestamp.fromMillis(1)}));
+  for(const db of [owner,worker]){
+    await assertSucceeds(getDoc(ref(db)));
+    await assertSucceeds(getDocs(query(collection(db,'candidaturas',applicationId,'messages'),limit(100))));
+    await assertFails(updateDoc(ref(db),{text:'alterada'}));
+    await assertFails(deleteDoc(ref(db)));
+    await assertFails(setDoc(ref(db),payload(workerId,ownerId,'sobrescrita')));
+  }
+  for(const db of [outsider,admin]){
+    await assertFails(getDoc(ref(db)));
+    await assertFails(getDocs(query(collection(db,'candidaturas',applicationId,'messages'),limit(100))));
+    await assertFails(updateDoc(ref(db),{text:'alterada'}));
+    await assertFails(deleteDoc(ref(db)));
+  }
+  // Seed a historical page with identical timestamps to verify stable tie-breaking.
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    const batch=writeBatch(db);
+    for(let i=0;i<103;i++){
+      batch.set(ref(db,'history-'+String(i).padStart(3,'0')),{senderId:workerId,receiverId:ownerId,text:'Registro histórico '+i,createdAt:Timestamp.fromMillis(1700000000000)});
+    }
+    await batch.commit();
+  });
+  const ordered=query(collection(worker,'candidaturas',applicationId,'messages'),orderBy('createdAt','desc'),orderBy(documentId(),'desc'));
+  await assertFails(getDocs(query(ordered,limit(101))));
+  const first=await assertSucceeds(getDocs(query(ordered,limit(51))));
+  const second=await assertSucceeds(getDocs(query(ordered,startAfter(first.docs[49]),limit(51))));
+  const third=await assertSucceeds(getDocs(query(ordered,startAfter(second.docs[49]),limit(51))));
+  const ids=[...first.docs.slice(0,50),...second.docs.slice(0,50),...third.docs].map(d=>d.id);
+  if(ids.length!==105||new Set(ids).size!==105||third.docs.length!==5)throw Error('Incomplete or duplicated negotiation history.');
+  const transition=(db:any,status:string)=>updateDoc(doc(db,'candidaturas',applicationId),{status,updatedAt:serverTimestamp()});
+  await assertSucceeds(transition(owner,'accepted'));
+  await assertSucceeds(transition(worker,'completion_requested'));
+  await assertSucceeds(transition(owner,'completed'));
+  await assertSucceeds(getDoc(ref(worker)));
+  await assertSucceeds(getDoc(ref(owner)));
+  await assertFails(setDoc(ref(owner,'message-four'),payload(ownerId,workerId,'Depois da conclusão')));
+  await assertFails(deleteDoc(ref(owner)));
 });

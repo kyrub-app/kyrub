@@ -27,19 +27,25 @@ const finiteIso = (value: unknown): string => {
 
 const CATEGORIES = new Set<UserNotificationCategory>([
   'store_chat',
+  'social_chat',
+  'note_invitation',
   'order',
   'loyalty',
   'marketing',
   'community_group_invite',
   'user_forward',
+  'freelance',
   'system',
 ]);
 const TARGET_KINDS = new Set<UserNotificationTargetKind>([
   'store_chat',
+  'social_chat',
+  'note_invitation',
   'storefront',
   'order',
   'community_group_invite',
   'community_post',
+  'freelance',
   'none',
 ]);
 
@@ -66,6 +72,9 @@ const parseNotification = (
     typeof target.storeId !== 'string' ||
     typeof target.customerId !== 'string' ||
     typeof target.orderId !== 'string' ||
+    (target.kind === 'freelance' && !/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(clean(target.hiringApplicationId))) ||
+    (target.kind === 'social_chat' && !clean(target.connectionId)) ||
+    (target.kind === 'note_invitation' && !clean(target.noteInvitationId)) ||
     (target.kind === 'community_group_invite' &&
       (!clean(target.communityId) || !clean(target.groupId))) ||
     (target.kind === 'community_post' &&
@@ -94,14 +103,14 @@ export const listUserNotifications = async (input: {
       .get(),
     notificationsCollection(recipientUserId)
       .where('readAt', '==', '')
-      .get(),
+      .count().get(),
   ]);
 
   return {
     notifications: recentSnapshot.docs.map(document =>
       parseNotification(document, recipientUserId)
     ),
-    unreadCount: unreadSnapshot.size,
+    unreadCount: unreadSnapshot.data().count,
   };
 };
 
@@ -141,18 +150,14 @@ export const markAllUserNotificationsRead = async (input: {
   if (!recipientUserId) throw new Error('USER_NOTIFICATION_USER_REQUIRED');
   const now = input.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('USER_NOTIFICATION_TIME_INVALID');
-  const snapshot = await notificationsCollection(recipientUserId)
-    .where('readAt', '==', '')
-    .limit(200)
-    .get();
-  if (snapshot.empty) return 0;
-
-  const batch = adminDb.batch();
-  const readAt = now.toISOString();
-  for (const document of snapshot.docs) {
-    parseNotification(document, recipientUserId);
-    batch.update(document.ref, { readAt });
-  }
-  await batch.commit();
-  return snapshot.size;
+  const query=notificationsCollection(recipientUserId).where('readAt','==','').limit(200);
+  return adminDb.runTransaction(async tx=>{
+    const snapshot=await tx.get(query);
+    const readAt=now.toISOString();
+    for(const document of snapshot.docs){
+      parseNotification(document,recipientUserId);
+      tx.update(document.ref,{readAt});
+    }
+    return snapshot.size;
+  });
 };

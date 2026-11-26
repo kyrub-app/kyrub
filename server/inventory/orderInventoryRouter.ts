@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth';
 import { ConsultantHttpError } from '../ai/types';
 import { adminDb } from '../firebaseAdmin';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
 import { reviewAttendanceOrderAuthoritatively } from './attendanceReviewService';
 import { reconcileOrderInventoryAfterMutation } from './orderInventoryAdjustment';
@@ -76,7 +77,7 @@ const authorizeStoreOperation = async (
   if (!canonicalStoreId) throw new Error('STORE_ACCESS_DENIED');
   const memberSnapshot = await adminDb.doc(`stores/${canonicalStoreId}/members/${userId}`).get();
   const member = parseStoreMember(memberSnapshot.data());
-  if (!member || member.status !== 'active' || !hasStorePermission(member.role, permission)) {
+  if (!member || member.storeId!==canonicalStoreId||member.userId!==userId||member.role==='owner'||member.status !== 'active' || !hasStorePermission(member.role, permission)) {
     throw new Error('STORE_ACCESS_DENIED');
   }
 };
@@ -126,10 +127,11 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
-  if (message === 'STORE_ACCESS_DENIED') {
+  if (message === 'STORE_ACCESS_DENIED' || message === 'STORE_ERP_AGE_REQUIRED') {
     response.status(403).json({ error: 'Seu papel não possui permissão para executar esta ação na loja.' });
     return;
   }
+  if(message==='DELIVERY_V1_STANDBY'){response.status(409).json({error:'Entregas sob demanda estão em standby. Utilize entregador próprio.'});return;}
   if (message === 'AUTH_UNAVAILABLE') {
     response.status(503).json({
       error: 'Não foi possível validar sua sessão agora. Tente novamente em instantes.',
@@ -167,31 +169,6 @@ const orderReference = (tenantId: string, orderId: string) =>
 
 const orderCollection = (tenantId: string) =>
   adminDb.collection(`artifacts/${tenantId}/public/data/customerOrders`);
-
-const persistDeliveryProvider = async (
-  tenantId: string,
-  orderId: string,
-  deliveryProvider: DeliveryProvider
-): Promise<void> => {
-  const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
-  const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
-  const updatedAt = new Date().toISOString();
-  const payload = {
-    deliveryProvider,
-    deliveryProviderChosenAt: updatedAt,
-    updatedAt,
-  };
-  const batch = adminDb.batch();
-  batch.set(orderReference(tenantId, orderId), payload, { merge: true });
-  if (canonicalStoreId) {
-    batch.set(
-      adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-      payload,
-      { merge: true }
-    );
-  }
-  await batch.commit();
-};
 
 const markPartnerSyncError = async (
   tenantId: string,
@@ -324,6 +301,7 @@ export const createOrderInventoryRouter = (): Router => {
         throw new Error('Autorização 99Food inválida para este status do pedido.');
       }
 
+      await adminDb.runTransaction(tx=>requireHumanOrderOperation(tx,tenantId,userId,permissionForOrderStatus(requestedStatus)));
       const currentSnapshot = await orderReference(tenantId, orderId).get();
       if (!currentSnapshot.exists) throw new Error('Pedido não encontrado.');
       const currentData = currentSnapshot.data() as Record<string, unknown>;
@@ -406,7 +384,7 @@ export const createOrderInventoryRouter = (): Router => {
       response.json(
         await reconcileOrderInventoryAfterMutation(
           tenantId,
-          request.params.orderId
+          request.params.orderId,userId
         )
       );
     } catch (error) {
@@ -422,7 +400,7 @@ export const createOrderInventoryRouter = (): Router => {
         await reviewAttendanceOrderAuthoritatively(
           tenantId,
           request.params.orderId,
-          request.body
+          request.body,userId
         )
       );
     } catch (error) {
@@ -483,16 +461,9 @@ export const createOrderInventoryRouter = (): Router => {
         {
           reason: decision.reason,
           alternative: decision.alternative,
-        }
+          deliveryProvider:decision.deliveryProvider,
+        },{uid:userId,permission:permissionForOrderStatus(status)}
       );
-
-      if (status === 'accepted' && decision.deliveryProvider) {
-        await persistDeliveryProvider(
-          tenantId,
-          result.orderId,
-          decision.deliveryProvider
-        );
-      }
 
       let partnerSync:
         | 'not-applicable'

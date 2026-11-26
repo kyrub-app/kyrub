@@ -39,7 +39,7 @@ describe('connected status covers and private groups', () => {
     assert.match(profileSource, /onRemove/);
     assert.match(profileSource, /setRemoveContactTarget\(friend\)/);
     assert.match(profileSource, /directory\.handleToggleFriend\(friendId\)/);
-    assert.match(profileSource, /role="dialog" aria-modal="true" aria-label="Confirmar remoção de contato"/);
+    assert.match(profileSource, /role="dialog" aria-modal="true" aria-label=\{removeContactTarget\.connectionStatus === 'pending_sent' \? 'Confirmar cancelamento de solicitação' : 'Confirmar remoção de contato'\}/);
     assert.doesNotMatch(profileSource, /data-kyrub-connected-profile-trigger/);
   });
 

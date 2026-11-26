@@ -18,7 +18,7 @@
       // The group creator must be an active member. Each invited UID is checked
       // again at read time against community membership, preventing outsiders
       // from reading even if a stale or invalid UID appears in memberIds.
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'groupId', 'communityId', 'creatorId', 'name', 'memberIds',
           'createdAt', 'updatedAt'
@@ -70,6 +70,7 @@
         allow get, list: if canAccessCommunityGroup(groupId);
 
         allow create: if canAccessCommunityGroup(groupId)
+          && canWriteSocialWithAge()
           && request.resource.data.keys().hasAll([
             'authorId', 'text', 'createdAt'
           ])

@@ -38,6 +38,18 @@ const CATEGORY_ITEMS: Array<{
     icon: MessageSquareText,
   },
   {
+    key: 'social_chat',
+    label: 'Mensagens entre Kairubidos',
+    description: 'Avisos de mensagens de pessoas conectadas a você.',
+    icon: MessageSquareText,
+  },
+  {
+    key: 'note_invitation',
+    label: 'Convites de notas e tarefas',
+    description: 'Quando alguém convidar você para colaborar numa nota.',
+    icon: BellRing,
+  },
+  {
     key: 'order',
     label: 'Pedidos',
     description: 'Mudanças e eventos operacionais de pedidos quando forem conectados à central.',
@@ -66,6 +78,12 @@ const CATEGORY_ITEMS: Array<{
     label: 'Pessoas',
     description: 'Publicações encaminhadas por Kairubidos conectados.',
     icon: MessageSquareText,
+  },
+  {
+    key: 'freelance',
+    label: 'Freelas',
+    description: 'Alertas de negociação sem exibir o conteúdo das mensagens.',
+    icon: BellRing,
   },
   {
     key: 'system',

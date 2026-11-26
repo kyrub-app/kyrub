@@ -2,6 +2,7 @@ import {isTagId} from '../../shared/kyrubTagContract';
 import { parsePublicDestinationPath } from '../../shared/publicDestinationRoutes';
 
 export type KyrubAppRoute =
+  | { kind: 'public-legal'; documentType: 'terms' | 'privacy'; canonicalPath: string }
   | {
       kind: 'public-storefront';
       slug: string;
@@ -58,6 +59,10 @@ export const buildPublicStorefrontUrl = (
 export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
   const cleanPath =
     `/${pathname}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+
+  if (cleanPath === '/termos-de-uso' || cleanPath === '/politica-de-privacidade') {
+    return { kind: 'public-legal', documentType: cleanPath === '/termos-de-uso' ? 'terms' : 'privacy', canonicalPath: cleanPath };
+  }
 
   if(cleanPath==='/tag'||cleanPath.startsWith('/tag/')){
     const identifier=cleanPath.slice('/tag/'.length);

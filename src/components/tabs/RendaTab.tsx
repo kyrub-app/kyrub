@@ -1,3 +1,4 @@
+import {COMMERCIAL_V1_SCOPE} from '../../../shared/commercialV1Scope';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -241,8 +242,7 @@ export function RendaTab({
               </button>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
-              Gerencie entregas locais do seu negócio ou faça
-              fretes sob demanda para faturar no ecossistema.
+              {COMMERCIAL_V1_SCOPE.onDemandDelivery?'Gerencie entregas locais ou faça fretes sob demanda.':'Entregas sob demanda em preparação. Contrate um motofretista diretamente nos Freelas.'}
             </p>
           </div>
 
@@ -253,6 +253,7 @@ export function RendaTab({
                 ? onGuestLoginRequired?.('solicitar uma entrega')
                 : setShowDeliveryModal(true)}
               className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-colors hover:bg-orange-500"
+              disabled={!COMMERCIAL_V1_SCOPE.onDemandDelivery}
               id="btn-solicitar-entrega"
             >
               Solicitar entrega
@@ -264,10 +265,11 @@ export function RendaTab({
                 : setShowFazerEntregasModal(true)
               }
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-colors hover:text-orange-300"
+              disabled={!COMMERCIAL_V1_SCOPE.onDemandDelivery}
               id="btn-fazer-entregas"
             >
               <span>Fazer entregas</span>
-              {deliveries.filter(
+              {COMMERCIAL_V1_SCOPE.onDemandDelivery&&deliveries.filter(
                 delivery => delivery.status === 'available'
               ).length > 0 && (
                 <span className="rounded-full bg-orange-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
@@ -292,8 +294,7 @@ export function RendaTab({
               </h3>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
-              Contrate profissionais para sua loja ou preste
-              serviços especializados para negócios locais.
+              Contrate profissionais para sua loja, inclusive motofretistas por diária, turno ou período. Combine o serviço e o pagamento diretamente.
             </p>
           </div>
 

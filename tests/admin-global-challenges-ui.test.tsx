@@ -177,3 +177,45 @@ test('visual QA host refuses non-demo projects, remote emulators and real creden
     assert.doesNotMatch(result.stdout, /"ready":true/);
   }
 });
+
+
+test('official community configuration loads only on demand, confirms exact candidate and persists server reply', async () => {
+  const normalFetch=globalThis.fetch;
+  let linked=false;
+  let mutations=0;
+  const community={communityId:'official-fixture',name:'Comunidade Kyrub de teste'};
+  globalThis.fetch=(async(input:RequestInfo|URL,init:RequestInit={})=>{
+    const url=new URL(String(input),'http://localhost');
+    const operation=url.searchParams.get('operation');
+    if(operation==='official-community'||operation==='link-official-community'){
+      calls.push({url,init});
+      assert.equal((init.headers as any).authorization,'Bearer fixture-id-token');
+      assert.equal(init.cache,'no-store');
+      if(operation==='official-community'){
+        assert.equal(init.method,'GET');
+        return Response.json({binding:linked?{state:'linked',community}:{state:'unlinked',candidates:[community],truncated:false}});
+      }
+      assert.equal(init.method,'POST');
+      assert.deepEqual(JSON.parse(init.body as string),{communityId:community.communityId});
+      mutations++;linked=true;
+      return Response.json({binding:{state:'linked',community}});
+    }
+    return normalFetch(input,init);
+  }) as typeof fetch;
+  await render();
+  assert.equal(calls.some(c=>c.url.searchParams.get('operation')==='official-community'),false);
+  await click('Configurar comunidade oficial');
+  await flush();
+  assert.equal(button('Vincular comunidade oficial').disabled,true);
+  await change('Selecionar comunidade pública de sua propriedade',community.communityId);
+  window.confirm=message=>{assert.match(message,/Comunidade Kyrub de teste/);return false;};
+  await click('Vincular comunidade oficial');assert.equal(mutations,0);
+  window.confirm=()=>true;
+  await click('Vincular comunidade oficial');await flush();
+  assert.equal(mutations,1);
+  assert.match(container.textContent!,/Comunidade vinculada: Comunidade Kyrub de teste/);
+  assert.equal(button('Vincular comunidade oficial'),undefined);
+  await click('Atualizar vínculo');await flush();
+  assert.match(container.textContent!,/Comunidade vinculada: Comunidade Kyrub de teste/);
+  assert.equal(mutations,1);
+});

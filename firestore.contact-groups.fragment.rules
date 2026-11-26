@@ -31,14 +31,14 @@
       allow read: if isSignedIn()
         && request.auth.uid == userId;
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && request.auth.uid == userId
         && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && hasValidContactGroupShape(incoming());
 
-      allow update: if isSignedIn()
+      allow update: if canWriteSocialWithAge()
         && request.auth.uid == userId
         && existing().ownerId == request.auth.uid
         && incoming().groupId == existing().groupId

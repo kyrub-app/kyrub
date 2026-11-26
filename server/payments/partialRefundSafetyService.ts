@@ -1,3 +1,4 @@
+import type { Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 
 const clean = (value: unknown): string =>
@@ -17,18 +18,15 @@ export interface ConfirmedPartialRefundSummary {
 export const getConfirmedPartialRefundSummary = async (input: {
   storeId: string;
   orderId: string;
-}): Promise<ConfirmedPartialRefundSummary> => {
+},transaction?:Transaction): Promise<ConfirmedPartialRefundSummary> => {
   const storeId = clean(input.storeId);
   const orderId = clean(input.orderId);
   if (!storeId || !orderId) {
     throw new Error('PAYMENT_REFUND_TARGET_REQUIRED');
   }
 
-  const snapshot = await adminDb
-    .collection(`stores/${storeId}/paymentPartialRefunds`)
-    .where('orderId', '==', orderId)
-    .limit(51)
-    .get();
+  const query=adminDb.collection(`stores/${storeId}/paymentPartialRefunds`).where('orderId','==',orderId).limit(51);
+  const snapshot=transaction?await transaction.get(query):await query.get();
 
   // A capped scan must never silently treat omitted records as no history.
   // An oversized history needs independent reconciliation, not a blind refund.
@@ -65,8 +63,8 @@ export const getConfirmedPartialRefundSummary = async (input: {
 export const assertFullRefundHasNoConfirmedPartialHistory = async (input: {
   storeId: string;
   orderId: string;
-}): Promise<void> => {
-  const summary = await getConfirmedPartialRefundSummary(input);
+},transaction?:Transaction): Promise<void> => {
+  const summary = await getConfirmedPartialRefundSummary(input,transaction);
   if (summary.unresolvedCount > 0) {
     throw new Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
   }

@@ -12,6 +12,10 @@ jobs:
   chromium-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        account-root: [legacy, owner-only]
     env:
       CI: 'true'
       NODE_ENV: test
@@ -42,14 +46,45 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Compose Firestore security rules
         run: npm run firestore:compose
+      - name: Select private account root in disposable emulator job
+        if: matrix.account-root == 'owner-only'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GCLOUD_PROJECT" = kyrub-security-test
+          test "$GOOGLE_CLOUD_PROJECT" = kyrub-security-test
+          test "$FIREBASE_PROJECT_ID" = kyrub-security-test
+          test "$NODE_ENV" = test
+          test -z "${VERCEL:-}${FIREBASE_SERVICE_ACCOUNT_JSON:-}${GOOGLE_APPLICATION_CREDENTIALS:-}"
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const baseline=readFileSync('.firebase/firestore.combined.rules','utf8');
+          const pattern=/match \/users\/\{userId\}\s*\{\s*allow read: if isSignedIn\(\);/g;
+          assert.equal([...baseline.matchAll(pattern)].length,1);
+          const candidate=baseline.replace(pattern,`match /users/{userId} {
+                allow get: if isSignedIn() && request.auth.uid == userId;
+                allow list: if false;`);
+          const config=JSON.parse(readFileSync('firebase.security.json','utf8'));
+          config.firestore.rules='.firebase/firestore.owner-only-ci.rules';
+          writeFileSync('.firebase/firestore.owner-only-ci.rules',candidate);
+          writeFileSync('.firebase-owner-only-ci.json',JSON.stringify(config));
+          NODE
       - name: Run browser smoke against emulator-only local app
         run: |
-          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '\''npm run dev > /tmp/kyrub-e2e-server.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/first-store-publication-playwright-smoke.mjs'\'''
+          config=firebase.security.json
+          if [ "${{ matrix.account-root }}" = owner-only ]; then config=.firebase-owner-only-ci.json; fi
+          npx --yes firebase-tools emulators:exec --config "$config" --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '\''npm run dev > /tmp/kyrub-e2e-server.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/first-store-publication-playwright-smoke.mjs'\'''
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: kyrub-isolated-chromium-smoke
+          name: kyrub-isolated-chromium-smoke-${{ matrix.account-root }}
           path: |
             playwright-kyrub-isolated-smoke.png
+            playwright-kyrub-challenge-available.png
+            playwright-kyrub-challenge-completed.png
+            playwright-kyrub-erp-navigation-failure.png
+            playwright-kyrub-challenge-available-failure.png
+            playwright-kyrub-challenge-completed-failure.png
           if-no-files-found: ignore
           retention-days: 3

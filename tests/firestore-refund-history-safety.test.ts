@@ -54,6 +54,9 @@ test('paid partial cancellation atomically creates an unresolved refund marker b
   assert.equal(duplicate.duplicate,true);
   assert.equal(duplicate.refundStatus,'required');
   assert.equal((await partials(orderId).where('orderId','==',orderId).get()).size,1);
+  await assert.rejects(cancelOrderItemsWithRefund({...input,operationId:'another_partial_refund',selections:[{lineId:'item_two',quantity:1}]}),/PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED/);
+  assert.equal((await orderRef.get()).get('total'),30);
+  assert.equal((await partials(orderId).where('orderId','==',orderId).get()).size,1);
 });
 
 test('any unresolved, failed or unknown partial provider state blocks an integral refund', async () => {

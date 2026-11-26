@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canReserveSocialAddress, isSocialAddress, projectSocialAddress } from '../server/identity/publicSocialAddressPolicy';
+import { canReserveSocialAddress, isSocialAddress, matchesSocialAddressRecord, projectSocialAddress } from '../server/identity/publicSocialAddressPolicy';
 const profile={kind:'profile',identifier:'maufco',targetId:'uid-1'} as const;
 const community={kind:'community',identifier:'nacao-roqueira',targetId:'community-1'} as const;
 test('public social profile is explicit opt-in and contains no account data',()=>{
@@ -19,7 +20,9 @@ test('community projection excludes private communities and internal data',()=>{
 test('only source owner can reserve an eligible social address',()=>{
   assert.equal(canReserveSocialAddress('profile','uid-1','uid-1',{isProfileVisible:true}),true);
   assert.equal(canReserveSocialAddress('profile','uid-2','uid-1',{isProfileVisible:true}),false);
-  assert.equal(canReserveSocialAddress('profile','uid-1','uid-1',{isProfileVisible:false}),false);
+  assert.equal(canReserveSocialAddress('profile','uid-1','uid-1',{isProfileVisible:false}),true);
+  assert.equal(canReserveSocialAddress('profile','uid-1','uid-1',undefined),false);
+  assert.equal(projectSocialAddress(profile,{isProfileVisible:false,name:'Privado'}),null);
   assert.equal(canReserveSocialAddress('community','uid-1','community-1',{ownerId:'uid-1',visibility:'public'}),true);
   assert.equal(canReserveSocialAddress('community','uid-2','community-1',{ownerId:'uid-1',visibility:'public'}),false);
   assert.equal(canReserveSocialAddress('community','uid-1','community-1',{ownerId:'uid-1',visibility:'private'}),false);
@@ -33,4 +36,186 @@ test('public social routes are isolated from marketplace and legacy staff paths'
   assert.equal(resolveKyrubAppRoute('/comunidade/rocks/staff').kind,'invalid-public-social');
   assert.equal(resolveKyrubAppRoute('/@kyrub-oficial').kind,'public-storefront');
   assert.equal(resolveKyrubAppRoute('/do-mau/staff').kind,'staff-app');
+});
+
+test('address ownership proof rejects mismatched namespace, identifier and target',()=>{
+ assert.equal(matchesSocialAddressRecord(profile,'profile','maufco','uid-1'),true);
+ for(const record of [undefined,{...profile,kind:'community'},{...profile,identifier:'other'},{...profile,targetId:'uid-2'}])
+  assert.equal(matchesSocialAddressRecord(record,'profile','maufco','uid-1'),false);
+});
+
+
+test('unified editor reserves a personal identifier without publishing it or deriving it from email',()=>{
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const address=readFileSync('src/components/PublicSocialAddressEditor.tsx','utf8');
+ const center=readFileSync('src/components/modals/UserProfileModal.tsx','utf8');
+ const service=readFileSync('server/identity/publicSocialAddressService.ts','utf8');
+ assert.match(editor,/<PublicSocialAddressEditor key=\{user.uid\} kind="profile" ownerId=\{user.uid\}/);
+ assert.match(service,/publiclyVisible: kind === 'profile' \? source.isProfileVisible === true/);
+ assert.match(address,/Reservar não torna seu perfil público/);
+ assert.match(address,/disabled=\{!status\?\.publiclyVisible\}/);
+ assert.match(center,/transport=manage-public-social-address&kind=profile/);
+ assert.match(center,/auth\.currentUser===user/);
+ assert.match(center,/Identificador ainda não definido/);
+ assert.doesNotMatch(center,/getProfileHandle|@\{profileHandle\}/);
+});
+
+test('profile completion is triggered only after persisted profile save or confirmed reservation, not a catalog read',()=>{
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const address=readFileSync('src/components/PublicSocialAddressEditor.tsx','utf8');
+ const pilot=readFileSync('src/utils/profileCompletionPilot.ts','utf8');
+ const router=readFileSync('server/gamification/profileCompletionEmulatorRouter.ts','utf8');
+ const server=readFileSync('server.ts','utf8');
+ const api=readFileSync('api/health.ts','utf8');
+ assert.match(editor,/await batch.commit\(\);\s*if\(auth.currentUser!==user\)return;[\s\S]*?setMessage\('Foto, nome e biografia sincronizados\.'\);\s*void reconcileProfileCompletionPilot\(user\)/);
+ assert.match(editor,/onReserved=\{\(\)=>void reconcileProfileCompletionPilot\(user\)\}/);
+ assert.match(address,/if\(auth.currentUser===user\)[\s\S]*?onReserved\?\.\(\)/);
+ assert.match(pilot,/import.meta.env\?\.DEV!==true/);
+ assert.match(pilot,/auth.app.options.projectId!=='demo-kyrub-welcome'/);
+ assert.match(pilot,/window.location.hostname!=='127.0.0.1'/);
+ assert.match(pilot,/body:'\{\}'/);
+ assert.match(pilot,/notifyRewardRefresh\(user,'profile_completion'\)/);
+ assert.match(router,/req.method!=='POST'/);
+ assert.match(router,/Object.keys\(req.body\).length/);
+ assert.match(server,/KYRUB_PROFILE_COMPLETION_PILOT==='true'&&process.env.NODE_ENV==='test'/);
+ assert.doesNotMatch(api,/profile-completion-pilot/);
+});
+
+test('social identity and collaborator picker do not display private contact data as profile attributes',()=>{
+ const directory=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ const picker=readFileSync('src/components/modals/UserSearchModal.tsx','utf8');
+ assert.doesNotMatch(directory,/\.(?:email|whatsapp)\s*\|\|/);
+ assert.match(directory,/user.isProfileVisible === true/);
+ assert.match(picker,/data.isProfileVisible !== true/);
+ assert.match(picker,/searchableEmail === normalizedSearch/);
+ assert.doesNotMatch(picker,/searchableEmail\.includes|data.email.split|E-mail não informado/);
+ // This is a presentation regression, not proof of database-level privacy.
+});
+
+test('both social discovery consumers use an opt-in query and minimized projection',()=>{
+ const directory=readFileSync('src/utils/socialDiscoveryDirectory.ts','utf8');
+ const hub=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ const legacy=readFileSync('src/LegacyApp.tsx','utf8');
+ assert.match(directory,/where\('isProfileVisible','==',true\)/);
+ assert.match(directory,/data.isProfileVisible!==true/);
+ assert.match(directory,/auth.currentUser!==session/);
+ assert.doesNotMatch(directory,/data\.email|data\.whatsapp|\.\.\.data/);
+ assert.match(hub,/subscribeSocialDiscoveryDirectory\(directory.setDbUsers,setDirectoryPage\)/);
+ assert.doesNotMatch(hub,/profileHandle\(profile.email/);
+ assert.match(legacy,/subscribeSocialDiscoveryDirectory\(setDbUsers\)/);
+ assert.doesNotMatch(legacy,/listenCollection\('users'/);
+});
+
+test('legacy connected and mobile social bridges cannot enumerate unfiltered accounts',()=>{
+ for(const file of ['ProfileConnectedGroupsBridge','ProfileSocialHubBridge','ProfileSocialMobileFirstBridge','ProfileConnectedCardsPolishBridge']){
+  const source=readFileSync('src/components/'+file+'.tsx','utf8');
+  assert.match(source,/subscribeSocialDiscoveryDirectory\(/,file);
+  assert.doesNotMatch(source,/collection\(db,\s*['"]users['"]\)/,file);
+ }
+});
+
+test('author presentation follows the current session without replacing immutable saved attribution',()=>{
+ const author=readFileSync('src/hooks/useLiveAuthorIdentities.ts','utf8');
+ const display=readFileSync('src/utils/authorDisplayIdentity.ts','utf8');
+ const community=readFileSync('src/utils/communityPostConnections.ts','utf8');
+ assert.match(author,/auth.onAuthStateChanged/);
+ assert.match(author,/auth.currentUser!==session/);
+ assert.match(author,/data\?\.isProfileVisible !== true \? ''/);
+ assert.match(display,/current\[authorId\]\?\.name \|\| savedName/);
+ assert.match(display,/current\[authorId\]\?\.avatar \?\? savedAvatar/);
+ assert.match(community,/const visible = data.isProfileVisible === true/);
+ assert.doesNotMatch(community,/user.displayName \|\| user.email/);
+});
+
+test('staff directory pilot is isolated and does not fall back after protected requests fail',()=>{
+ const client=readFileSync('src/utils/storeStaffDirectoryPilot.ts','utf8');
+ const workspace=readFileSync('src/components/store/StoreTeamWorkspace.tsx','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(client,/import\.meta\.env\?\.DEV===true/);
+ assert.match(client,/VITE_KYRUB_STAFF_DIRECTORY_PILOT==='true'/);
+ assert.match(client,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(client,/auth\.currentUser!==user/);
+ assert.match(client,/method:'POST',cache:'no-store'/);
+ assert.match(workspace,/staffDirectoryPilotEnabled\(\)\s*\?\s*await searchStaffDirectoryPilot/);
+ assert.match(workspace,/await inviteStaffDirectoryPilot\(user,selectedAccess\.store\.id,searchedTerm\.current,inviteRole,targetUser\.uid\)/);
+ assert.match(server,/KYRUB_STAFF_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
+ assert.match(server,/routerPromise\?\?=Promise\.all/);
+});
+
+test('social directory client and author hydration use protected local transport without fallback',()=>{
+ const client=readFileSync('src/utils/socialDirectoryPilot.ts','utf8');
+ const hook=readFileSync('src/hooks/useLiveAuthorIdentities.ts','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(client,/import\.meta\.env\?\.DEV===true/);
+ assert.match(client,/VITE_KYRUB_SOCIAL_DIRECTORY_PILOT==='true'/);
+ assert.match(client,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(client,/auth\.currentUser!==user/);
+ assert.match(client,/method:'POST',cache:'no-store'/);
+ assert.match(hook,/ids\.slice\(offset,offset\+40\)/);
+ assert.match(hook,/controller\.abort\(\)/);
+ assert.match(hook,/setProfiles\(\(\)=>concealedAuthors\(ids\)\)/);
+ assert.match(hook,/const next=concealedAuthors\(ids\)/);
+ assert.match(hook,/ids.map\(uid=>\[uid,\{name:'',avatar:''\}\]\)/);
+ assert.match(hook,/const fallback=socialDirectoryPilotEnabled\(\)\?concealedAuthors\(ids\):\{\}/);
+ assert.match(server,/KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
+ assert.match(server,/socialRouterPromise\?\?=Promise\.all/);
+});
+
+test('social suggestions use a shared session-scoped paged pilot and progressive loading',()=>{
+ const service=readFileSync('src/utils/socialDiscoveryDirectory.ts','utf8');
+ const hub=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(service,/if\(socialDirectoryPilotEnabled\(\)\)return subscribePilotDirectory/);
+ assert.match(service,/readSocialDirectoryPilotPage\(session.user,session.cursor,session.controller.signal\)/);
+ assert.match(service,/session\.entries\.set\(entry.id/);
+ assert.match(service,/session\.cursor=result\.nextCursor/);
+ assert.match(service,/session\.controller\.abort\(\)/);
+ assert.match(service,/generation!==session\.generation/);
+ assert.match(hub,/new IntersectionObserver/);
+ assert.match(hub,/observer\.disconnect\(\)/);
+ assert.match(hub,/Carregar mais sugestões/);
+ assert.match(hub,/directoryPage\.error/);
+});
+
+test('community post connection pilot uses only visible identity projection and rechecks session',()=>{
+ const source=readFileSync('src/utils/communityPostConnections.ts','utf8');
+ const pilot=source.slice(source.indexOf('if(socialDirectoryPilotEnabled())'),source.indexOf("const snapshot = await getDoc(doc(db, 'users', userId))"));
+ assert.match(pilot,/readAuthorIdentitiesPilot\(actor,\[userId\]\)/);
+ assert.match(pilot,/auth\.currentUser!==actor/);
+ assert.match(pilot,/visible:Boolean\(entry\)/);
+ assert.doesNotMatch(pilot,/getDoc|email|phone/);
+ assert.match(source,/await readCommunityPostPublicProfile\(userId\);\s*if\(auth.currentUser!==user\)/);
+});
+
+test('admin directory identity transport is isolated and does not bypass mandatory server audit',()=>{
+ const client=readFileSync('src/utils/adminDirectoryPilot.ts','utf8');
+ const directory=readFileSync('src/utils/adminDirectory.ts','utf8');
+ const service=readFileSync('server/identity/adminDirectoryIdentityService.ts','utf8');
+ const router=readFileSync('server/identity/adminDirectoryEmulatorRouter.ts','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(client,/import\.meta\.env\?\.DEV===true/);
+ assert.match(client,/VITE_KYRUB_ADMIN_DIRECTORY_PILOT==='true'/);
+ assert.match(client,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(client,/method:'POST',cache:'no-store'/);
+ assert.match(directory,/pilot&&session\?await lookupAdminDirectoryPilot\(session,lookup.value\):await findUser\(lookup\)/);
+ assert.match(directory,/if\(!pilot\)void recordAdminDirectorySearch/);
+ assert.match(service,/tx\.create\(auditRef/);
+ assert.match(service,/return db\.runTransaction/);
+ assert.match(router,/auth\.verifyIdToken\(token,true\)/);
+ assert.match(router,/actor\.disabled\|\|!actor\.emailVerified/);
+ assert.match(server,/KYRUB_ADMIN_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'/);
+ assert.match(server,/adminDirectoryRouterPromise\?\?=Promise\.all/);
+});
+
+test('social connection state is session scoped and never copies an ambiguous private address',()=>{
+ const source=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ assert.match(source,/onAuthStateChanged\(auth,setSession\)/);
+ assert.match(source,/state\.session===session\?state\.items:EMPTY_DIRECTORY/);
+ assert.match(source,/useSessionDirectoryState<Friend>\(session\)/);
+ assert.match(source,/useSessionDirectoryState<ConnectionDocument>\(session\)/);
+ assert.match(source,/useSessionDirectoryState<any>\(session\)/);
+ assert.match(source,/if\(!active\|\|auth\.currentUser!==currentUser\)return/);
+ assert.match(source,/item\.senderId===currentUser\.uid\|\|item\.receiverId===currentUser\.uid/);
+ assert.match(source,/senderBio: '',/);
+ assert.doesNotMatch(source,/senderBio:\s*profileAddress/);
+ assert.match(source,/!targetUser \|\| targetUser\.isProfileVisible!==true/);
 });

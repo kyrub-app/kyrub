@@ -23,6 +23,7 @@ const mapAttendanceReviewExecutionError = (
   if (code === 'AUTH_REQUIRED' || /sessão|token|auth|id-token|expired|revoked/i.test(message)) {
     return { status: 401, body: { error: 'Faça login novamente.' } };
   }
+  if(['STORE_ACCESS_DENIED','STORE_ERP_AGE_REQUIRED'].includes(message))return {status:403,body:{error:'Operação não autorizada para esta conta.',code:message}};
   if (/não encontrado/i.test(message)) {
     return { status: 404, body: { error: message } };
   }
@@ -64,7 +65,7 @@ export const executeAuthorizedAttendanceReview = async (
     const result = await reviewAttendanceOrderAuthoritatively(
       identity.uid,
       orderId,
-      candidate
+      candidate,identity.uid
     );
     return { status: 200, body: result };
   } catch (error) {

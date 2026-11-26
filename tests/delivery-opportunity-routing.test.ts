@@ -97,3 +97,77 @@ test('courier actions use a server-authoritative atomic claim', () => {
   assert.match(routerSource, /scheduleSnapshot\.exists/);
   assert.match(appSource, /KyrubDeliveryStatusSyncBridge/);
 });
+
+test('courier acceptance is server-authoritative and checks approved documents before changing UI', () => {
+  const modal = readFileSync('src/components/modals/DeliveryManagerModal.tsx','utf8');
+  const eligibility = readFileSync('server/identity/workEligibilityMiddleware.ts','utf8');
+  assert.match(serverSource,/enforceDeliveryWorkEligibility,\s*createDeliveryOpportunityRouter\(\)/);
+  assert.match(eligibility,/requireApprovedWorkProfile\(actor.uid, profile\)/);
+  assert.match(eligibility,/profile === 'courier'/);
+  assert.match(eligibility,/approvedProfiles/);
+  assert.match(modal,/operational.source === 'kyrub-order'/);
+  assert.match(modal,/await updateKyrubDeliveryOpportunityStatus\(jobId, 'accepted', currentUser\)/);
+  const acceptStart=modal.indexOf('const handleAcceptDelivery = async');
+  const acceptEnd=modal.indexOf('const isMine =',acceptStart);
+  const body=modal.slice(acceptStart,acceptEnd);
+  assert.ok(body.indexOf("await updateKyrubDeliveryOpportunityStatus(jobId, 'accepted', currentUser)")<
+            body.indexOf("status: 'accepted', acceptedBy: currentUser.uid"));
+  assert.match(modal,/disabled=\{Boolean\(acceptingKyrubDeliveryId\)\}/);
+  assert.match(modal,/onClick=\{\(\) => void handleAcceptDelivery\(job.id\)\}/);
+  assert.match(modal,/setFazerEntregasModalTab\('trajeto'\)/);
+  assert.match(modal,/isMine\(d\)/);
+  assert.match(modal,/openGoogleMapsDirections\(\{ destination: job.from, travelMode: 'driving' \}\)/);
+});
+
+test('Vercel dispatches authenticated courier publish and acceptance through existing serverless handler', async () => {
+  const {parseDeliveryWorkRoute}=await import('../server/delivery/deliveryServerlessPolicy.js');
+  assert.deepEqual(parseDeliveryWorkRoute('POST','orders/order-test/publish'),{kind:'publish',id:'order-test'});
+  assert.deepEqual(parseDeliveryWorkRoute('POST','order-abc123/status'),{kind:'status',id:'order-abc123'});
+  assert.deepEqual(parseDeliveryWorkRoute('POST','order-abc123/secure-pickup'),{kind:'secure-pickup',id:'order-abc123'});
+  assert.deepEqual(parseDeliveryWorkRoute('POST','order-abc123/customer-arrival'),{kind:'customer-arrival',id:'order-abc123'});
+  assert.deepEqual(parseDeliveryWorkRoute('POST','order-abc123/buyer-confirmation'),{kind:'buyer-confirmation',id:'order-abc123'});
+  assert.deepEqual(parseDeliveryWorkRoute('GET','order-abc123/pickup-code'),{kind:'pickup-code',id:'order-abc123'});
+  assert.deepEqual(parseDeliveryWorkRoute('GET','earnings'),{kind:'earnings'});
+  for(const [method,path] of [['GET','order-abc123/status'],['POST','earnings'],['POST','orders/id/../../publish'],['POST','order-abc123/pickup-code'],['POST','order-abc123/status/other']]){
+    assert.equal(parseDeliveryWorkRoute(method,path),null);
+  }
+  const vercel=JSON.parse(readFileSync('vercel.json','utf8'));
+  const pub=vercel.rewrites.findIndex((x:{source:string})=>x.source==='/api/delivery-opportunities/public');
+  const auth=vercel.rewrites.findIndex((x:{source:string})=>x.source==='/api/delivery-opportunities/:path*');
+  assert.ok(pub>=0&&auth>pub);
+  assert.equal(vercel.rewrites[auth].destination,'/api/health?transport=kyrub-delivery-work&path=:path*');
+  const health=readFileSync('api/health.ts','utf8');
+  assert.match(health,/transport === 'kyrub-delivery-work'/);
+  assert.match(health,/handleDeliveryWorkServerless\(request, response, queryValue\(request\.query\?\.path\)\)/);
+  const source=readFileSync('server/delivery/deliveryServerlessTransport.ts','utf8');
+  assert.match(source,/adminAuth\.verifyIdToken\(token,true\)/);
+  assert.match(source,/requireApprovedWorkProfile\(uid,'requester'\)/);
+  assert.match(source,/requireApprovedWorkProfile\(uid,'courier'\)/);
+  assert.match(source,/await updateKyrubDeliveryStatus\(action\.id,status/);
+  assert.match(source,/publishKyrubDeliveryOpportunity\(uid,action\.id\)/);
+  assert.match(source,/IDENTITY_VERIFICATION_REQUIRED/);
+  assert.doesNotMatch(source,/platformMercadoPagoRequest|resolveMercadoPagoAccessToken|createStoreScopedMercadoPagoMarketplacePix/);
+});
+
+
+test('delivery transport stays closed until explicitly released; Kyrub orders cannot be advanced locally', () => {
+  const transport = readFileSync('server/delivery/deliveryServerlessTransport.ts','utf8');
+  const modal = readFileSync('src/components/modals/DeliveryManagerModal.tsx','utf8');
+  assert.match(transport,/KYRUB_DELIVERY_WORK_RELEASE_ENABLED!=='true'/);
+  assert.match(transport,/DELIVERY_RELEASE_UNAVAILABLE/);
+  assert.ok(transport.indexOf('DELIVERY_RELEASE_UNAVAILABLE') < transport.indexOf('await adminAuth.verifyIdToken'));
+  assert.match(modal,/source === 'kyrub-order'\) return Boolean\(currentUser && owner === currentUser.uid\)/);
+  assert.match(modal,/Aguardando confirmação do cliente/);
+});
+
+
+test('commercial V1 keeps new on-demand work and split in standby without disabling direct hiring',async()=>{
+ const {COMMERCIAL_V1_SCOPE,assertNewOnDemandDeliveryAllowed}=await import('../shared/commercialV1Scope.js');
+ assert.equal(COMMERCIAL_V1_SCOPE.onDemandDelivery,false);
+ assert.equal(COMMERCIAL_V1_SCOPE.marketplaceSplit,false);
+ assert.equal(COMMERCIAL_V1_SCOPE.automaticCourierPayout,false);
+ assert.equal(COMMERCIAL_V1_SCOPE.merchantDirectPix,true);
+ assert.equal(COMMERCIAL_V1_SCOPE.ownDelivery,true);
+ assert.equal(COMMERCIAL_V1_SCOPE.directFreelanceHiring,true);
+ assert.throws(assertNewOnDemandDeliveryAllowed,/DELIVERY_V1_STANDBY/);
+});

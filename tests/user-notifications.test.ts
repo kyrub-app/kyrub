@@ -97,7 +97,9 @@ describe('canonical user notifications', () => {
       singleUpdates[0],
       /transaction\.update\(reference, \{ readAt: now\.toISOString\(\) \}\);/
     );
-    assert.match(allBlock, /batch\.update\(document\.ref, \{ readAt \}\)/);
+    assert.match(allBlock, /adminDb\.runTransaction/);
+    assert.match(allBlock, /tx\.update\(document\.ref,\{readAt\}\)/);
+    assert.doesNotMatch(allBlock,/tx\.(set|create|delete)\(/);
   });
 
   test('direct browser Firestore access has no notification rule surface', () => {

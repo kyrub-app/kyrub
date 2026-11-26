@@ -28,3 +28,14 @@ test('public addresses fail closed on malformed, private, external and ambiguous
   assert.equal(buildPublicDestinationPath('community','Nação Roqueira'),null);
   assert.equal(publicBusinessCardUrl('https://kyrub.com/cartao/p8k2m'),null); // not yet authorized by direct-store writer
 });
+
+test('same public identifier is independent across store, personal and community namespaces',()=>{
+ const destinations=[['store','/@rock'],['profile','/kairubido/rock'],['community','/comunidade/rock']] as const;
+ for(const [kind,path] of destinations){
+  assert.equal(buildPublicDestinationPath(kind,'rock'),path);
+  assert.deepEqual(parsePublicDestinationPath(path),{kind,identifier:'rock'});
+  assert.equal(buildPublicDestinationPath(kind,'@rock'),null);
+ }
+ for(const path of ['/rock','/kairubido/@rock','/comunidade/@rock','/@@rock'])
+  assert.equal(parsePublicDestinationPath(path),null);
+});

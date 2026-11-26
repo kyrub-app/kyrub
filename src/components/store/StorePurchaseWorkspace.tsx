@@ -32,19 +32,27 @@ export function StorePurchaseWorkspace({
       return;
     }
 
-    return onSnapshot(
+    setCatalog([]);
+    setLoaded(false);
+    setError('');
+    let stopped=false;
+    const unsubscribe=onSnapshot(
       doc(db, getProductInventoryDocumentPath(user.uid)),
       snapshot => {
+        if(stopped||auth.currentUser?.uid!==user.uid)return;
         setCatalog(readProductInventorySettings(snapshot.data()).catalog);
         setLoaded(true);
         setError('');
       },
       snapshotError => {
+        if(stopped||auth.currentUser?.uid!==user.uid)return;
+        setCatalog([]);
         console.warn('Não foi possível carregar a lista global de compras.', snapshotError);
         setLoaded(true);
         setError('A lista de compras está indisponível neste momento.');
       }
     );
+    return () => {stopped=true;unsubscribe();};
   }, [storeId]);
 
   return (

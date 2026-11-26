@@ -1,3 +1,4 @@
+import { subscribeSocialDiscoveryDirectory } from '../utils/socialDiscoveryDirectory';
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -159,31 +160,11 @@ export function ProfileConnectedCardsPolishBridge() {
         return;
       }
 
-      stopUsers = onSnapshot(
-        collection(db, 'users'),
-        snapshot => {
-          setUsers(
-            snapshot.docs.map(item => {
-              const data = item.data() as Record<string, unknown>;
-              return {
-                id: item.id,
-                name:
-                  readString(data.name) ||
-                  readString(data.displayName) ||
-                  readString(data.email).split('@')[0] ||
-                  'Usuário Kyrub',
-                avatar:
-                  readString(data.photoUrl) ||
-                  readString(data.avatar) ||
-                  readString(data.photoURL),
-                bio: readString(data.bio),
-                role: readString(data.role),
-              };
-            })
-          );
-        },
-        () => setUsers([])
-      );
+      setUsers([]);
+      stopUsers = subscribeSocialDiscoveryDirectory(entries=>{
+        if(auth.currentUser!==user)return;
+        setUsers(entries.map(entry=>({id:entry.id,name:entry.name,avatar:entry.photoUrl,bio:entry.bio,role:entry.role})));
+      });
 
       stopGroups = onSnapshot(
         collection(db, `users/${user.uid}/contact_groups`),

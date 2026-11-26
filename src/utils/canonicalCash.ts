@@ -257,6 +257,10 @@ export const resolveCashStoreContext = async (
     if (
       !membership ||
       membership.status !== 'active' ||
+      membership.userId !== user.uid ||
+      membershipDocument.id !== user.uid ||
+      membershipDocument.ref.parent.parent?.id !== membership.storeId ||
+      membership.role === 'owner' ||
       !cashRoleAllowed(membership.role)
     ) {
       continue;
@@ -378,7 +382,13 @@ const persistSessionOpen = async (
   local: LocalCashSession
 ): Promise<void> => {
   const reference = doc(db, getStoreCashSessionDocumentPath(context.store.id, local.canonicalId));
-  if ((await getDoc(reference)).exists()) return;
+  if(local.storeId!==context.store.id||local.legacyStoreId!==context.legacyStoreId||local.operatorUserId!==context.userId||local.operatorRole!==context.role)throw Error('A abertura pendente pertence a outro operador ou vínculo.');
+  const existing=await getDoc(reference);
+  if(existing.exists()){
+    const stored=existing.data();
+    if(stored.storeId!==local.storeId||stored.operatorUserId!==local.operatorUserId||stored.openingAmount!==local.initialCash||stored.deviceId!==local.deviceId||stored.legacyStoreId!==local.legacyStoreId)throw Error('A abertura já registrada diverge do registro local.');
+    return;
+  }
 
   const auditId = `audit-cash-open-${local.canonicalId}`;
   const batch = writeBatch(db);
@@ -429,7 +439,13 @@ const persistMovement = async (
     db,
     `${getStoreCashMovementsCollectionPath(context.store.id, local.sessionId)}/${local.canonicalId}`
   );
-  if ((await getDoc(reference)).exists()) return;
+  if(local.legacyStoreId!==context.legacyStoreId||local.actorUserId!==context.userId||local.actorRole!==context.role)throw Error('A movimentação pendente pertence a outro operador ou vínculo.');
+  const existing=await getDoc(reference);
+  if(existing.exists()){
+    const stored=existing.data();
+    if(stored.storeId!==context.store.id||stored.sessionId!==local.sessionId||stored.actorUserId!==local.actorUserId||stored.amount!==local.amount||stored.type!==local.movementType||stored.direction!==local.direction||stored.reason!==local.reason||stored.description!==local.description||stored.category!==local.category||stored.paymentId!==local.paymentId||stored.legacyStoreId!==local.legacyStoreId)throw Error('A movimentação já registrada diverge do registro local.');
+    return;
+  }
 
   const auditId = `audit-cash-movement-${local.canonicalId}`;
   const batch = writeBatch(db);
@@ -476,7 +492,12 @@ const persistSessionClose = async (
   const reference = doc(db, getStoreCashSessionDocumentPath(context.store.id, local.canonicalId));
   const snapshot = await getDoc(reference);
   if (!snapshot.exists()) throw new Error('A sessão precisa ser sincronizada antes do fechamento.');
-  if (snapshot.data()?.status === 'closed') return;
+  if(local.storeId!==context.store.id||local.legacyStoreId!==context.legacyStoreId||local.closedByUserId!==context.userId||local.closedByRole!==context.role)throw Error('O fechamento pendente pertence a outro operador ou vínculo.');
+  if (snapshot.data()?.status === 'closed') {
+    const stored=snapshot.data();
+    if(stored.closedByUserId!==local.closedByUserId||stored.expectedAmount!==local.expectedAmount||stored.countedAmount!==(local.finalCash??0)||stored.difference!==local.difference||stored.closeReason!==local.closeReason)throw Error('O fechamento já registrado diverge da conferência local.');
+    return;
+  }
 
   const auditId = `audit-cash-close-${local.canonicalId}`;
   const batch = writeBatch(db);
@@ -635,6 +656,9 @@ export const closeCashSession = async (
   if (!Number.isFinite(countedAmount) || countedAmount < 0) {
     throw new Error('Informe o valor contado no caixa.');
   }
+  if(session.storeId!==context.store.id||session.legacyStoreId!==context.legacyStoreId||session.status!=='open'||movements.some(m=>m.storeId!==context.store.id||m.sessionId!==session.id))throw Error('A sessão ou as movimentações não pertencem a este caixa.');
+  const pending=await cashDb.movements.filter(m=>m.legacyStoreId===context.legacyStoreId&&m.sessionId===session.id&&!m.synced).count();
+  if(pending>0)throw Error('Sincronize as movimentações pendentes antes de fechar o caixa.');
   const expectedAmount = calculateExpectedCash(session.openingAmount, movements);
   const difference = calculateCashDifference(countedAmount, expectedAmount);
   const reason = closeReason.trim();
@@ -643,7 +667,7 @@ export const closeCashSession = async (
   }
 
   let local = await cashDb.sessions
-    .filter(candidate => candidate.canonicalId === session.id)
+    .filter(candidate => candidate.canonicalId === session.id && candidate.storeId===context.store.id)
     .first();
   if (!local) {
     const id = await cashDb.sessions.add({
@@ -717,20 +741,20 @@ export const syncPendingCashRecords = async (
   let movementsSynced = 0;
   let sessionsClosed = 0;
 
-  for (const session of sessions.filter(candidate => !candidate.createSynced)) {
+  for (const session of sessions.filter(candidate => !candidate.createSynced&&candidate.operatorUserId===context.userId&&candidate.operatorRole===context.role)) {
     await persistSessionOpen(context, session);
     if (session.id) await cashDb.sessions.update(session.id, { createSynced: true });
     sessionsOpened += 1;
   }
 
-  for (const movement of movements.filter(candidate => !candidate.synced)) {
+  for (const movement of movements.filter(candidate => !candidate.synced&&candidate.actorUserId===context.userId&&candidate.actorRole===context.role)) {
     await persistMovement(context, movement);
     if (movement.id) await cashDb.movements.update(movement.id, { synced: true });
     movementsSynced += 1;
   }
 
   for (const session of sessions.filter(
-    candidate => candidate.status === 'closed' && !candidate.closeSynced
+    candidate => candidate.status === 'closed' && !candidate.closeSynced&&candidate.closedByUserId===context.userId&&candidate.closedByRole===context.role
   )) {
     await persistSessionClose(context, { ...session, createSynced: true });
     if (session.id) await cashDb.sessions.update(session.id, { closeSynced: true });

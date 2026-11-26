@@ -12,7 +12,7 @@ import {
   type StoreProductProfitabilityRow,
 } from '../../shared/orderProductProfitability.js';
 import { orderCommercialSnapshotPath } from './orderCommercialSnapshotService.js';
-import { reconcileStoreOrderProfitability } from './storeOrderProfitabilityService.js';
+import { reconcileStoreOrderProfitability, type StoreOrderProfitabilityOverview } from './storeOrderProfitabilityService.js';
 
 const MAX_PRODUCT_ORDERS = 40;
 
@@ -409,11 +409,15 @@ export type StoreProductProfitabilityOverview = {
 };
 
 export const reconcileStoreProductProfitability = async (
-  storeIdValue: string
+  storeIdValue: string,
+  sharedOrderOverview?: StoreOrderProfitabilityOverview
 ): Promise<StoreProductProfitabilityOverview> => {
   const storeId = clean(storeIdValue);
   if (!storeId) throw new Error('STORE_ORDER_PROFITABILITY_STORE_REQUIRED');
-  const orderOverview = await reconcileStoreOrderProfitability(storeId);
+  if (sharedOrderOverview && sharedOrderOverview.storeId !== storeId) {
+    throw new Error('STORE_ORDER_PROFITABILITY_LEDGER_SCOPE_MISMATCH');
+  }
+  const orderOverview = sharedOrderOverview ?? await reconcileStoreOrderProfitability(storeId);
   const orderSources = orderOverview.items.slice(0, MAX_PRODUCT_ORDERS).map(item => ({
     orderId: item.orderId,
     occurredAt: item.occurredAt,

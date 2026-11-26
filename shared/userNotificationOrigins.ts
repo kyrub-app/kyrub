@@ -22,8 +22,11 @@ export const userNotificationOrigin = (category: UserNotificationCategory): Excl
     case 'loyalty':
     case 'marketing':
       return 'stores';
+    case 'social_chat':
+    case 'note_invitation':
     case 'user_forward':
       return 'people';
+    case 'freelance':
     case 'system':
       return 'platform';
   }

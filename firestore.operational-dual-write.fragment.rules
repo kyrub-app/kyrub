@@ -1,6 +1,7 @@
     // --- Operational Orders and Payments Dual Write ---
     function operationalMirrorMetadataIsValid(storeId) {
       return storeSecOwner(storeId)
+        && canWriteErpWithAge()
         && incoming().migration.mode == 'dual_write'
         && incoming().migration.migratedByUserId == request.auth.uid
         && incoming().migration.migratedByRole == 'owner'
@@ -45,12 +46,15 @@
         && operationalMirroredOrderActorIsValid()
         && operationalOrderStatusIsValid(incoming().status)
         && operationalPaymentStatusIsValid(incoming().paymentStatus)
+        && (incoming().paymentStatus == 'unpaid' || canWriteFinancialWithMfa())
         && incoming().legacyCreatedAt is string
         && incoming().legacyUpdatedAt is string
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
       allow update: if storeSecOwner(storeId)
+        && canWriteErpWithAge()
+        && (!incoming().diff(existing()).affectedKeys().hasAny(['paymentStatus']) || canWriteFinancialWithMfa())
         && storeSecImmutableOrderIdentity()
         && incoming().legacyStoreId == existing().legacyStoreId
         && incoming().legacyCreatedAt == existing().legacyCreatedAt
@@ -70,6 +74,7 @@
 
     match /stores/{storeId}/payments/{paymentId} {
       allow create: if operationalMirrorMetadataIsValid(storeId)
+        && canWriteFinancialWithMfa()
         && incoming().id == paymentId
         && incoming().storeId == storeId
         && incoming().actorUserId == request.auth.uid

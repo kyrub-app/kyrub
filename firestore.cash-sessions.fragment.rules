@@ -2,6 +2,7 @@
       allow get, list: if cashLedgerRoleAllowed(storeId);
 
       allow create: if cashLedgerRoleAllowed(storeId)
+        && canWriteFinancialWithMfa()
         && cashLedgerSessionFieldsAreValid(storeId, sessionId)
         && incoming().status == 'open'
         && incoming().operatorUserId == request.auth.uid
@@ -19,6 +20,7 @@
         && incoming().updatedAt == request.time;
 
       allow update: if cashLedgerRoleAllowed(storeId)
+        && canWriteFinancialWithMfa()
         && cashLedgerSessionFieldsAreValid(storeId, sessionId)
         && cashLedgerSessionIdentityIsImmutable()
         && existing().status == 'open'

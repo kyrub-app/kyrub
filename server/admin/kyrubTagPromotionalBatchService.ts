@@ -1,10 +1,11 @@
 import {randomBytes} from 'node:crypto';
 import {FieldValue} from 'firebase-admin/firestore';
-import {adminDb} from '../firebaseAdmin.js';
+import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {authorizePilot} from './kyrubTagPilotService.js';
+import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {tagUrl} from '../../shared/kyrubTagContract.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION} from '../../shared/kyrubTagPromotional.js';
-import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer} from '../identity/kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer,stableTagPilotHost} from '../identity/kyrubTagPilotIsolation.js';
 
 const batchDocs=()=>adminDb.collection('kyrub_tag_promotional_batches');
 const adminRole=(uid:string)=>adminDb.doc('kyrub_admin/control_plane/admins/'+uid);
@@ -12,16 +13,26 @@ const auditCollection=()=>adminDb.collection('kyrub_admin/control_plane/audit_lo
 const enabled=()=>process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED==='true';
 const batchIdValid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 const unitId=()=>randomBytes(16).toString('hex');
+const permanentEnabled=()=>process.env.KYRUB_TAG_PERMANENT_STOCK_ENABLED==='true';
+export function isPermanentStockEnvironment(projectId:string,env:NodeJS.ProcessEnv):boolean{
+ return projectId==='kyrub-b8d0e'&&env.VERCEL_ENV==='production'&&!env.FIRESTORE_EMULATOR_HOST&&!env.FIREBASE_AUTH_EMULATOR_HOST;
+}
+const permanentEnvironment=()=>isPermanentStockEnvironment(getFirebaseAdminProjectId(),process.env);
+const permanentMode=()=>permanentEnvironment()&&permanentEnabled();
+const expectedReadbackHost=()=>currentTagPilotIsolation()==='emulator'?process.env.VERCEL_URL?.trim().toLowerCase()||null:stableTagPilotHost();
 const projectBatch=(id:string,data:FirebaseFirestore.DocumentData)=>{
  const tagIds=data.tagIds;
  if(!batchIdValid(id)||data.mode!=='promotional'||data.model!=='adesivo'||
   !Array.isArray(tagIds)||tagIds.length<1||tagIds.length>10||
   tagIds.some(v=>typeof v!=='string'||!/^[a-f0-9]{32}$/.test(v))||
   new Set(tagIds).size!==tagIds.length)throw Error('TAG_BATCH_CORRUPT');
- return {id,model:'adesivo' as const,count:tagIds.length,units:tagIds.map(tagId=>({
+ const permanent=data.urlMode==='permanent';
+ const host=permanent?'kyrub.com':expectedReadbackHost();
+ return {id,model:'adesivo' as const,urlMode:permanent?'permanent' as const:'pilot' as const,count:tagIds.length,units:tagIds.map(tagId=>({
   id:tagId,url:tagUrl(tagId),
   physicalStatus:data.readbackReports?.[tagId]?.status==='browser_readback_confirmed'
-    ? 'readback_confirmed' as const:'not_verified' as const
+    ? (host&&data.readbackReports[tagId].previewHost===host?'readback_confirmed' as const:'readback_stale' as const)
+    :'not_verified' as const
  }))};
 };
 function assertRole(uid:string,role:FirebaseFirestore.DocumentData|undefined){
@@ -32,6 +43,7 @@ function pilotReadiness(){
  const isolation=currentTagPilotIsolation();
  return {
   isolation,
+  permanentStockEnabled:permanentMode(),
   productionDataProtected:isolation==='unsafe',
   clientProjectMatchesServer:isolation!=='unsafe'&&tagPilotClientMatchesServer(),
   issuanceEnabled:enabled(),
@@ -40,9 +52,8 @@ function pilotReadiness(){
   emailLinkProvider:'manual-verification-required' as const,
   storageRulesPublished:'manual-verification-required' as const,
   physicalNfcVerified:false,
-  previewHost:isolation==='isolated-project'&&process.env.VERCEL_URL?.endsWith('.vercel.app')
-   ?process.env.VERCEL_URL:null,
-  canIssue:isolation!=='unsafe'&&tagPilotClientMatchesServer()&&enabled()
+  previewHost:isolation==='isolated-project'?stableTagPilotHost():null,
+  canIssue:isolation!=='unsafe'&&tagPilotClientMatchesServer()&&enabled()&&(isolation==='emulator'||!!stableTagPilotHost())
  };
 }
 
@@ -50,16 +61,20 @@ function pilotReadiness(){
 export async function listPromotionalBatches(uid:string){
  const role=await adminRole(uid).get();
  assertRole(uid,role.data());
- const records=await batchDocs().orderBy('createdAt','desc').limit(20).get();
- return {readiness:pilotReadiness(),batches:records.docs.map(d=>projectBatch(d.id,d.data()))};
+ const records=permanentEnvironment()?await batchDocs().where('urlMode','==','permanent').limit(100).get():await batchDocs().orderBy('createdAt','desc').limit(20).get();
+ return {readiness:pilotReadiness(),batches:records.docs.filter(d=>permanentEnvironment()?d.get('urlMode')==='permanent':d.get('urlMode')!=='permanent').map(d=>projectBatch(d.id,d.data()))};
 }
 /**
  * Only pre-registers NFC URLs. It does NOT attest a physical chip or publish
  * a unit. The requestId is a 128-bit client nonce; replay never issues twice.
  */
 export async function issuePromotionalBatch(uid:string,count:unknown,requestId:unknown){
- assertTagPilotWriteIsolated();
- if(!enabled())throw Error('TAG_BATCH_DISABLED');
+ const permanent=permanentMode();
+ if(!permanent){
+  assertTagPilotWriteIsolated();
+  if(!enabled())throw Error('TAG_BATCH_DISABLED');
+  if(currentTagPilotIsolation()==='isolated-project'&&!stableTagPilotHost())throw Error('TAG_PILOT_PROJECT_UNSAFE');
+ }
  if(!Number.isInteger(count)||typeof count!=='number'||count<1||count>10||!batchIdValid(requestId))throw Error('TAG_BATCH_INVALID');
  const ids=Array.from({length:count},unitId),auditId=unitId(),ref=batchDocs().doc(requestId);
  return adminDb.runTransaction(async tx=>{
@@ -68,15 +83,23 @@ export async function issuePromotionalBatch(uid:string,count:unknown,requestId:u
   if(existing.exists){
    const original=projectBatch(requestId,existing.data()!);
    if(original.count!==count)throw Error('TAG_BATCH_CONFLICT');
+   if((original.urlMode==='permanent')!==permanent)throw Error('TAG_BATCH_CONFLICT');
    return {batch:original,replay:true};
   }
+  if(permanent){
+   // Bound inventory until cursor pagination is available; a transaction
+   // reads the same collection query before new batches are created.
+   const stock=await tx.get(batchDocs().where('urlMode','==','permanent').limit(100));
+   if(stock.size>=100)throw Error('TAG_BATCH_LIMIT');
+  }
   const stamp=FieldValue.serverTimestamp();
-  tx.create(ref,{mode:'promotional',model:'adesivo',tagIds:ids,count,createdBy:uid,createdAt:stamp});
+  tx.create(ref,{mode:'promotional',model:'adesivo',tagIds:ids,count,urlMode:permanent?'permanent':'pilot',createdBy:uid,createdAt:stamp});
   for(const id of ids){
    tx.create(adminDb.collection('kyrub_official_tags').doc(id),{
     model:'adesivo',distribution:'promotional',ownerId:null,enabled:false,blocked:false,
     activationHash:null,reservedEmailHash:null,targets:[],externalUrls:[],
     presentation:EMPTY_PROMOTIONAL_PRESENTATION,promotionalBatchId:requestId,
+    ...(permanent?{manufacturingState:'held',urlMode:'permanent'}:{}),
     createdAt:stamp
    });
   }
@@ -85,7 +108,7 @@ export async function issuePromotionalBatch(uid:string,count:unknown,requestId:u
    actorRole:'super_admin',targetType:'kyrub_tag_promotional_batch',
    targetId:requestId,count,source:'server',createdAt:stamp
   });
-  return {batch:projectBatch(requestId,{mode:'promotional',model:'adesivo',tagIds:ids}),replay:false};
+  return {batch:projectBatch(requestId,{mode:'promotional',model:'adesivo',tagIds:ids,urlMode:permanent?'permanent':'pilot'}),replay:false};
  });
 }
 /**
@@ -97,12 +120,13 @@ export async function issuePromotionalBatch(uid:string,count:unknown,requestId:u
 export async function confirmPromotionalTagReadback(
  uid:string,batchId:unknown,tagId:unknown,readUrl:unknown
 ){
- assertTagPilotWriteIsolated();
+ const permanent=permanentMode();
+ if(!permanent){assertTagPilotWriteIsolated();if(!enabled())throw Error('TAG_BATCH_DISABLED');}
  if(!batchIdValid(batchId)||!batchIdValid(tagId)||
     typeof readUrl!=='string'||readUrl.length>512)throw Error('TAG_BATCH_INVALID');
- const expectedHost=process.env.VERCEL_URL?.trim().toLowerCase();
  const isolation=currentTagPilotIsolation();
- if(!['isolated-project','emulator'].includes(isolation)||!expectedHost||!expectedHost.endsWith('.vercel.app'))
+ const expectedHost=permanent?'kyrub.com':expectedReadbackHost();
+ if(!permanent&&(!['isolated-project','emulator'].includes(isolation)||!expectedHost||!expectedHost.endsWith('.vercel.app')))
   throw Error('TAG_PILOT_PROJECT_UNSAFE');
  let url:URL;
  try{url=new URL(readUrl);}catch{throw Error('TAG_BATCH_INVALID');}
@@ -119,10 +143,13 @@ export async function confirmPromotionalTagReadback(
   if(!bd||!td||bd.mode!=='promotional'||bd.model!=='adesivo'||
     !Array.isArray(bd.tagIds)||!bd.tagIds.includes(tagId)||
     td.distribution!=='promotional'||td.promotionalBatchId!==batchId||
-    td.ownerId!==null||td.enabled!==false||td.blocked===true)
+    td.ownerId!==null||td.enabled!==false||td.blocked===true||
+    (bd.urlMode==='permanent')!==permanent||(permanent&&(td.manufacturingState!=='held'||td.urlMode!=='permanent')))
    throw Error('TAG_BATCH_CONFLICT');
-  if(bd.readbackReports?.[tagId]?.status==='browser_readback_confirmed')
+  if(bd.readbackReports?.[tagId]?.status==='browser_readback_confirmed'){
+   if(bd.readbackReports[tagId].previewHost!==expectedHost)throw Error('TAG_READBACK_MISMATCH');
    return {batch:projectBatch(batchId,bd),replay:true};
+  }
   const verifiedAt=new Date().toISOString();
   tx.update(batch,{['readbackReports.'+tagId]:{
    status:'browser_readback_confirmed',verifiedAt,verifiedBy:uid,
@@ -136,7 +163,7 @@ export async function confirmPromotionalTagReadback(
    createdAt:FieldValue.serverTimestamp()
   });
   const next={...bd,readbackReports:{...(bd.readbackReports??{}),
-   [tagId]:{status:'browser_readback_confirmed'}}};
+   [tagId]:{status:'browser_readback_confirmed',previewHost:expectedHost}}};
   return {batch:projectBatch(batchId,next),replay:false};
  });
 }
@@ -146,6 +173,18 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   if(method!=='GET'&&method!=='POST')return {status:405,body:{error:'METHOD_NOT_ALLOWED'}};
   const uid=await authorizePilot(authorization);
   if(method==='GET')return {status:200,body:await listPromotionalBatches(uid)};
+  // Production NFC manufacturing uses the verified, revocation-checked
+  // administrative session above and the active Super Admin role checked
+  // inside each mutation transaction. No extra MFA challenge for this writer.
+  // Keep the isolated MFA experiment separate from production stock.
+  if(permanentEnvironment()){
+   if(!permanentMode())throw Error('TAG_BATCH_DISABLED');
+  }else if(process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED==='true'){
+   assertTagPilotWriteIsolated();
+   const role=await adminRole(uid).get();assertRole(uid,role.data());
+   const session=await requireKyrubSessionMfa(authorization,'administrative',300);
+   if(session.uid!==uid)throw Error('FORBIDDEN');
+  }
   if(!body||typeof body!=='object'||Array.isArray(body))throw Error('TAG_BATCH_INVALID');
   const b=body as Record<string,unknown>;
   if(b.action==='confirm-readback'&&Object.keys(b).length===4){
@@ -160,8 +199,10 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   if(message==='AUTH_REQUIRED'||/^auth\/(argument-error|invalid-id-token|id-token-expired|id-token-revoked|user-disabled|user-not-found|invalid-credential)$/.test(code))
    return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='FORBIDDEN')return {status:403,body:{error:'FORBIDDEN'}};
+  if(message==='second_factor_required'||message==='reauthentication_required')return {status:403,body:{error:message}};
+  if(message==='authentication_required')return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='TAG_BATCH_INVALID')return {status:400,body:{error:message}};
-  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE','TAG_READBACK_MISMATCH'].includes(message))return {status:409,body:{error:message}};
+  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE','TAG_READBACK_MISMATCH','TAG_BATCH_LIMIT'].includes(message))return {status:409,body:{error:message}};
   return {status:503,body:{error:'TAG_BATCH_UNAVAILABLE'}};
  }
 }

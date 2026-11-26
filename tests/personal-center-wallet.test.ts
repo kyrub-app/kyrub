@@ -123,3 +123,13 @@ describe('Carteira e Central Pessoal', () => {
     assert.doesNotMatch(planner, /social_posts|community_posts/);
   });
 });
+
+test('Central Pessoal adds only two legal footer links below the existing cards', () => {
+  const footer = profile.match(/<footer id="personal-center-legal-footer"[\s\S]*?<\/footer>/)?.[0] ?? '';
+  assert.ok(footer);
+  assert.ok(profile.indexOf(footer) > profile.indexOf('id="personal-center-active-panel"'));
+  assert.deepEqual([...footer.matchAll(/href="([^"]+)"/g)].map(m => m[1]), ['/termos-de-uso', '/politica-de-privacidade']);
+  assert.match(footer, />Termos de Uso<\/a>/);
+  assert.match(footer, />Política de Privacidade<\/a>/);
+  assert.doesNotMatch(footer, /<button|<article|<input/);
+});

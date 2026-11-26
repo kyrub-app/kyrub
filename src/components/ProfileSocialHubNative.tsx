@@ -55,6 +55,8 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
+import { subscribeSocialDiscoveryDirectory,loadMoreSocialDiscoveryDirectory,refreshSocialDiscoveryDirectory,type SocialDirectoryPageState } from '../utils/socialDiscoveryDirectory';
+import {socialDirectoryPilotEnabled} from '../utils/socialDirectoryPilot';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
@@ -136,16 +138,6 @@ const readStoredPosts = (rawValue: string | null): ExtendedSocialPost[] => {
   } catch {
     return [];
   }
-};
-
-const profileHandle = (email: string, name: string): string => {
-  const source = email.split('@')[0]?.trim() || name || 'usuario';
-  return source
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/[^a-z0-9._-]+/g, '')
-    .slice(0, 30);
 };
 
 const postTimestamp = (post: ExtendedSocialPost): number => {
@@ -479,6 +471,8 @@ export function ProfileSocialHubNative() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
+  const [directoryPage,setDirectoryPage]=useState<SocialDirectoryPageState>({loading:false,hasMore:false,error:false});
+  const directoryEndRef=useRef<HTMLDivElement|null>(null);
   const [newConnectionsTab, setNewConnectionsTab] =
     useState<NewConnectionsTab>('requests');
   const [activeTab, setActiveTab] = useState<ProfileTab>('publications');
@@ -521,6 +515,10 @@ export function ProfileSocialHubNative() {
   } | null>(null);
   const [removeContactTarget, setRemoveContactTarget] = useState<Friend | null>(null);
   const [chatTarget, setChatTarget] = useState<Friend | null>(null);
+  const [pendingChatNotification, setPendingChatNotification] = useState<{
+    friendId: string;
+    connectionId: string;
+  } | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -583,6 +581,38 @@ export function ProfileSocialHubNative() {
     window.addEventListener('kyrub:open-connections', openConnections);
     return () => window.removeEventListener('kyrub:open-connections', openConnections);
   }, []);
+
+  useEffect(() => {
+    const openSocialChatFromNotification = (event: Event) => {
+      const detail = (event as CustomEvent<{ friendId?: string; connectionId?: string }>).detail;
+      if (!user || !detail || !/^[a-zA-Z0-9_-]{1,128}$/.test(detail.friendId ?? '') ||
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(detail.connectionId ?? '')) return;
+      // Never trust a notification target to grant a connection: the existing
+      // accepted-friends directory is the only client navigation authority.
+      setPendingChatNotification({
+        friendId: detail.friendId!,
+        connectionId: detail.connectionId!,
+      });
+      setActiveTab('connected');
+      setConnectionSection('connected');
+      setOpen(true);
+    };
+    window.addEventListener('kyrub:open-social-chat', openSocialChatFromNotification);
+    return () => window.removeEventListener('kyrub:open-social-chat', openSocialChatFromNotification);
+  }, [user]);
+
+  useEffect(() => {
+    if (!open || !pendingChatNotification) return;
+    const friend = directory.friends.find(item =>
+      item.id === pendingChatNotification.friendId &&
+      item.connectionId === pendingChatNotification.connectionId &&
+      item.connectionStatus === 'accepted'
+    );
+    if (!friend) return;
+    setChatMessageText('');
+    setChatTarget(friend);
+    setPendingChatNotification(null);
+  }, [open, pendingChatNotification, directory.friends]);
 
   useEffect(() => {
     // Legacy links use the exact same editor as the Central Pessoal.
@@ -715,13 +745,24 @@ export function ProfileSocialHubNative() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    return onSnapshot(collection(db, 'users'), snapshot => {
-      directory.setDbUsers(
-        snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-      );
-    });
+    directory.setDbUsers([]);
+    if (!user || auth.currentUser!==user) return;
+    return subscribeSocialDiscoveryDirectory(directory.setDbUsers,setDirectoryPage);
   }, [directory.setDbUsers, user]);
+
+  useEffect(()=>{
+    if(newConnectionsOpen&&socialDirectoryPilotEnabled())refreshSocialDiscoveryDirectory();
+  },[newConnectionsOpen,user]);
+
+  useEffect(()=>{
+    if(!newConnectionsOpen||newConnectionsTab!=='suggestions'||!directoryPage.hasMore||directoryPage.loading||directoryPage.error||
+       !directoryEndRef.current||typeof IntersectionObserver==='undefined')return;
+    const observer=new IntersectionObserver(entries=>{
+      if(entries.some(entry=>entry.isIntersecting))loadMoreSocialDiscoveryDirectory();
+    },{rootMargin:'120px'});
+    observer.observe(directoryEndRef.current);
+    return ()=>observer.disconnect();
+  },[newConnectionsOpen,newConnectionsTab,directoryPage]);
 
   useEffect(() => {
     if (!user) return;
@@ -1390,9 +1431,6 @@ export function ProfileSocialHubNative() {
 
                 <div className="mt-4">
                   <h3 className="text-xl font-black text-white">{profile.name}</h3>
-                  <p className="mt-1 font-mono text-[10px] text-orange-300">
-                    @{profileHandle(profile.email, profile.name)}
-                  </p>
                   <p className="mt-3 max-w-xl text-[11px] leading-relaxed text-slate-400">
                     {profile.bio ||
                       'Adicione uma apresentação curta para transformar sua página no seu cartão de visita digital.'}
@@ -1777,7 +1815,7 @@ export function ProfileSocialHubNative() {
                       aria-label="Abrir novas conexões"
                     >
                       <strong className="block text-sm text-white">
-                        {newConnectionsCount}
+                        {newConnectionsCount}{socialDirectoryPilotEnabled()&&directoryPage.hasMore?'+':''}
                       </strong>
                       <span className="mt-1 block truncate text-[8px] font-black uppercase text-slate-500">
                         Novos
@@ -2064,7 +2102,7 @@ export function ProfileSocialHubNative() {
                     : 'border-slate-800 bg-slate-900 text-slate-500'
                 }`}
               >
-                Sugestões {suggestionCount}
+                Sugestões {suggestionCount}{socialDirectoryPilotEnabled()&&directoryPage.hasMore?'+':''}
               </button>
             </nav>
 
@@ -2148,9 +2186,13 @@ export function ProfileSocialHubNative() {
                       </div>
                       <button
                         type="button"
-                        onClick={() =>
-                          setRemoveContactTarget(friend)
-                        }
+                        onClick={() => {
+                          if (friend.connectionStatus === 'pending_sent') {
+                            setRemoveContactTarget(friend);
+                          } else {
+                            void directory.handleToggleFriend(friend.id);
+                          }
+                        }}
                         className="m-2 mt-auto flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-500 px-2 text-[9px] font-black uppercase text-slate-950"
                       >
                         <UserPlus className="h-4 w-4" />
@@ -2160,7 +2202,7 @@ export function ProfileSocialHubNative() {
                       </button>
                     </article>
                   ))}
-                  {directory.getSuggestions().length === 0 && (
+                  {directory.getSuggestions().length === 0 && !directoryPage.loading && !directoryPage.hasMore && !directoryPage.error && (
                     <div className="col-span-2">
                       <EmptyState
                         title="Sem sugestões"
@@ -2169,6 +2211,11 @@ export function ProfileSocialHubNative() {
                       />
                     </div>
                   )}
+                  {directoryPage.loading&&<p role="status" className="col-span-2 py-3 text-center text-xs text-slate-400">Carregando sugestões…</p>}
+                  {directoryPage.error&&<button type="button" onClick={refreshSocialDiscoveryDirectory} className="col-span-2 rounded-xl border border-slate-700 py-3 text-xs text-slate-200">Não foi possível carregar. Tentar novamente</button>}
+                  {directoryPage.hasMore&&!directoryPage.error&&<div ref={directoryEndRef} className="col-span-2">
+                    <button type="button" onClick={loadMoreSocialDiscoveryDirectory} disabled={directoryPage.loading} className="w-full rounded-xl border border-slate-800 py-3 text-xs text-slate-400 disabled:opacity-50">Carregar mais sugestões</button>
+                  </div>}
                 </div>
               )}
             </div>
@@ -2177,17 +2224,17 @@ export function ProfileSocialHubNative() {
       )}
 
       {removeContactTarget && (
-        <div className="fixed inset-0 z-[193] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-label="Confirmar remoção de contato">
+        <div className="fixed inset-0 z-[193] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-label={removeContactTarget.connectionStatus === 'pending_sent' ? 'Confirmar cancelamento de solicitação' : 'Confirmar remoção de contato'}>
           <section className="w-full max-w-sm rounded-3xl border border-red-500/25 bg-slate-950 p-5">
-            <h3 className="text-base font-black text-white">Remover esta conexão?</h3>
-            <p className="mt-2 text-xs text-slate-400">{removeContactTarget.name} deixará de aparecer entre seus conectados.</p>
+            <h3 className="text-base font-black text-white">{removeContactTarget.connectionStatus === 'pending_sent' ? 'Cancelar esta solicitação?' : 'Remover esta conexão?'}</h3>
+            <p className="mt-2 text-xs text-slate-400">{removeContactTarget.connectionStatus === 'pending_sent' ? `A solicitação enviada a ${removeContactTarget.name} será cancelada.` : `${removeContactTarget.name} deixará de aparecer entre seus conectados.`}</p>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setRemoveContactTarget(null)} className="h-11 rounded-xl border border-slate-800 bg-slate-900 text-xs text-slate-300">Cancelar</button>
               <button type="button" onClick={() => {
                 const friendId = removeContactTarget.id;
                 setRemoveContactTarget(null);
                 void directory.handleToggleFriend(friendId);
-              }} className="h-11 rounded-xl bg-red-500 text-xs font-black text-white">Remover</button>
+              }} className="h-11 rounded-xl bg-red-500 text-xs font-black text-white">{removeContactTarget.connectionStatus === 'pending_sent' ? 'Cancelar solicitação' : 'Remover'}</button>
             </div>
           </section>
         </div>

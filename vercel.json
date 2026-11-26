@@ -5,6 +5,9 @@
     "deploymentEnabled": {
       "*": false,
       "fix/gamification-activation-delivery": false,
+      "test/gamification-integrated-rewards-v1": false,
+      "test-gamification-transversal-browser": false,
+      "test-semeadura-economic-pilot": false,
       "main": true,
       "preview-*": true,
       "feat/profile-react-rebuild": true,
@@ -46,6 +49,10 @@
     {
       "source": "/api/delivery-opportunities/public",
       "destination": "/api/health?transport=public-delivery-discovery"
+    },
+    {
+      "source": "/api/delivery-opportunities/:path*",
+      "destination": "/api/health?transport=kyrub-delivery-work&path=:path*"
     },
     {
       "source": "/api/pitangas",
@@ -273,6 +280,18 @@
     {
       "source": "/staff/:path*",
       "destination": "/index.html"
+    },
+    {
+      "source": "/termos-de-uso",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/politica-de-privacidade",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/api/legal-documents/:type",
+      "destination": "/api/health?transport=public-legal-document&type=:type"
     },
     {
       "source": "/app",

@@ -1,5 +1,7 @@
 import type { DocumentData, Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
+import {requireFinancialPolicyInTransaction} from '../identity/stagedFinancialAuthorization.js';
 import {
   isPaymentAuthoritativelyPaid,
   normalizeCanonicalPayment,
@@ -338,6 +340,7 @@ export const attachPixProviderToLocalIntent = async (input: {
   authenticatedUserId: string;
   value: unknown;
   now?: Date;
+  authorization?:string;
 }): Promise<LocalPixProviderResult> => {
   const request = parseLocalPixProviderAttachInput(input.value);
   const actorUserId = clean(input.authenticatedUserId, 180);
@@ -349,16 +352,18 @@ export const attachPixProviderToLocalIntent = async (input: {
   const now = input.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('LOCAL_PIX_PROVIDER_TIME_INVALID');
 
-  const validated = await adminDb.runTransaction(transaction =>
-    validateBeforeProvider({
+  const validated = await adminDb.runTransaction(async transaction =>{
+    await requireHumanOrderOperation(transaction,request.storeId,actorUserId,'payments.create',storeContext.canonicalStoreId);
+    await requireFinancialPolicyInTransaction(transaction,input.authorization??'',actorUserId);
+    return validateBeforeProvider({
       transaction,
       canonicalStoreId: storeContext.canonicalStoreId,
       paymentIntentId: request.paymentIntentId,
       paymentId: request.paymentId,
       selectedProvider: provider.id,
       now,
-    })
-  );
+    });
+  });
 
   const pix = validated.existingProviderPaymentId
     ? await provider.getPixCheckout(validated.existingProviderPaymentId)

@@ -16,6 +16,7 @@ import {
   type UserCommunicationPreferences,
 } from '../../shared/userCommunicationPreferences';
 import type { UserNotification } from '../../shared/userNotifications';
+import {notificationPollInterval,NOTIFICATION_FOREGROUND_POLL_MS} from '../../shared/platformEfficiencyPolicy';
 import {
   USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin,
   type UserNotificationOrigin,
@@ -31,6 +32,8 @@ import {
   respondToCommunityGroupInvite,
 } from '../utils/userNotifications';
 import { UserCommunicationPreferencesModal } from './UserCommunicationPreferencesModal';
+import {FreelaNegotiationPreview} from './modals/FreelaNegotiationPreview';
+import {freelanceCloudPreviewEnabled,readHiringApplication,type HiringApplication} from '../utils/freelanceHiringCloud';
 
 const formatTime = (value: string): string => {
   if (!value || !Number.isFinite(Date.parse(value))) return '';
@@ -46,6 +49,12 @@ const openNotificationTarget = (
   notification: UserNotification,
   user: User
 ): boolean => {
+  if (notification.target.kind === 'freelance') {
+    const applicationId=notification.target.hiringApplicationId;
+    if(!freelanceCloudPreviewEnabled()||notification.recipientUserId!==user.uid||auth.currentUser?.uid!==user.uid||!applicationId||!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId))return false;
+    window.dispatchEvent(new CustomEvent('kyrub:open-freelance-negotiation',{detail:{applicationId}}));
+    return true;
+  }
   if (notification.target.kind === 'community_post') {
     const communityId = notification.target.communityId;
     const postId = notification.target.postId;
@@ -64,6 +73,19 @@ const openNotificationTarget = (
       ? '?compensacao=' + encodeURIComponent(notification.target.orderId)
       : '';
     window.location.assign('/@' + encodeURIComponent(slug) + suffix);
+    return true;
+  }
+  if (notification.target.kind === 'note_invitation') {
+    if (!notification.target.noteInvitationId) return false;
+    window.dispatchEvent(new Event('kyrub:open-shared-notes'));
+    return true;
+  }
+  if (notification.target.kind === 'social_chat') {
+    if (!notification.target.connectionId || !notification.actorPrincipalId ||
+        notification.actorPrincipalId === user.uid) return false;
+    window.dispatchEvent(new CustomEvent('kyrub:open-social-chat', {
+      detail: { connectionId: notification.target.connectionId, friendId: notification.actorPrincipalId },
+    }));
     return true;
   }
   if (notification.target.kind !== 'store_chat') return false;
@@ -113,6 +135,7 @@ export function UserNotificationCenterBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [hiringTarget,setHiringTarget]=useState<{actor:string;application:HiringApplication}|null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserCommunicationPreferences | null>(null);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
@@ -123,16 +146,39 @@ export function UserNotificationCenterBridge() {
   const [resolvedInvites, setResolvedInvites] = useState<Record<string, 'accepted' | 'declined'>>({});
   const [errorMessage, setErrorMessage] = useState('');
   const notificationBaselineRef = useRef<Set<string> | null>(null);
+  const refreshGeneration=useRef(0);
+  const refreshInFlight=useRef<{uid:string;generation:number}|null>(null);
+  const lastPoll=useRef(0);
+  const currentUserIdRef = useRef(auth.currentUser?.uid ?? '');
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useEffect(()=>{
+    setHiringTarget(null);
+    if(!user||!freelanceCloudPreviewEnabled())return;
+    let active=true;let generation=0;
+    const openHiring=(event:Event)=>{
+      const id=(event as CustomEvent).detail?.applicationId;
+      if(typeof id!=='string')return;
+      const request=++generation;
+      void readHiringApplication(id).then(application=>{
+        if(active&&request===generation&&auth.currentUser?.uid===user.uid)setHiringTarget({actor:user.uid,application});
+      }).catch(()=>{if(active&&request===generation&&auth.currentUser?.uid===user.uid){setOpen(true);setErrorMessage('Não foi possível abrir a negociação.');}});
+    };
+    window.addEventListener('kyrub:open-freelance-negotiation',openHiring);
+    return ()=>{active=false;window.removeEventListener('kyrub:open-freelance-negotiation',openHiring);};
+  },[user]);
 
   useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
 
   useEffect(() => {
+    currentUserIdRef.current = user?.uid ?? '';
     notificationBaselineRef.current = null;
+    refreshGeneration.current++;
+    refreshInFlight.current=null;
+    lastPoll.current=0;
     setResolvedInvites({});
     setPendingInviteResponse(null);
     setNotifications([]);
@@ -195,9 +241,15 @@ export function UserNotificationCenterBridge() {
       notificationBaselineRef.current = null;
       return;
     }
+    const requestedUserId = user.uid;
+    if(silent&&refreshInFlight.current?.uid===requestedUserId)return;
+    const generation=++refreshGeneration.current;
+    refreshInFlight.current={uid:requestedUserId,generation};
+    lastPoll.current=Date.now();
     if (!silent) setLoading(true);
     try {
       const inbox = await loadUserNotificationInbox(60);
+      if (currentUserIdRef.current !== requestedUserId || auth.currentUser?.uid !== requestedUserId || generation!==refreshGeneration.current) return;
       const nextIds = new Set(inbox.notifications.map(item => item.id));
       const baseline = notificationBaselineRef.current;
       const currentPreferences = preferencesRef.current;
@@ -220,7 +272,8 @@ export function UserNotificationCenterBridge() {
       setUnreadCount(inbox.unreadCount);
       setErrorMessage('');
     } catch (error) {
-      if (!silent) {
+      if (currentUserIdRef.current === requestedUserId && generation===refreshGeneration.current) {
+        // A silent poll must not silently claim that every notification is read.
         setErrorMessage(
           error instanceof Error
             ? error.message
@@ -228,15 +281,26 @@ export function UserNotificationCenterBridge() {
         );
       }
     } finally {
-      if (!silent) setLoading(false);
+      if(refreshInFlight.current?.generation===generation)refreshInFlight.current=null;
+      if (currentUserIdRef.current === requestedUserId&&generation===refreshGeneration.current) setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
     void refresh(true);
-    const timer = window.setInterval(() => void refresh(true), 15000);
-    return () => window.clearInterval(timer);
+    const tick=()=>{
+      // Keep the foreground cadence and browser-alert delivery. Reduce hidden
+      // polling only when browser notifications cannot be delivered.
+      const browserAlerts=typeof Notification!=='undefined'&&Notification.permission==='granted';
+      const interval=notificationPollInterval(document.hidden,browserAlerts);
+      if(Date.now()-lastPoll.current>=interval)void refresh(true);
+    };
+    const resume=()=>{if(!document.hidden&&Date.now()-lastPoll.current>=NOTIFICATION_FOREGROUND_POLL_MS)void refresh(true);};
+    const timer=window.setInterval(tick,NOTIFICATION_FOREGROUND_POLL_MS);
+    document.addEventListener('visibilitychange',resume);
+    window.addEventListener('focus',resume);
+    return ()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',resume);window.removeEventListener('focus',resume);};
   }, [refresh, user]);
 
   useEffect(() => {
@@ -308,13 +372,13 @@ export function UserNotificationCenterBridge() {
 
   const readAll = async (): Promise<void> => {
     try {
+      const uid=user?.uid;
+      if(!uid||auth.currentUser?.uid!==uid)return;
       await markAllUserNotificationsRead();
-      const readAt = new Date().toISOString();
-      setNotifications(current =>
-        current.map(item => (item.readAt ? item : { ...item, readAt }))
-      );
-      setUnreadCount(0);
-      setErrorMessage('');
+      if(auth.currentUser?.uid!==uid)return;
+      // The server intentionally bounds each mutation to 200 records. Refresh
+      // authoritative state rather than claiming the entire inbox is read.
+      await refresh();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Não foi possível marcar todas como lidas.'
@@ -329,11 +393,14 @@ export function UserNotificationCenterBridge() {
       type="button"
       onClick={() => setOpen(current => !current)}
       className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300"
-      aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
+      aria-label={errorMessage ? 'Não foi possível atualizar as notificações' : unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
       aria-expanded={open}
       id="canonical-notification-trigger"
     >
       <Bell className="h-4 w-4" />
+      {errorMessage && (
+        <span aria-hidden="true" className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full border-2 border-slate-900 bg-red-400" />
+      )}
       {unreadCount > 0 && (
         <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-orange-500 px-1 text-center font-mono text-[8px] font-black leading-4 text-slate-950">
           {unreadCount > 99 ? '99+' : unreadCount}
@@ -458,7 +525,7 @@ export function UserNotificationCenterBridge() {
                     >
                       <button type="button" onClick={() => void readOne(notification)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                       <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${unread ? 'bg-orange-500/15 text-orange-300' : 'bg-slate-900 text-slate-500'}`}>
-                        {notification.category === 'store_chat'
+                        {(notification.category === 'store_chat' || notification.category === 'social_chat')
                           ? <MessageSquareText className="h-4 w-4" />
                           : <Bell className="h-4 w-4" />}
                       </div>
@@ -506,6 +573,13 @@ export function UserNotificationCenterBridge() {
     <>
       {trigger}
       {panel}
+      {hiringTarget&&hiringTarget.actor===user.uid&&auth.currentUser?.uid===user.uid&&createPortal(
+        <div className="fixed inset-0 z-[220] bg-slate-950/80 p-3 flex items-center justify-center" role="dialog" aria-label="Negociação do Freela">
+          <section className="w-full max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl bg-slate-900 text-slate-100 p-4 space-y-3">
+            <button type="button" onClick={()=>setHiringTarget(null)} className="rounded-xl border border-slate-600 p-2">Fechar negociação</button>
+            <FreelaNegotiationPreview key={hiringTarget.actor+':'+hiringTarget.application.id} actor={hiringTarget.actor} application={hiringTarget.application}/>
+          </section>
+        </div>,document.body)}
       <UserCommunicationPreferencesModal
         open={preferencesOpen}
         preferences={effectivePreferences}

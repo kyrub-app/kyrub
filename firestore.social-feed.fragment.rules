@@ -159,13 +159,13 @@
       allow read: if isSignedIn()
         && request.auth.uid in existing().audienceIds;
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().authorId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && hasValidSocialPostShape(incoming());
 
-      allow update: if isSignedIn()
+      allow update: if canWriteSocialWithAge()
         && existing().authorId == request.auth.uid
         && incoming().authorId == existing().authorId
         && incoming().postId == existing().postId
@@ -333,7 +333,7 @@
     match /social_post_likes/{likeId} {
       allow read: if isSignedIn();
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll(['postId', 'userId', 'createdAt'])
         && incoming().keys().hasOnly(['postId', 'userId', 'createdAt'])
         && incoming().postId is string
@@ -351,7 +351,7 @@
     match /social_post_comments/{commentId} {
       allow read: if isSignedIn();
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'postId',
           'authorId',
@@ -471,7 +471,7 @@
     }
 
     match /social_post_engagements/{engagementId} {
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'engagementId',
           'postId',

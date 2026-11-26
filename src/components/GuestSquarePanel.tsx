@@ -257,7 +257,7 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
             <article key={post.id} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4">
               <header className="flex items-center gap-3">
                 {post.authorAvatar
-                  ? <img src={post.authorAvatar} alt="" aria-hidden="true" className="h-10 w-10 rounded-full object-cover" referrerPolicy="no-referrer" />
+                  ? <img src={post.authorAvatar} alt="" loading="lazy" decoding="async" aria-hidden="true" className="h-10 w-10 rounded-full object-cover" referrerPolicy="no-referrer" />
                   : <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><Users className="h-5 w-5 text-slate-400" /></span>}
                 <div className="min-w-0 flex-1">
                   <strong className="block truncate text-sm text-white">{post.authorName}</strong>

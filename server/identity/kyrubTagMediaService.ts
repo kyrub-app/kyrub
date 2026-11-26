@@ -2,6 +2,8 @@ import {adminDb,adminStorage,getFirebaseAdminProjectId} from '../firebaseAdmin.j
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {isPromotionalMediaPath,type PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 
+import {canReadPublishedPromotionalTag} from './kyrubTagPublicationPolicy.js';
+
 const MAX_MEDIA_BYTES=1024*1024;
 const bucket=()=>adminStorage.bucket(getFirebaseAdminProjectId()+'.firebasestorage.app');
 type Slot='cover'|'avatar';
@@ -41,10 +43,11 @@ export async function getPublicPromotionalTagImage(id:string,slot:unknown):Promi
  const snap=await ref.get(),data=snap.data();
  if(!data||data.distribution!=='promotional'||data.enabled!==true||data.blocked===true||
   typeof data.ownerId!=='string'||!snap.updateTime)return null;
+ if(!canReadPublishedPromotionalTag(id,data,(await adminDb.doc('age_eligibility_private/'+data.ownerId).get()).data(),process.env.KYRUB_TAG_PUBLICATION_ENABLED==='true'))return null;
  const presentation=data.presentation as PromotionalTagPresentation|undefined;
  const path=presentation?pathOf(presentation,slot):'';
  if(!path||!isPromotionalMediaPath(path,id,slot))return null;
- const file=await verifiedObject(path,id,slot);
+ const file=await verifiedObject(path,id,slot,data.ownerId);
  const [bytes]=await file.download();
  if(bytes.length===0||bytes.length>MAX_MEDIA_BYTES)throw Error('TAG_MEDIA_INVALID');
  // A concurrent block, ownership transfer or media change invalidates the
@@ -52,5 +55,6 @@ export async function getPublicPromotionalTagImage(id:string,slot:unknown):Promi
  const after=await ref.get();
  if(!after.updateTime?.isEqual(snap.updateTime)||after.get('blocked')===true||
    after.get('enabled')!==true||after.get('ownerId')!==data.ownerId)return null;
+ if(!canReadPublishedPromotionalTag(id,data,(await adminDb.doc('age_eligibility_private/'+data.ownerId).get()).data(),process.env.KYRUB_TAG_PUBLICATION_ENABLED==='true'))return null;
  return bytes;
 }

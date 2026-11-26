@@ -1,6 +1,7 @@
+import {FreelanceEmulatorEntry} from './components/FreelanceEmulatorEntry';
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
@@ -29,6 +30,8 @@ import { ProfilePostInteractionsBridge } from './components/ProfilePostInteracti
 import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
 import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
+import { OnboardingEmulatorEntry } from './components/OnboardingEmulatorEntry';
+import { PublicLegalDocumentRoute } from './components/PublishedLegalDocumentPage';
 import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
 import { PublicSocialDestinationPage } from './components/PublicSocialDestinationPage';
@@ -309,16 +312,10 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
           setIdentityMode(isGoogleIdentity?'full':'unavailable');
         }
       }).catch(()=>{
-        // If the tag identity service is unavailable, preserve existing Kyrub
-        // members with a server-confirmed profile, but never bootstrap an
-        // unclassified e-mail-only identity from a cache or an error.
+        // With the pilot gate enabled, a profile alone cannot prove that a
+        // previously promoted Tag identity remains eligible. Fail closed.
         if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
-        void getDocFromServer(doc(db,'users',user.uid)).then(snapshot=>{
-          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)
-           setIdentityMode(snapshot.exists()?'full':'unavailable');
-        }).catch(()=>{
-          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)setIdentityMode('unavailable');
-        });
+        setIdentityMode('unavailable');
       });
     });
     return()=>{active=false;controller?.abort();unsub();};
@@ -328,7 +325,7 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
   if(currentUser&&(identityMode==='tag_only'||identityMode==='unavailable'))
    return <KyrubTagOnlyEntry user={currentUser}
       unavailable={identityMode==='unavailable'}
-      onPromoted={()=>setIdentityMode('full')}
+      onPromoted={()=>{setIdentityMode('checking');setRetry(v=>v+1);}}
       onRetry={()=>setRetry(v=>v+1)}/>;
   if(operational)return <AuthenticatedKyrubApp operational />;
   return currentUser ? <AuthenticatedKyrubApp operational={false} /> : <KyrubGuestWorkspace />;
@@ -336,6 +333,11 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
 
 export default function App() {
   useFontSizeAccessibility();
+
+  if(import.meta.env.DEV && import.meta.env.VITE_KYRUB_FREELANCE_BROWSER_EMULATOR==='true') return <FreelanceEmulatorEntry />;
+
+  // Dedicated emulator mode never mounts the legacy workspace or Control Plane.
+  if (import.meta.env.DEV && import.meta.env.VITE_KYRUB_ONBOARDING_EMULATOR === 'true') return <OnboardingEmulatorEntry />;
 
   const adminControlPlane = isAdminControlPlaneLocation(
     window.location.hostname,
@@ -351,6 +353,8 @@ export default function App() {
   if (planCenter) return <PlanCenterApp />;
 
   const route = resolveKyrubAppRoute(window.location.pathname);
+
+  if (route.kind === 'public-legal') return <PublicLegalDocumentRoute key={route.documentType} type={route.documentType} />;
 
   if (route.kind === 'public-storefront') {
     return <PublicStorefrontApp slug={route.slug} />;

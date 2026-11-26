@@ -21,6 +21,7 @@ import {
 } from '../../utils/adminControlPlane';
 import { loadAdminPlatformEconomy } from '../../utils/adminPlatformEconomy';
 import { presentMonthlyActivity } from '../../utils/adminMonthlyActivityPresentation';
+import {projectNotificationPollingPolicy} from '../../../shared/platformEfficiencyPolicy';
 import { presentInfrastructureDiagnostic } from '../../utils/adminInfrastructurePresentation';
 import { AdminPaidWaitingFundingResponsibilityCard } from './AdminPaidWaitingFundingResponsibilityCard';
 
@@ -94,6 +95,7 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
   }, [authorized, refresh]);
 
   if (!authorized) return null;
+  const efficiency=projectNotificationPollingPolicy();
   const monthlyActivity = presentMonthlyActivity(snapshot?.monthlyActivity);
   const infrastructure = presentInfrastructureDiagnostic(snapshot?.infrastructureDiagnostic,snapshot?.monthlyActivity?.month);
 
@@ -157,6 +159,25 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
             <p className="mt-1 text-sm text-slate-200">{monthlyActivity.fixtureCount.toLocaleString('pt-BR')} · {monthlyActivity.month}</p>
             <p className="mt-1 text-xs text-slate-400">Diagnóstico experimental. Não representa usuários reais.</p>
           </div>}
+        </article>
+        <article className="mt-3 rounded-xl border border-slate-800 bg-slate-950/55 p-3" aria-label="Eficiência operacional configurada">
+          <h3 className="text-xs font-bold text-white">Consumo e eficiência do aplicativo</h3>
+          <p className="mt-1 text-xs text-slate-400">Políticas configuradas nesta versão. Não são medições de uso, faturas ou economia financeira comprovada.</p>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
+            <div><dt className="text-slate-400">Avisos: consultas automáticas por hora em primeiro plano</dt><dd className="mt-1 text-sm font-bold text-white">Até {efficiency.foregroundPerHour}</dd></div>
+            <div><dt className="text-slate-400">Avisos: segundo plano sem permissão de alertas</dt><dd className="mt-1 text-sm font-bold text-white">Até {efficiency.hiddenWithoutAlertsPerHour} por hora</dd></div>
+            <div><dt className="text-slate-400">Transferência de imagens</dt><dd className="mt-1 text-slate-200">JPEG elegível compactado; destaques carregados sob demanda</dd></div>
+            <div><dt className="text-slate-400">Compras e contas a pagar (abertura conjunta)</dt><dd className="mt-1 text-slate-200">2 → 1 consultas de compras; consulta financeira separada</dd></div>
+            <div><dt className="text-slate-400">Resultados e margens (abertura conjunta)</dt><dd className="mt-1 text-slate-200">2 → 1 apurações de pedidos; cálculo por produto preservado</dd></div>
+            <div><dt className="text-slate-400">Pedidos, catálogo, estoque e pagamentos</dt><dd className="mt-1 text-slate-200">Descarte de respostas obsoletas e encerramento das consultas revisadas</dd></div>
+            <div><dt className="text-slate-400">Histórico e relatórios financeiros</dt><dd className="mt-1 text-slate-200">Recuperações simultâneas da mesma loja compartilhadas na mesma instância; sem cache de resultados concluídos</dd></div>
+            <div><dt className="text-slate-400">Consumo real e economia em reais</dt><dd className="mt-1 text-slate-200">Não medidos</dd></div>
+          </dl>
+          <p className="mt-2 text-xs text-slate-400">A frequência não inclui atualizações manuais, abertura do painel ou retorno à tela. As reduções de 2 para 1 descrevem fluxos específicos do código, não o total de leituras faturáveis. Custo real exige faturas conciliadas e cobertura do mesmo período.</p>
+          <div className="mt-3 border-t border-slate-800 pt-3 text-xs text-slate-400">
+            <h4 className="text-xs font-bold text-slate-200">Condições para consolidar o custo por usuário</h4>
+            <p className="mt-1">Registrar e conciliar as despesas de infraestrutura no ERP da Loja Oficial; homologar a cobertura de usuários ativos únicos e dos custos do mesmo mês, calendário e moeda. Sem cobertura completa ou com zero usuários ativos, o indicador permanece indisponível. Registros de teste e estimativas não substituem evidências reais.</p>
+          </div>
         </article>
         {error && (
           <div className="mt-4 flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200" role="alert">

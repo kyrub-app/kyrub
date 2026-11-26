@@ -723,3 +723,51 @@ test('user report is immutable, scoped to reporter and requires existing non-sel
     ...payload, reportId: `${VIEWER_ID}__${VIEWER_ID}`, targetUserId: VIEWER_ID,
   }));
 });
+
+
+test('staged social age gate blocks new content and comments without removing reporting or deletion', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const control = 'social_age_release_private';
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), control, 'current'), {schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const post = doc(owner,'social_posts',POST_ID);
+  const age = async (uid:string, status:string, recordUid=uid) => {
+    await environment.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid:recordUid,status});
+    });
+  };
+  await assertFails(setDoc(post,postPayload()));
+  for (const status of ['pending','declared_adult','declared_underage','verified_underage','inconclusive','suspended']) {
+    await age(OWNER_ID,status);
+    await assertFails(setDoc(post,postPayload()));
+  }
+  await age(OWNER_ID,'verified_adult',VIEWER_ID);
+  await assertFails(setDoc(post,postPayload()));
+  await age(OWNER_ID,'verified_adult');
+  await assertSucceeds(setDoc(post,postPayload()));
+  const comment = doc(viewer,'social_post_comments','age-gated-comment');
+  const payload = () => ({postId:POST_ID,authorId:VIEWER_ID,authorName:'Visitante',authorAvatar:'',
+    text:'Comentario de teste',createdAtIso:'2026-11-25T12:00:00Z',createdAt:serverTimestamp()});
+  await assertFails(setDoc(comment,payload()));
+  await age(VIEWER_ID,'verified_adult');
+  await assertSucceeds(setDoc(comment,payload()));
+  await age(VIEWER_ID,'suspended');
+  await assertFails(setDoc(doc(viewer,'social_post_comments','age-gated-second'),payload()));
+  await assertSucceeds(deleteDoc(comment));
+  await assertSucceeds(setDoc(doc(viewer,'social_post_reports',POST_ID+'__'+VIEWER_ID),{
+    reportId:POST_ID+'__'+VIEWER_ID,postId:POST_ID,reporterId:VIEWER_ID,authorId:OWNER_ID,
+    reason:'user_report',status:'pending',createdAt:serverTimestamp()
+  }));
+  for(const client of [owner,viewer,environment.authenticatedContext('age-admin',{role:'admin'}).firestore()]){
+    await assertFails(getDoc(doc(client,control,'current')));
+    await assertFails(setDoc(doc(client,control,'current'),{mode:'disabled'}));
+    await assertFails(deleteDoc(doc(client,control,'current')));
+  }
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(),control,'current'),{schemaVersion:99,mode:'verified_adult_only'});
+  });
+  await assertFails(setDoc(doc(owner,'social_posts',PRIVATE_POST_ID),privatePostPayload()));
+  await assertSucceeds(deleteDoc(post));
+});

@@ -1,9 +1,13 @@
+import { institutionalChallengeId } from '../../shared/globalChallengeAdmin';
 import {
   collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query,
   setDoc, Timestamp, where, type Unsubscribe,
 } from 'firebase/firestore';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth, db } from './firebase';
+import { createSessionFeedRegistry } from './sessionFeedRegistry';
 import type { CloudCommunityPost } from './communityCloud';
+import { createDetailSubscriptionRegistry } from './squareDetailSubscriptionRegistry';
 
 export const COMMUNITY_SQUARE_WINDOW_MS = 24 * 60 * 60 * 1000;
 export const COMMUNITY_SQUARE_MAX_CANDIDATES = 90;
@@ -66,20 +70,21 @@ export const removeCommunityPostFromSquare = async (post: CloudCommunityPost): P
 /** The community itself remains the authority for whether a pointer is public.
  * In particular, switching the community to private immediately hides content.
  * Capped listeners and a per-community cap prevent a single group from filling the Praça. */
-export const subscribeCommunitySquareFeed = (
+const startCommunitySquareFeed = (
   onChange: (items: CommunitySquareEntry[]) => void,
   onError: (error: Error) => void,
 ): Unsubscribe => {
   const pointers = new Map<string, SquarePointer>();
   const posts = new Map<string, CloudCommunityPost>();
   const communities = new Map<string, { name: string; ownerId: string; visibility: string }>();
-  let stopDetails: Unsubscribe[] = [];
+  const viewerId = auth.currentUser?.uid;
   let active = true;
   let originals: SquarePointer[] = [];
   let forwards: SquarePointer[] = [];
 
   const publish = () => {
     if (!active) return;
+    if (!viewerId || auth.currentUser?.uid !== viewerId) { onChange([]); return; }
     const now = Date.now();
     const perCommunity = new Map<string, number>();
     const result: CommunitySquareEntry[] = [];
@@ -109,14 +114,64 @@ export const subscribeCommunitySquareFeed = (
     onChange(result);
   };
 
-  const rebuild = () => {
-    if (!active) return;
-    stopDetails.forEach(stop => stop());
-    stopDetails = [];
-    pointers.clear();
-    posts.clear();
-    communities.clear();
+  const postDetails = createDetailSubscriptionRegistry<SquarePointer>(
+    (pointer, isCurrent, fail) => onSnapshot(doc(db, 'community_posts', pointer.postId),
+      snapshotPost => {
+        if (!isCurrent()) return;
+        if (!snapshotPost.exists()) posts.delete(pointer.postId);
+        else {
+          const source = snapshotPost.data();
+          if (source.communityId === pointer.communityId && typeof source.authorId === 'string' && source.authorId) {
+            posts.set(pointer.postId, {
+              id: pointer.postId, communityId: pointer.communityId, authorId: source.authorId,
+              authorName: read(source.authorName) || 'Kairubido', authorAvatar: read(source.authorAvatar),
+              content: read(source.content),
+              mediaUrls: Array.isArray(source.mediaUrls) ? source.mediaUrls.filter((x): x is string => typeof x === 'string') : [],
+              institutionalChallengeId: institutionalChallengeId(source),
+              allowComments: source.allowComments !== false,
+              pinnedCommentId: read(source.pinnedCommentId),
+              createdAt: read(source.createdAtIso), updatedAt: read(source.updatedAtIso),
+            });
+          } else posts.delete(pointer.postId);
+        }
+        publish();
+      },
+      () => { if (!isCurrent()) return; fail(); publish(); },
+    ),
+    pointer => { posts.delete(pointer.postId); },
+  );
+  const communityDetails = createDetailSubscriptionRegistry<SquarePointer>(
+    (pointer, isCurrent, fail) => onSnapshot(doc(db, 'communities', pointer.communityId),
+      snap => {
+        if (!isCurrent()) return;
+        if (!snap.exists()) communities.delete(pointer.communityId);
+        else {
+          const data = snap.data();
+          communities.set(pointer.communityId, {
+            name: read(data.name), ownerId: read(data.ownerId), visibility: read(data.visibility),
+          });
+        }
+        publish();
+      },
+      () => {
+        if (!isCurrent()) return;
+        // Permission loss or terminal error must retract cached details.
+        fail();
+        publish();
+      },
+    ),
+    pointer => { communities.delete(pointer.communityId); },
+  );
 
+  const rebuild = (retryFailed = false) => {
+    if (!active) return;
+    if (!viewerId || auth.currentUser?.uid !== viewerId) {
+      pointers.clear();
+      postDetails.close();
+      communityDetails.close();
+      publish();
+      return;
+    }
     const selected = new Map<string, SquarePointer>();
     const perCommunity = new Map<string, number>();
     const sorted = [...originals, ...forwards]
@@ -130,53 +185,20 @@ export const subscribeCommunitySquareFeed = (
       selected.set(pointer.postId, pointer);
       if (selected.size >= COMMUNITY_SQUARE_MAX_VISIBLE) break;
     }
-      selected.forEach((value, id) => pointers.set(id, value));
-      for (const pointer of pointers.values()) {
-        stopDetails.push(onSnapshot(doc(db, 'community_posts', pointer.postId),
-          snapshotPost => {
-            if (!snapshotPost.exists()) posts.delete(pointer.postId);
-            else {
-              const source = snapshotPost.data();
-              if (source.communityId === pointer.communityId && typeof source.authorId === 'string' && source.authorId) {
-                posts.set(pointer.postId, {
-                  id: pointer.postId, communityId: pointer.communityId, authorId: source.authorId,
-                  authorName: read(source.authorName) || 'Kairubido', authorAvatar: read(source.authorAvatar),
-                  content: read(source.content),
-                  mediaUrls: Array.isArray(source.mediaUrls) ? source.mediaUrls.filter((x): x is string => typeof x === 'string') : [],
-                  allowComments: source.allowComments !== false,
-                  pinnedCommentId: read(source.pinnedCommentId),
-                  createdAt: read(source.createdAtIso), updatedAt: read(source.updatedAtIso),
-                });
-              } else posts.delete(pointer.postId);
-            }
-            publish();
-          },
-          () => { posts.delete(pointer.postId); publish(); },
-        ));
-        if (!communities.has(pointer.communityId)) {
-          // Sentinel avoids subscribing twice while preserving last snapshot authority.
-          communities.set(pointer.communityId, { name: '', ownerId: '', visibility: 'unverified' });
-          stopDetails.push(onSnapshot(doc(db, 'communities', pointer.communityId),
-            snap => {
-              if (!snap.exists()) communities.delete(pointer.communityId);
-              else {
-                const data = snap.data();
-                communities.set(pointer.communityId, {
-                  name: read(data.name), ownerId: read(data.ownerId), visibility: read(data.visibility),
-                });
-              }
-              publish();
-            },
-            () => {
-              // Revoked membership or newly private community: never use cached content.
-              communities.delete(pointer.communityId);
-              publish();
-            },
-          ));
-        }
-      }
 
-      publish();
+    pointers.clear();
+    selected.forEach((value, id) => pointers.set(id, value));
+    const desiredPosts = new Map<string, SquarePointer>();
+    const desiredCommunities = new Map<string, SquarePointer>();
+    for (const pointer of selected.values()) {
+      // A changed distribution timestamp does not change canonical identity.
+      // A different community for the same post requires a fresh listener.
+      desiredPosts.set(JSON.stringify([pointer.postId, pointer.communityId]), pointer);
+      desiredCommunities.set(pointer.communityId, pointer);
+    }
+    postDetails.reconcile(desiredPosts, retryFailed);
+    communityDetails.reconcile(desiredCommunities, retryFailed);
+    publish();
   };
 
   const stopOriginals = onSnapshot(
@@ -195,9 +217,9 @@ export const subscribeCommunitySquareFeed = (
         return postId && postId === document.id && communityId && createdAt
           ? [{ postId, communityId, createdAt }] : [];
       });
-      rebuild();
+      rebuild(true);
     },
-    error => { originals = []; rebuild(); onError(error); },
+    error => { originals = []; rebuild(true); onError(error); },
   );
 
   const stopForwards = onSnapshot(
@@ -222,21 +244,42 @@ export const subscribeCommunitySquareFeed = (
           forwardedByName: read(data.actorName) || 'Kairubido',
         }];
       });
-      rebuild();
+      rebuild(true);
     },
-    error => { forwards = []; rebuild(); onError(error); },
+    error => { forwards = []; rebuild(true); onError(error); },
   );
 
   // Evict expired posts even without a fresh Firestore event.
-  const timer = window.setInterval(publish, 60_000);
+  const timer = window.setInterval(() => rebuild(), 60_000);
   return () => {
     active = false;
     window.clearInterval(timer);
     stopOriginals();
     stopForwards();
-    stopDetails.forEach(stop => stop());
+    postDetails.close();
+    communityDetails.close();
   };
 };
+
+// This registry is used only for the community feed, not the consumer's
+// separate membership, saved items, connections or personal social data.
+const sharedSquareFeed = createSessionFeedRegistry<CommunitySquareEntry[], User>(
+  () => auth.currentUser,
+  (viewer, change, error) => {
+    if (auth.currentUser !== viewer) { change([]); return () => {}; }
+    const stopFeed = startCommunitySquareFeed(change, error);
+    const stopAuth = onAuthStateChanged(auth, () => sharedSquareFeed.invalidate());
+    return () => { stopAuth(); stopFeed(); };
+  },
+  () => [],
+  items => items.filter(item => withinCommunitySquareWindow(Date.parse(item.distributedAt), Date.now()))
+    .map(item => ({ ...item, post: { ...item.post, mediaUrls: [...item.post.mediaUrls] } })),
+);
+
+export const subscribeCommunitySquareFeed = (
+  onChange: (items: CommunitySquareEntry[]) => void,
+  onError: (error: Error) => void,
+): Unsubscribe => sharedSquareFeed.subscribe(onChange, onError);
 
 export const subscribeCommunitySquareIds = (
   communityId: string,

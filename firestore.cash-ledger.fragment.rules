@@ -1,3 +1,30 @@
+    // Independent financial rollout: only trusted token claims count as MFA.
+    // A missing control retains existing behavior until an authorized cutover.
+    match /financial_mfa_release_private/{documentId} {
+      allow read, write: if false;
+    }
+
+    function hasRecentFinancialTotp() {
+      let token = request.auth.token;
+      let authTime = token.get('auth_time', 0);
+      return token.get('firebase', {}).get('sign_in_second_factor', '') == 'totp'
+        && authTime is int && authTime > 0
+        && authTime * 1000 <= request.time.toMillis()
+        && request.time.toMillis() - authTime * 1000 < 301000;
+    }
+
+    function canWriteFinancialWithMfa() {
+      let control = /databases/$(database)/documents/financial_mfa_release_private/current;
+      return isSignedIn() && canWriteErpWithAge() && (
+        !exists(control)
+        || (
+          get(control).data.schemaVersion == 1
+          && get(control).data.mode == 'recent_totp_required'
+          && hasRecentFinancialTotp()
+        )
+      );
+    }
+
     function cashLedgerRoleAllowed(storeId) {
       return storeSecActiveRole(storeId, ['owner', 'manager', 'cashier']);
     }
@@ -39,6 +66,7 @@
         && incoming().deviceId.size() > 0
         && incoming().legacyStoreId is string
         && incoming().legacyStoreId != storeId
+        && incoming().legacyStoreId == storeSecStoreData(storeId).legacyTenantId
         && cashLedgerMigrationIsValid();
     }
 
@@ -102,6 +130,7 @@
         && incoming().deviceId.size() > 0
         && incoming().legacyStoreId is string
         && incoming().legacyStoreId != storeId
+        && incoming().legacyStoreId == get(cashLedgerSessionPath(storeId, sessionId)).data.legacyStoreId
         && incoming().occurredAt == request.time
         && incoming().createdAt == request.time;
     }

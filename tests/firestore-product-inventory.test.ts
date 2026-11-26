@@ -272,3 +272,26 @@ test('inventory cannot be listed, deleted or read without authentication', async
   await assertFails(deleteDoc(doc(owner, INVENTORY_PATH)));
   await assertFails(getDoc(doc(visitor, INVENTORY_PATH)));
 });
+
+
+test('staged ERP age policy protects inventory writes and preserves existing owner reads',async()=>{
+  const owner=environment.authenticatedContext(OWNER_ID).firestore();
+  const ref=doc(owner,INVENTORY_PATH);
+  const age=async(status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',OWNER_ID),{uid:OWNER_ID,status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'erp_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await assertFails(setDoc(ref,inventoryPayload()));
+  await age('verified_adult');
+  await assertSucceeds(setDoc(ref,inventoryPayload()));
+  const update=()=>updateDoc(ref,{inventoryCatalog:[],productCompositions:{},updatedAt:serverTimestamp()});
+  await age('suspended');
+  await assertFails(update());
+  await assertSucceeds(getDoc(ref));
+  await age('verified_adult');
+  await assertSucceeds(update());
+});

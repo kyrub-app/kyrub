@@ -24,9 +24,16 @@
       return get(storeSecMemberPath(storeId, request.auth.uid)).data;
     }
 
+    function storeSecBoundActiveMember(storeId, member) {
+      return member.status == 'active'
+        && member.storeId == storeId
+        && member.userId == request.auth.uid
+        && member.role != 'owner';
+    }
+
     function storeSecActiveMember(storeId) {
       return storeSecMemberExists(storeId)
-        && storeSecMemberData(storeId).status == 'active';
+        && storeSecBoundActiveMember(storeId, storeSecMemberData(storeId));
     }
 
     function storeSecOwner(storeId) {
@@ -151,6 +158,7 @@
         && incoming().createdByRole == storeSecCurrentRole(storeId)
         && incoming().status in ['pending', 'accepted', 'preparing', 'ready']
         && incoming().paymentStatus in ['unpaid', 'partial', 'paid']
+        && (incoming().paymentStatus == 'unpaid' || canWriteFinancialWithMfa())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
     }
@@ -169,7 +177,7 @@
           || resource.data.ownerId == request.auth.uid
         );
 
-      allow create: if isSignedIn()
+      allow create: if canWriteErpWithAge()
         && incoming().id == storeId
         && incoming().ownerId == request.auth.uid
         // Trusted creation/publication evidence belongs exclusively to the server.
@@ -181,6 +189,7 @@
         && incoming().updatedAt == request.time;
 
       allow update: if storeSecOwnerOrManager(storeId)
+        && canWriteErpWithAge()
         && storeSecImmutableStoreIdentity()
         && !incoming().diff(existing()).affectedKeys().hasAny([
           'firstStoreCreationVerified', 'firstPublishedAt'
@@ -198,7 +207,8 @@
 
         allow list: if storeSecOwnerOrManager(storeId);
 
-        allow create: if isSignedIn()
+        allow create: if canWriteErpWithAge()
+          && canParticipateInErpWithAge(userId)
           && incoming().storeId == storeId
           && incoming().userId == userId
           && storeSecValidRole(incoming().role)
@@ -222,6 +232,7 @@
               && (
                 (
                   incoming().status == 'active'
+                  && canWriteErpWithAge()
                   && incoming().acceptedAt == request.time
                   && incoming().diff(existing()).affectedKeys().hasOnly([
                     'status',
@@ -243,6 +254,7 @@
             || (
               storeSecActorCanManageRole(storeId, existing().role)
               && storeSecActorCanManageRole(storeId, incoming().role)
+              && (incoming().status in ['suspended', 'removed'] || (canWriteErpWithAge() && canParticipateInErpWithAge(userId)))
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'role',
                 'status',
@@ -267,8 +279,8 @@
         allow create: if isSignedIn()
           && incoming().id == orderId
           && (
-            storeSecValidCustomerOrderCreate(storeId)
-            || storeSecValidStaffOrderCreate(storeId)
+            canWriteErpWithAge() && (storeSecValidCustomerOrderCreate(storeId)
+            || storeSecValidStaffOrderCreate(storeId))
           );
 
         allow update: if isSignedIn()
@@ -287,6 +299,8 @@
             )
             || (
               storeSecOperationalStaff(storeId)
+              && canWriteErpWithAge()
+              && (!incoming().diff(existing()).affectedKeys().hasAny(['paymentStatus']) || canWriteFinancialWithMfa())
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
                 'status',
@@ -298,6 +312,7 @@
             )
             || (
               storeSecActiveRole(storeId, ['production'])
+              && canWriteErpWithAge()
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
                 'status',
@@ -320,6 +335,7 @@
           );
 
         allow create: if storeSecPaymentStaff(storeId)
+          && canWriteFinancialWithMfa()
           && incoming().id == paymentId
           && incoming().storeId == storeId
           && incoming().actorUserId == request.auth.uid

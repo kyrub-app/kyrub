@@ -27,7 +27,16 @@
           && data.updatedAt == request.time;
       }
 
-      allow read: if isSignedIn();
+      // A reservation does not publish the profile. The owner retains access
+      // to their own presentation even when discovery is disabled.
+      allow get: if isSignedIn() && profileId == 'main' && (
+        request.auth.uid == userId ||
+        (
+          exists(/databases/$(database)/documents/users/$(userId))
+          && get(/databases/$(database)/documents/users/$(userId)).data.isProfileVisible == true
+        )
+      );
+      allow list: if false;
 
       allow create, update: if isSignedIn()
         && request.auth.uid == userId

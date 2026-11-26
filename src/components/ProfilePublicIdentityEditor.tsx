@@ -1,10 +1,11 @@
 import { PublicSocialAddressEditor } from './PublicSocialAddressEditor';
+import { reconcileProfileCompletionPilot } from '../utils/profileCompletionPilot';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Camera, Check, LoaderCircle, RotateCcw, Save, UserRound } from 'lucide-react';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { updateProfile, type User } from 'firebase/auth';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
-import { db, storage } from '../utils/firebase';
+import { doc, getDoc, serverTimestamp, setDoc, writeBatch } from 'firebase/firestore';
+import { auth, db, storage } from '../utils/firebase';
 
 type PublicProfileDraft = { name: string; bio: string; photoUrl: string };
 const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
@@ -77,15 +78,22 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
     setMessage('');
     try {
       const fields = { name, photoUrl: draft.photoUrl, updatedAt: serverTimestamp() };
-      await Promise.all([
-        setDoc(doc(db, 'users', user.uid), fields, { merge: true }),
-        setDoc(doc(db, 'users', user.uid, 'public_profile', 'main'),
-          { userId: user.uid, ...fields, bio }, { merge: true }),
-      ]);
-      await updateProfile(user, { displayName: name, photoURL: draft.photoUrl || null });
+      const batch=writeBatch(db);
+      batch.set(doc(db, 'users', user.uid), fields, { merge: true });
+      batch.set(doc(db, 'users', user.uid, 'public_profile', 'main'),
+        { userId: user.uid, ...fields, bio }, { merge: true });
+      await batch.commit();
+      if(auth.currentUser!==user)return;
       setDraft(current => ({ ...current, name, bio }));
       broadcastProfileUpdate(user, name, draft.photoUrl);
       setMessage('Foto, nome e biografia sincronizados.');
+      void reconcileProfileCompletionPilot(user);
+      try {
+        await updateProfile(user, { displayName: name, photoURL: draft.photoUrl || null });
+      } catch (error) {
+        console.warn('Perfil salvo; sincronização do nome de autenticação pendente.',error);
+        if(auth.currentUser===user)setMessage('Perfil salvo. Sincronização da conta pendente.');
+      }
     } catch (error) {
       console.error('Não foi possível salvar o perfil público:', error);
       setMessage('Falha ao sincronizar. Tente salvar novamente.');
@@ -182,7 +190,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
           </button>
         </div>
       </div>
-      <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} />
+      <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} onReserved={()=>void reconcileProfileCompletionPilot(user)} />
       <form className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4" onSubmit={event => void savePublicProfile(event)}>
         <label className="block text-sm font-semibold text-slate-200">
           Nome de exibição

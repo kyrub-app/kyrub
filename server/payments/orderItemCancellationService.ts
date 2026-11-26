@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireRefundOwnerInTransaction,requireRefundOwnerAccess,type RefundOwnerAuthority} from '../identity/refundOwnerAuthorization.js';
+import {loadCommercialRefundAuthority,calculateAuthoritativeCancellationAmount} from './orderCommercialRefundAuthorityService.js';
 import { resolveMercadoPagoAccessToken } from '../integrations/providerCredentialResolver.js';
 import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
@@ -178,6 +180,7 @@ const loadPaidMercadoPagoPayment = async (
     .where('orderId', '==', orderId)
     .limit(10)
     .get();
+  if(snapshot.size>=10)throw Error('PAYMENT_PARTIAL_REFUND_PAYMENT_HISTORY_REVIEW_REQUIRED');
   const eligible = snapshot.docs.flatMap(document => {
     try {
       const payment = normalizeCanonicalPayment({
@@ -219,10 +222,15 @@ const recordPartialRefundEconomicEntry = async (input: {
   );
 
   await adminDb.runTransaction(async transaction => {
-    const [refundSnapshot, captureSnapshot] = await Promise.all([
+    const requestRef=adminDb.doc(partialRefundPath(input.payment.storeId,input.operationId));
+    const [refundSnapshot, captureSnapshot,request] = await Promise.all([
       transaction.get(refundEntryRef),
-      transaction.get(captureEntryRef),
+      transaction.get(captureEntryRef),transaction.get(requestRef),
     ]);
+    if(!request.exists||request.get('orderId')!==input.payment.orderId||request.get('amount')!==input.amount||request.get('paymentId')!==input.payment.id)throw Error('PAYMENT_PARTIAL_REFUND_PROVIDER_STATE_MISMATCH');
+    const priorId=clean(request.get('providerRefundId'));
+    if(priorId&&priorId!==input.providerRefundId)throw Error('PAYMENT_PARTIAL_REFUND_PROVIDER_STATE_MISMATCH');
+    transaction.update(requestRef,{status:'refunded',providerRefundId:input.providerRefundId,refundedAt:input.occurredAt,updatedAt:new Date().toISOString()});
     if (refundSnapshot.exists) return;
 
     if (!captureSnapshot.exists) {
@@ -265,6 +273,16 @@ const recordPartialRefundEconomicEntry = async (input: {
   });
 };
 
+// A late request or failure must not overwrite a concurrently confirmed refund.
+async function updateUnconfirmedPartialRefund(ref:FirebaseFirestore.DocumentReference,patch:Record<string,unknown>){
+ return adminDb.runTransaction(async tx=>{
+  const current=await tx.get(ref);
+  if(current.get('status')==='refunded')return {status:'refunded' as const,providerRefundId:clean(current.get('providerRefundId'))};
+  tx.set(ref,patch,{merge:true});
+  return null;
+ });
+}
+
 const attemptPartialRefund = async (input: {
   storeId: string;
   orderId: string;
@@ -286,7 +304,7 @@ const attemptPartialRefund = async (input: {
     payment = await loadPaidMercadoPagoPayment(input.storeId, input.orderId);
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
-    await requestRef.set({
+    const retained=await updateUnconfirmedPartialRefund(requestRef,{
       storeId: input.storeId,
       orderId: input.orderId,
       operationId: input.operationId,
@@ -295,8 +313,8 @@ const attemptPartialRefund = async (input: {
       status: 'required',
       failureCode: code,
       updatedAt: new Date().toISOString(),
-    }, { merge: true });
-    return { status: 'required', providerRefundId: '' };
+    });
+    return retained??{ status: 'required', providerRefundId: '' };
   }
 
   const idempotencyKey = partialRefundIdempotencyKey({
@@ -306,7 +324,7 @@ const attemptPartialRefund = async (input: {
     amount: input.amount,
   });
   const now = new Date().toISOString();
-  await requestRef.set({
+  const retained=await updateUnconfirmedPartialRefund(requestRef,{
     storeId: input.storeId,
     orderId: input.orderId,
     operationId: input.operationId,
@@ -320,7 +338,8 @@ const attemptPartialRefund = async (input: {
     idempotencyKey,
     requestedAt: existing.data()?.requestedAt ?? now,
     updatedAt: now,
-  }, { merge: true });
+  });
+  if(retained)return retained;
 
   try {
     const refund = await providerRequest<MercadoPagoRefundResponse>(
@@ -338,23 +357,15 @@ const attemptPartialRefund = async (input: {
     const providerStatus = clean(refund.status).toLowerCase();
     if (
       !providerRefundId ||
-      (providerPaymentId && providerPaymentId !== payment.providerPaymentId) ||
-      (Number.isFinite(providerAmount) && money(providerAmount) !== money(input.amount))
+      providerPaymentId !== payment.providerPaymentId ||
+      !Number.isFinite(providerAmount) || money(providerAmount) !== money(input.amount)
     ) {
       throw new Error('PAYMENT_PARTIAL_REFUND_PROVIDER_STATE_MISMATCH');
     }
-    const refunded = !providerStatus ||
-      providerStatus === 'approved' ||
+    const refunded = providerStatus === 'approved' ||
       providerStatus === 'refunded' ||
       providerStatus === 'completed';
     const occurredAt = clean(refund.date_created) || new Date().toISOString();
-    await requestRef.set({
-      status: refunded ? 'refunded' : 'processing',
-      providerRefundId,
-      providerRefundStatus: providerStatus,
-      refundedAt: refunded ? occurredAt : '',
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
     if (refunded) {
       await recordPartialRefundEconomicEntry({
         payment,
@@ -363,6 +374,9 @@ const attemptPartialRefund = async (input: {
         providerRefundId,
         occurredAt,
       });
+    }else{
+      const retained=await updateUnconfirmedPartialRefund(requestRef,{status:'processing',providerRefundId,providerRefundStatus:providerStatus,updatedAt:new Date().toISOString()});
+      if(retained)return retained;
     }
     return {
       status: refunded ? 'refunded' : 'processing',
@@ -370,12 +384,12 @@ const attemptPartialRefund = async (input: {
     };
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
-    await requestRef.set({
+    const retained=await updateUnconfirmedPartialRefund(requestRef,{
       status: 'failed',
       failureCode: code.slice(0, 180),
       updatedAt: new Date().toISOString(),
-    }, { merge: true });
-    return { status: 'failed', providerRefundId: '' };
+    });
+    return retained??{ status: 'failed', providerRefundId: '' };
   }
 };
 
@@ -386,6 +400,7 @@ const mutateOrderItems = async (input: {
   reason: string;
   alternative: string;
   selections: NormalizedCancellationSelection[];
+  authority?:RefundOwnerAuthority;
 }): Promise<CancellationMutationResult> => {
   const orderRef = adminDb.doc(
     `artifacts/${input.storeId}/public/data/customerOrders/${input.orderId}`
@@ -396,6 +411,7 @@ const mutateOrderItems = async (input: {
   );
 
   return adminDb.runTransaction(async transaction => {
+    if(input.authority)await requireRefundOwnerInTransaction(transaction,input.storeId,input.authority);
     const [existingCancellation, orderSnapshot, tenantSnapshot] = await Promise.all([
       transaction.get(cancellationRef),
       transaction.get(orderRef),
@@ -403,7 +419,9 @@ const mutateOrderItems = async (input: {
     ]);
     if (existingCancellation.exists) {
       const data = existingCancellation.data() as Record<string, unknown>;
-      if (clean(data.orderId) !== input.orderId) {
+      const priorItems=Array.isArray(data.items)?data.items:[];
+      const sameSelection=priorItems.length===input.selections.length&&input.selections.every(selection=>priorItems.some(item=>item&&typeof item==='object'&&clean(item.lineId)===selection.lineId&&item.quantity===selection.quantity));
+      if (clean(data.orderId) !== input.orderId ||clean(data.reason)!==input.reason||clean(data.alternative)!==input.alternative||!sameSelection) {
         throw new Error('ORDER_ITEM_CANCELLATION_OPERATION_CONFLICT');
       }
       return {
@@ -429,6 +447,7 @@ const mutateOrderItems = async (input: {
       throw new Error('ORDER_ITEM_CANCELLATION_ORDER_EMPTY');
     }
 
+    const frozen=await loadCommercialRefundAuthority(input.storeId,input.orderId,transaction);
     const selections = new Map(
       input.selections.map(selection => [selection.lineId, selection.quantity])
     );
@@ -475,6 +494,11 @@ const mutateOrderItems = async (input: {
         ? remainingSettledAmount
         : money(Math.max(0, remainingQuantity * price - remainingDiscountAmount));
       const lineCancelledAmount = money(currentNetAmount - remainingNetAmount);
+      if(frozen){
+        const frozenLine=frozen.lines.get(lineId);
+        if(!frozenLine||frozenLine.productId!==clean(item.productId)||currentQuantity>frozenLine.quantity)throw Error('ORDER_COMMERCIAL_REFUND_LINE_IDENTITY_MISMATCH');
+        if(calculateAuthoritativeCancellationAmount({authority:frozen,lineId,cancelQuantity})!==lineCancelledAmount)throw Error('ORDER_COMMERCIAL_REFUND_AMOUNT_MISMATCH');
+      }
       cancelledAmount = money(cancelledAmount + lineCancelledAmount);
 
       cancelledSnapshots.push({
@@ -509,13 +533,40 @@ const mutateOrderItems = async (input: {
     }
 
     const previousTotal = nonNegativeMoney(order.total);
-    const remainingTotal = money(Math.max(0, previousTotal - cancelledAmount));
+    if(cancelledAmount>previousTotal)throw Error('ORDER_ITEM_CANCELLATION_AMOUNT_INVALID');
+    const remainingTotal = money(previousTotal - cancelledAmount);
     const remainingSubtotal = money(nextItems.reduce((sum, candidate) => {
       const item = candidate as Record<string, unknown>;
       return sum + nonNegativeMoney(item.price) * integer(item.quantity);
     }, 0));
     const paymentStatus = clean(order.paymentStatus);
     const refundRequired = paymentStatus === 'paid';
+    if(refundRequired){
+      // Read full-refund state and the same paid payment collection before
+      // writing the partial obligation. A concurrent full refund conflicts.
+      const full=await transaction.get(adminDb.collection(`stores/${input.storeId}/paymentRefunds`).where('orderId','==',input.orderId).limit(1));
+      if(!full.empty)throw Error('PAYMENT_REFUND_FULL_HISTORY_REVIEW_REQUIRED');
+      const payments=await transaction.get(adminDb.collection(`stores/${input.storeId}/payments`).where('orderId','==',input.orderId).limit(10));
+      if(payments.size>=10||payments.docs.some(d=>['refund_requested','refund_processing','refund_failed','refunded'].includes(clean(d.get('status')))))throw Error('PAYMENT_REFUND_FULL_HISTORY_REVIEW_REQUIRED');
+      // A second paid cancellation may not create a new obligation while
+      // the previous provider result is unresolved. Exact replay is handled above.
+      const prior=await transaction.get(adminDb.collection(`stores/${input.storeId}/paymentPartialRefunds`).where('orderId','==',input.orderId).limit(51));
+      if(prior.size>50||prior.docs.some(d=>d.get('status')!=='refunded'))throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+      const paid=payments.docs.filter(d=>d.get('status')==='paid');
+      if(paid.length>1)throw Error('PAYMENT_REFUND_MULTIPLE_PAYMENTS_UNSUPPORTED');
+      if(prior.size>0&&paid.length!==1)throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+      if(paid.length===1){
+        const payment=paid[0],amount=payment.get('amount');
+        if(typeof amount!=='number'||!Number.isFinite(amount)||amount<=0)throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+        const seen=new Set<string>();let already=0;
+        for(const doc of prior.docs){
+          const id=clean(doc.get('providerRefundId')),value=doc.get('amount');
+          if(!id||seen.has(id)||doc.get('paymentId')!==payment.id||!clean(payment.get('providerPaymentId'))||clean(doc.get('providerPaymentId'))!==clean(payment.get('providerPaymentId'))||typeof value!=='number'||!Number.isFinite(value)||value<=0)throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+          seen.add(id);already+=brlToMinor(value);
+        }
+        if(!Number.isSafeInteger(already)||already+brlToMinor(cancelledAmount)>brlToMinor(amount))throw Error('ORDER_ITEM_CANCELLATION_AMOUNT_INVALID');
+      }
+    }
     const updatedAt = new Date().toISOString();
     const cancellationRecord = {
       storeId: input.storeId,
@@ -604,11 +655,13 @@ const syncCancellationRefundState = async (input: {
   status: OrderItemCancellationRefundStatus;
   providerRefundId: string;
 }): Promise<void> => {
-  await adminDb.doc(cancellationPath(input.storeId, input.operationId)).set({
-    refundStatus: input.status,
-    providerRefundId: input.providerRefundId,
-    updatedAt: new Date().toISOString(),
-  }, { merge: true });
+  const ref=adminDb.doc(cancellationPath(input.storeId,input.operationId));
+  await adminDb.runTransaction(async tx=>{
+    const prior=await tx.get(ref);
+    if(!prior.exists)throw Error('ORDER_ITEM_CANCELLATION_OPERATION_CONFLICT');
+    if(prior.get('refundStatus')==='refunded')return;
+    tx.update(ref,{refundStatus:input.status,providerRefundId:input.providerRefundId,updatedAt:new Date().toISOString()});
+  });
 };
 
 export const cancelOrderItemsWithRefund = async (input: {
@@ -618,6 +671,7 @@ export const cancelOrderItemsWithRefund = async (input: {
   reason: string;
   alternative?: string;
   selections: unknown;
+  authority?:RefundOwnerAuthority;
 }): Promise<OrderItemCancellationResult> => {
   const storeId = clean(input.storeId);
   const orderId = clean(input.orderId);
@@ -638,7 +692,7 @@ export const cancelOrderItemsWithRefund = async (input: {
     operationId,
     reason,
     alternative,
-    selections,
+    selections,authority:input.authority,
   });
 
   if (mutation.paymentStatus !== 'paid') {
@@ -654,6 +708,7 @@ export const cancelOrderItemsWithRefund = async (input: {
     };
   }
 
+  if(input.authority)await requireRefundOwnerAccess(storeId,input.authority);
   const refund = await attemptPartialRefund({
     storeId,
     orderId,

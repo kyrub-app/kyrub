@@ -101,8 +101,12 @@ export const subscribeToPreferredTablePayments = (
   let canonicalStoreId = '';
   let canonicalEnabled = false;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
+  let canonicalGeneration=0;
+  let stopped=false;
+  const legacyParsed=new Map<string,LegacyTablePaymentRecord|null>();
 
   const publish = (): void => {
+    if(stopped)return;
     const equivalent =
       legacyState === 'unavailable' ||
       (legacyState === 'available' &&
@@ -123,6 +127,7 @@ export const subscribeToPreferredTablePayments = (
   };
 
   const restartCanonical = (): void => {
+    const generation=++canonicalGeneration;
     unsubscribeCanonical();
     unsubscribeCanonical = () => undefined;
     canonicalPayments = [];
@@ -132,17 +137,24 @@ export const subscribeToPreferredTablePayments = (
       return;
     }
     publish();
+    const parsedById=new Map<string,LegacyTablePaymentRecord|null>();
     unsubscribeCanonical = onSnapshot(
       collection(db, `stores/${canonicalStoreId}/payments`),
       snapshot => {
+        if(stopped||generation!==canonicalGeneration)return;
+        for(const change of snapshot.docChanges()){
+          if(change.type==='removed')parsedById.delete(change.doc.id);
+          else parsedById.set(change.doc.id,parseCanonicalPayment(change.doc,normalizedStoreId));
+        }
         canonicalPayments = snapshot.docs.flatMap(document => {
-          const parsed = parseCanonicalPayment(document, normalizedStoreId);
+          const parsed = parsedById.get(document.id);
           return parsed ? [parsed] : [];
         });
         canonicalState = 'available';
         publish();
       },
       error => {
+        if(stopped||generation!==canonicalGeneration)return;
         canonicalState = 'unavailable';
         publish();
         onError?.(error);
@@ -153,14 +165,20 @@ export const subscribeToPreferredTablePayments = (
   const unsubscribeLegacy = onSnapshot(
     collection(db, getLegacyTablePaymentsCollectionPath(normalizedStoreId)),
     snapshot => {
+      if(stopped)return;
+      for(const change of snapshot.docChanges()){
+        if(change.type==='removed')legacyParsed.delete(change.doc.id);
+        else legacyParsed.set(change.doc.id,parseLegacyTablePayment(change.doc.data(),change.doc.id));
+      }
       legacyPayments = snapshot.docs.flatMap(document => {
-        const parsed = parseLegacyTablePayment(document.data(), document.id);
+        const parsed = legacyParsed.get(document.id);
         return parsed ? [parsed] : [];
       });
       legacyState = 'available';
       publish();
     },
     error => {
+      if(stopped)return;
       legacyState = 'unavailable';
       publish();
       onError?.(error);
@@ -170,6 +188,7 @@ export const subscribeToPreferredTablePayments = (
   const unsubscribeConfig = onSnapshot(
     doc(db, 'tenants', normalizedStoreId),
     snapshot => {
+      if(stopped)return;
       const previousStoreId = canonicalStoreId;
       const previousEnabled = canonicalEnabled;
       const config = parseCanonicalReadConfig(snapshot.data());
@@ -185,13 +204,16 @@ export const subscribeToPreferredTablePayments = (
       }
     },
     error => {
+      if(stopped)return;
       canonicalEnabled = false;
-      publish();
+      restartCanonical();
       onError?.(error);
     }
   );
 
   return () => {
+    stopped=true;
+    canonicalGeneration++;
     unsubscribeLegacy();
     unsubscribeConfig();
     unsubscribeCanonical();

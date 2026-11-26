@@ -52,11 +52,13 @@ type ProspectiveTag={
   activationHash?:unknown;
   reservedEmailHash?:unknown;
   blocked?:unknown;
+  manufacturingState?:unknown;
 };
 
 export function isOpenPromotionalTag(data:ProspectiveTag|undefined):boolean{
   return data?.distribution===PROMOTIONAL_TAG_KIND &&
     data.model==='adesivo' &&
+    (data.manufacturingState===undefined||data.manufacturingState==='released') &&
     data.pilotBatch==null &&
     data.pilotSlot==null &&
     data.reservedForUid==null &&

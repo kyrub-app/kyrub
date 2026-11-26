@@ -62,6 +62,11 @@ export const createStoreOrderProfitabilityRouter = (): Router => {
       if (!storeId) throw new Error('STORE_ORDER_PROFITABILITY_STORE_REQUIRED');
       await requireOwner(request.get('authorization') ?? '', storeId);
       const profitability = await reconcileStoreOrderProfitability(storeId);
+      if (request.query.includeProducts === 'true') {
+        const products = await reconcileStoreProductProfitability(storeId, profitability);
+        response.status(200).json({ storeId, orders: profitability, products });
+        return;
+      }
       response.status(200).json(profitability);
     } catch (error) {
       const mapped = mapError(error);

@@ -73,6 +73,7 @@ interface ProviderRefundReadOnlyDiagnosis {
     statuses: Record<string, number>;
   };
   partialAttempt: { count: number; statusCounts: Record<string, number> };
+  residual?:{state:'matched'|'review_required';remainingMinor:number|null;reason:string;executionEnabled:false};
   blockers: string[];
   assessment: {
     state: 'verified_zero_refund_observation' | 'provider_no_refund_listed_but_incomplete' | 'requires_manual_reconciliation';
@@ -1097,6 +1098,7 @@ export const PaidOrderRefundBridge = ({
                   {' '}· total {money.format(providerDiagnostic.refunds.approvedAmountMinor / 100)}
                 </p>
                 <p>Devoluções com resultado incerto: {providerDiagnostic.refunds.uncertainRefundCount}</p>
+                {providerDiagnostic.residual&&<p className="text-amber-200">{providerDiagnostic.residual.state==='matched'&&providerDiagnostic.residual.remainingMinor!==null?`Saldo residual observado: ${money.format(providerDiagnostic.residual.remainingMinor/100)}. Apenas conferência; nenhuma devolução autorizada.`:'Saldo residual não comprovado. O histórico exige conciliação antes de novo reembolso.'}</p>}
                 {providerDiagnostic.refunds.refundCount > 0 && (
                   <p>Estados informados: {Object.entries(providerDiagnostic.refunds.statuses)
                     .map(([state, count]) => `${state}: ${count}`).join(' · ')}</p>

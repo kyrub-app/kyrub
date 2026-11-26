@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -272,4 +273,18 @@ test('canonical storefront and editor enforce distinct publication visibility', 
   assert.equal(isCanonicalProductVisibleForCatalog('draft', true), true);
   assert.equal(isCanonicalProductVisibleForCatalog('archived', true), false);
   assert.equal(isCanonicalProductVisibleForCatalog(undefined, true), false);
+});
+
+
+test('catalog and payment listeners ignore callbacks after disposal and stop invalid subscriptions', () => {
+  const products=readFileSync(new URL('../src/utils/publicProducts.ts',import.meta.url),'utf8');
+  const catalog=products.slice(products.indexOf('export const subscribeToPreferredPublicProducts ='));
+  assert.equal((catalog.match(/if \(stopped \|\| generation !== canonicalSubscriptionGeneration\) return;/g)??[]).length,2);
+  assert.equal((catalog.match(/if \(stopped \|\| storeGeneration !== storeSubscriptionGeneration\) return;/g)??[]).length,2);
+  assert.match(catalog,/stopped=true;\s*\+\+canonicalSubscriptionGeneration;\s*\+\+storeSubscriptionGeneration;/);
+  assert.match(catalog,/canonicalEnabled = false;\s*\+\+storeSubscriptionGeneration;\s*unsubscribeStore\(\);\s*unsubscribeStore=\(\)=>undefined;\s*storeStatusResolved=false;\s*restartCanonicalSubscription\(\);/);
+  const payments=readFileSync(new URL('../src/utils/canonicalPaymentReads.ts',import.meta.url),'utf8');
+  assert.equal((payments.match(/if\(stopped\)return;/g)??[]).length,5);
+  assert.match(payments,/if\(stopped\)return;\s*canonicalEnabled = false;\s*restartCanonical\(\);\s*onError\?\.\(error\);/);
+  assert.match(payments,/stopped=true;\s*canonicalGeneration\+\+;\s*unsubscribeLegacy\(\);\s*unsubscribeConfig\(\);\s*unsubscribeCanonical\(\);/);
 });

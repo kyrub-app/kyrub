@@ -52,7 +52,7 @@ const authorizeStoreMember = async (input: {
   if (!canonicalStoreId) throw new Error('IN_PERSON_ORDER_FORBIDDEN');
   const memberSnapshot = await adminDb.doc('stores/' + canonicalStoreId + '/members/' + identity.uid).get();
   const member = parseStoreMember(memberSnapshot.data());
-  if (!member || member.status !== 'active' || !hasStorePermission(member.role, input.permission)) {
+  if (!member || member.storeId!==canonicalStoreId||member.userId!==identity.uid||member.role==='owner'||member.status !== 'active' || !hasStorePermission(member.role, input.permission)) {
     throw new Error('IN_PERSON_ORDER_FORBIDDEN');
   }
   return { authenticatedUserId: identity.uid, role: member.role };
@@ -64,6 +64,7 @@ const mapError = (error: unknown): { status: number; message: string; code?: str
     return { status: 401, message: 'Faça login novamente para operar o PDV local.' };
   }
   if (
+    code === 'STORE_ACCESS_DENIED' || code === 'STORE_ERP_AGE_REQUIRED' ||
     code === 'STORE_REPRESENTATION_FORBIDDEN' ||
     code === 'IN_PERSON_ORDER_FORBIDDEN' ||
     code === 'FISCAL_CONSUMER_IDENTITY_FORBIDDEN'

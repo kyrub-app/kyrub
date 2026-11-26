@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
 
 type DataStatus = 'complete' | 'partial';
@@ -133,12 +133,10 @@ const statusClass = (active: boolean): string =>
     ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100'
     : 'border-slate-700 bg-slate-950 text-slate-400';
 
-async function authorizedJson<T extends { error?: string }>(url: string): Promise<T> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Faça login novamente.');
-  const token = await user.getIdToken();
+async function authorizedJson<T extends { storeId: string; error?: string }>(url: string, storeId:string, user:NonNullable<typeof auth.currentUser>, token:string, signal:AbortSignal): Promise<T> {
+  if(signal.aborted||auth.currentUser!==user)throw new Error('Sessão alterada.');
   const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}` }, signal, cache:'no-store',
   });
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('application/json')) {
@@ -148,19 +146,20 @@ async function authorizedJson<T extends { error?: string }>(url: string): Promis
   if (!response.ok) {
     throw new Error(payload.error || 'Não foi possível carregar Resultados & Margens.');
   }
+  if(payload.storeId!==storeId||signal.aborted||auth.currentUser!==user)throw new Error('Loja ou sessão alterada.');
   return payload;
 }
 
-async function loadProfitability(storeId: string): Promise<{
+async function loadProfitability(storeId: string,user:NonNullable<typeof auth.currentUser>,signal:AbortSignal): Promise<{
   orders: OrderOverview;
   products: ProductOverview;
 }> {
+  const token=await user.getIdToken();
+  if(signal.aborted||auth.currentUser!==user)throw new Error('Sessão alterada.');
   const query = `storeId=${encodeURIComponent(storeId)}`;
-  const [orders, products] = await Promise.all([
-    authorizedJson<OrderOverview>(`/api/store-finance/profitability?${query}`),
-    authorizedJson<ProductOverview>(`/api/store-finance/profitability/products?${query}`),
-  ]);
-  return { orders, products };
+  const result = await authorizedJson<{storeId:string;orders:OrderOverview;products:ProductOverview;error?:string}>(`/api/store-finance/profitability?${query}&includeProducts=true`,storeId,user,token,signal);
+  if(result.orders?.storeId!==storeId||result.products?.storeId!==storeId)throw new Error('Apuração de rentabilidade incompleta ou de outra loja.');
+  return {orders:result.orders,products:result.products};
 }
 
 export default function StoreResultsMarginsWorkspace({ storeId }: { storeId: string }) {
@@ -171,25 +170,41 @@ export default function StoreResultsMarginsWorkspace({ storeId }: { storeId: str
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
 
+  const request=useRef<AbortController|null>(null);
   const load = useCallback(async (silent = false) => {
+    request.current?.abort();
+    const controller=new AbortController();
+    request.current=controller;
+    const user=auth.currentUser;
+    const current=()=>request.current===controller&&!controller.signal.aborted&&auth.currentUser===user;
     if (!silent) setLoading(true);
     setError('');
     try {
-      const result = await loadProfitability(storeId);
+      if(!user)throw new Error('Faça login novamente.');
+      const result = await loadProfitability(storeId,user,controller.signal);
+      if(!current())return;
       setOrders(result.orders);
       setProducts(result.products);
     } catch (caught) {
+      if(!current())return;
+      setOrders(null);
+      setProducts(null);
       setError(
         caught instanceof Error
           ? caught.message
           : 'Não foi possível carregar Resultados & Margens.'
       );
+      controller.abort();
+      setLoading(false);
     } finally {
-      if (!silent) setLoading(false);
+      if(current()){setLoading(false);request.current=null;}
     }
   }, [storeId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    setOrders(null);setProducts(null);void load();
+    return()=>{request.current?.abort();request.current=null;};
+  }, [load]);
 
   const filteredProducts = useMemo(() => {
     const rows = products?.products ?? [];

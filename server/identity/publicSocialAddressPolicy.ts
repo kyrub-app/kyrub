@@ -15,7 +15,9 @@ export function isSocialAddress(kind: unknown, identifier: unknown): kind is Soc
 }
 export function canReserveSocialAddress(kind: SocialDestinationKind, actor: string, targetId: string, source: Record<string, unknown> | undefined): boolean {
   if (!source || !isDocumentId(actor) || !isDocumentId(targetId)) return false;
-  return kind === 'profile' ? actor === targetId && source.isProfileVisible === true
+  // Reserving a personal identity does not publish the profile.
+  // Public projection independently requires explicit visibility.
+  return kind === 'profile' ? actor === targetId
     : source.ownerId === actor && (source.visibility === 'public' || source.visibility === 'moderated');
 }
 export function projectSocialAddress(record: SocialAddressRecord, source: Record<string, unknown> | undefined, profile?: Record<string, unknown>): PublicSocialDestination | null {
@@ -29,4 +31,10 @@ export function projectSocialAddress(record: SocialAddressRecord, source: Record
   return {kind:record.kind, identifier:record.identifier, name,
     description: record.kind === 'profile' ? clean(profile?.bio,280) : clean(source.description,500),
     image: /^https:\/\//i.test(photo) ? photo : ''};
+}
+
+/** Both indices must attest the same identity; neither alone proves ownership. */
+export function matchesSocialAddressRecord(record: Record<string, unknown> | undefined, kind: SocialDestinationKind, identifier: string, targetId: string): boolean {
+  return isSocialAddress(kind, identifier) && isDocumentId(targetId) &&
+    record?.kind === kind && record.identifier === identifier && record.targetId === targetId;
 }

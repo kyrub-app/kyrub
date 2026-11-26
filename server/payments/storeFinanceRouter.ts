@@ -1,3 +1,4 @@
+import {requireStagedFinancialOwnerAccess,requireFinancialPolicyInTransaction} from '../identity/stagedFinancialAuthorization.js';
 import { parseStoreFinanceSection } from '../../shared/storeFinanceSections.js';
 import { emptyFinanceTaxonomy, normalizeFinanceTaxonomy, mutateFinanceTaxonomy, resolveCustomFinanceRef } from '../../shared/storeFinanceTaxonomy.js';
 import { randomUUID } from 'node:crypto';
@@ -44,6 +45,10 @@ const bearerToken = (authorization: string): string =>
 
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
+  if(code==='STORE_FINANCE_AGE_REQUIRED')return {status:403,message:'A elegibilidade comercial precisa estar verificada.',code};
+  if(code==='second_factor_required'||code==='reauthentication_required')return {status:403,message:'Confirme sua autenticação em dois fatores para acessar o financeiro.',code};
+  if(code==='authentication_required'||String((error as {code?:string})?.code??'').startsWith('auth/'))return {status:401,message:'Faça login novamente.',code:'AUTH_REQUIRED'};
+  if(code==='FINANCIAL_MFA_PREVIEW_UNAVAILABLE')return {status:503,message:'Homologação financeira indisponível.',code};
   if (code === 'AUTH_REQUIRED') {
     return { status: 401, message: 'Faça login novamente.', code };
   }
@@ -72,6 +77,12 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
 };
 
 const requireOwner = async (authorization: string, storeId: string): Promise<string> => {
+  if(process.env.KYRUB_FINANCIAL_MFA_PREVIEW_ENABLED==='true'){
+    const {requireFinancialMfaPreviewOwner}=await import('../identity/financialMfaPreview.js');
+    const ownerId=await requireFinancialMfaPreviewOwner(authorization,storeId);
+    await requireStagedFinancialOwnerAccess(authorization,ownerId);
+    return ownerId;
+  }
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
@@ -79,6 +90,7 @@ const requireOwner = async (authorization: string, storeId: string): Promise<str
     storeId,
     authenticatedUserId: identity.uid,
   });
+  await requireStagedFinancialOwnerAccess(authorization,identity.uid);
   return identity.uid;
 };
 
@@ -94,57 +106,36 @@ const canRecoverPaidCapture = (payment: CanonicalPayment): boolean =>
  * was wired can be recovered from their canonical paid snapshot. The entry id is
  * deterministic, so reopening Financeiro cannot duplicate revenue.
  */
-const recoverMissingCanonicalPaidCaptures = async (storeId: string): Promise<number> => {
-  const paymentSnapshot = await adminDb
-    .collection(`stores/${storeId}/payments`)
-    .where('status', '==', 'paid')
-    .limit(100)
-    .get();
-
-  const candidates = paymentSnapshot.docs.flatMap(document => {
-    try {
-      const payment = normalizeCanonicalPayment({
-        ...(document.data() as CanonicalPayment),
-        id: document.id,
-        storeId,
-      });
-      return canRecoverPaidCapture(payment) ? [payment] : [];
-    } catch (error) {
-      console.warn('[Store finance] Invalid historical payment skipped.', {
-        storeId,
-        paymentId: document.id,
-        error: error instanceof Error ? error.message : 'unknown',
-      });
-      return [];
-    }
-  });
-
-  if (candidates.length === 0) return 0;
-
-  const refs = candidates.map(payment =>
-    adminDb.doc(
-      storeEconomicLedgerEntryPath(
-        storeId,
-        buildPaymentCaptureEconomicEntryId(payment.id)
-      )
-    )
-  );
-  const existing = await adminDb.getAll(...refs);
-  const batch = adminDb.batch();
-  let recoveredCount = 0;
-
-  candidates.forEach((payment, index) => {
-    if (existing[index]?.exists) return;
-    const entry = buildRecoveredPaymentCaptureEconomicEntry({
-      payment,
-      paymentIntentId: payment.paymentIntentId ?? '',
+/** Recovery is human-initiated historical repair, not a new payment.
+ * Read sources and existing captures inside the same transaction; never
+ * overwrite a capture created by the provider webhook. */
+export const recoverMissingCanonicalPaidCaptures = async (storeId: string,authorization:string,ownerId:string): Promise<number> => {
+  return adminDb.runTransaction(async tx=>{
+    if(storeId!==ownerId||!/^[A-Za-z0-9_-]{1,128}$/.test(storeId))throw Error('STORE_REPRESENTATION_FORBIDDEN');
+    const owner=await tx.get(adminDb.doc('users/'+storeId+'/stores/'+storeId));
+    if(!owner.exists||owner.get('id')!==storeId||owner.get('ownerId')!==ownerId)throw Error('STORE_REPRESENTATION_FORBIDDEN');
+    await requireFinancialPolicyInTransaction(tx,authorization,ownerId);
+    const snapshot=await tx.get(adminDb.collection(`stores/${storeId}/payments`).where('status','==','paid').limit(100));
+    const candidates=snapshot.docs.flatMap(document=>{
+      try{
+        const raw=document.data() as CanonicalPayment;
+        if(raw.id!==document.id||raw.storeId!==storeId||raw.currency!=='BRL')return [];
+        const payment=normalizeCanonicalPayment(raw);
+        return canRecoverPaidCapture(payment)?[payment]:[];
+      }catch{return [];}
     });
-    batch.set(refs[index], entry);
-    recoveredCount += 1;
+    if(!candidates.length)return 0;
+    const refs=candidates.map(payment=>adminDb.doc(storeEconomicLedgerEntryPath(storeId,buildPaymentCaptureEconomicEntryId(payment.id))));
+    const existing=await tx.getAll(...refs);
+    let recoveredCount=0;
+    for(const [index,payment] of candidates.entries()){
+      if(existing[index].exists)continue;
+      const entry=buildRecoveredPaymentCaptureEconomicEntry({payment,paymentIntentId:payment.paymentIntentId??''});
+      tx.create(refs[index],entry);
+      recoveredCount++;
+    }
+    return recoveredCount;
   });
-
-  if (recoveredCount > 0) await batch.commit();
-  return recoveredCount;
 };
 
 type StoreReceivableView = Pick<
@@ -369,9 +360,12 @@ const transitionPayable = async (input: {
   storeId: string;
   payableId: string;
   to: Exclude<StoreFinancePayableStatus, 'open'>;
+  authorization:string;
+  ownerId:string;
 }): Promise<StoreFinancePayable> => {
   const ref = adminDb.doc(storeFinancePayablePath(input.storeId, input.payableId));
   return adminDb.runTransaction(async transaction => {
+    await requireFinancialPolicyInTransaction(transaction,input.authorization,input.ownerId);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new Error('STORE_FINANCE_PAYABLE_NOT_FOUND');
     const current = normalizeStoreFinancePayable({
@@ -424,7 +418,7 @@ export const createStoreFinanceRouter = (): Router => {
         response.status(200).json({storeId,section,cash});
         return;
       }
-      const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
+      const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId,request.get('authorization')??'',ownerId);
       if(section==='overview'||section==='movements'){
         const entries=await listStoreEconomicLedgerEntries({storeId,limit:100});
         response.status(200).json({storeId,section,summary:deriveStoreEconomicLedgerSummary(entries),entries,recoveredCount});
@@ -473,6 +467,7 @@ export const createStoreFinanceRouter = (): Router => {
         const id=operation==='create'?(kind==='centers'?'cc_custom_':'cat_custom_')+randomUUID():body.id;
         const ref=financeTaxonomyRef(storeId);
         const taxonomy=await adminDb.runTransaction(async tx=>{
+          await requireFinancialPolicyInTransaction(tx,request.get('authorization')??'',ownerId);
           const current=decodeFinanceTaxonomy((await tx.get(ref)).data());
           const next=mutateFinanceTaxonomy(current,kind,operation,id,body.name);
           tx.set(ref,{schemaVersion:1,taxonomy:next});
@@ -486,6 +481,7 @@ export const createStoreFinanceRouter = (): Router => {
         const billingDocumentType = payableBillingDocumentType(body.billingDocumentType);
         const id = 'payable_'+randomUUID();
         const payable = await adminDb.runTransaction(async tx => {
+          await requireFinancialPolicyInTransaction(tx,request.get('authorization')??'',ownerId);
           const customCenter=typeof body.costCenterId==='string'&&body.costCenterId.startsWith('cc_custom_');
           const customCategoryRequested=body.customCategoryId!==undefined&&body.customCategoryId!=='';
           const taxonomy=customCenter||customCategoryRequested?decodeFinanceTaxonomy((await tx.get(financeTaxonomyRef(storeId))).data()):emptyFinanceTaxonomy();
@@ -526,12 +522,12 @@ export const createStoreFinanceRouter = (): Router => {
       const payableId = clean(body.payableId);
       if (!payableId) throw new Error('STORE_FINANCE_PAYABLE_ID_INVALID');
       if (action === 'mark_payable_paid') {
-        const payable = await transitionPayable({ storeId, payableId, to: 'paid' });
+        const payable = await transitionPayable({ storeId, payableId, to: 'paid',authorization:request.get('authorization')??'',ownerId });
         response.status(200).json({ payable });
         return;
       }
       if (action === 'cancel_payable') {
-        const payable = await transitionPayable({ storeId, payableId, to: 'cancelled' });
+        const payable = await transitionPayable({ storeId, payableId, to: 'cancelled',authorization:request.get('authorization')??'',ownerId });
         response.status(200).json({ payable });
         return;
       }

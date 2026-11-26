@@ -1,5 +1,6 @@
 import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireErpAgeInTransaction} from '../identity/erpOperationAuthorization.js';
 import {
   normalizeCanonicalPaymentIntent,
   type MarketplaceCanonicalPaymentIntent,
@@ -173,6 +174,9 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     return bridgeFromPix({ ...existingPix, expiresAt: effectiveExpiresAt }, approval.status);
   }
 
+  // Check immediately before creating a new external charge. Once the
+  // provider has responded, always retain its reference for reconciliation.
+  await adminDb.runTransaction(tx=>requireErpAgeInTransaction(tx,intent.buyerId));
   const refreshedAt = new Date().toISOString();
   const refreshedExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const refreshedIntent: MarketplaceCanonicalPaymentIntent = { ...intent, expiresAt: refreshedExpiresAt, updatedAt: refreshedAt };

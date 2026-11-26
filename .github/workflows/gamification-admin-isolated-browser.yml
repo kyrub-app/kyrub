@@ -1,0 +1,163 @@
+name: Gamification admin isolated browser
+on:
+  pull_request:
+    branches: [main, test-gamification-transversal-browser, feat/finance-mobile-module-navigation-v1]
+    paths:
+      - 'server/gamification/semeadura*.ts'
+      - 'src/components/admin/AdminGamification*.tsx'
+      - 'src/utils/gamificationAdminPilotClient.ts'
+      - 'src/utils/firebase.ts'
+      - 'src/components/admin/AdminControlPlane*.tsx'
+      - 'tests/fixtures/gamification-control-plane-browser.tsx'
+      - 'tests/gamification-admin-browser.test.mjs'
+      - 'tests/profile-completion-browser.test.mjs'
+      - 'tests/staff-directory-browser.test.mjs'
+      - 'tests/social-directory-browser.test.mjs'
+      - 'tests/admin-directory-browser.test.mjs'
+      - 'server/identity/adminDirectory*.ts'
+      - 'src/utils/adminDirectory*.ts'
+      - 'src/components/admin/AdminDirectoryWorkspace.tsx'
+      - 'tests/fixtures/social-directory-browser.tsx'
+      - 'server/identity/social*Directory*.ts'
+      - 'src/utils/social*Directory*.ts'
+      - 'src/hooks/useLiveAuthorIdentities.ts'
+      - 'src/components/ProfileSocialHubNative.tsx'
+      - 'tests/fixtures/staff-directory-browser.tsx'
+      - 'server/identity/storeStaffDirectory*.ts'
+      - 'src/utils/storeStaffDirectoryPilot.ts'
+      - 'src/components/store/StoreTeamWorkspace.tsx'
+      - 'tests/fixtures/profile-completion-browser.tsx'
+      - 'server/gamification/profileCompletion*.ts'
+      - 'server/identity/publicSocialAddress*.ts'
+      - 'src/utils/profileCompletionPilot.ts'
+      - 'src/components/ProfilePublicIdentityEditor.tsx'
+      - 'src/components/PublicSocialAddressEditor.tsx'
+      - 'src/utils/rewardRefresh.ts'
+      - 'tests/fixtures/gamification-admin-browser.tsx'
+      - '.github/workflows/gamification-admin-isolated-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      NODE_ENV: test
+      GCLOUD_PROJECT: demo-kyrub-welcome
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-welcome
+      KYRUB_PITANGA_WELCOME_PROJECT_ID: demo-kyrub-welcome
+      KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED: 'true'
+      KYRUB_WELCOME_BONUS_EFFECTIVE_AT: '2026-11-15T00:00:00.000Z'
+      KYRUB_PITANGA_WELCOME_FENCE_EPOCH: welcome-emulator-only
+      KYRUB_SEMEADURA_ECONOMIC_PILOT: 'true'
+      KYRUB_SEMEADURA_SERVER_ENABLED: 'true'
+      KYRUB_SEMEADURA_HTTP_EMULATOR_TEST: 'true'
+      KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT: 'true'
+      KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT: 'true'
+      KYRUB_GAMIFICATION_ADMIN_REFERRAL_WRITE_PILOT: 'true'
+      KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT: 'true'
+      KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT: 'true'
+      KYRUB_SEMEADURA_ZERO_START_PILOT: 'true'
+      KYRUB_SEMEADURA_NO_WELCOME_PILOT: 'true'
+      KYRUB_PROFILE_COMPLETION_PILOT: 'true'
+      VITE_KYRUB_PROFILE_COMPLETION_PILOT: 'true'
+      KYRUB_STAFF_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_STAFF_DIRECTORY_PILOT: 'true'
+      KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+      KYRUB_ADMIN_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_ADMIN_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR: 'true'
+      VITE_GAMIFICATION_SUPERVISION_PROTOTYPE: 'true'
+      VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT: 'true'
+      VITE_GAMIFICATION_SUPERVISION_CASE_WRITE_PILOT: 'true'
+      VITE_GAMIFICATION_SUPERVISION_REFERRAL_WRITE_PILOT: 'true'
+      VITE_GAMIFICATION_SUPERVISION_RELEASE_WRITE_PILOT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm ci --prefix functions
+      - run: npx tsc --project functions/tsconfig.json
+      - run: npm run firestore:compose
+      - run: node scripts/build-welcome-functions.mjs
+      - name: Install isolated Chromium runner
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Run browser only against disposable Auth, Firestore and Functions emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/gamification-admin-browser.test.mjs"
+      - name: Verify personal profile reward journey in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/profile-completion-browser.test.mjs"
+      - name: Verify ERP staff invitation and acceptance in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/staff-directory-browser.test.mjs"
+      - name: Verify social directory pagination and privacy in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/social-directory-browser.test.mjs"
+      - name: Verify protected administrative directory and audit in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/admin-directory-browser.test.mjs"
+      - name: Verify existing journeys with private account root rules (isolated candidate only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GCLOUD_PROJECT" = demo-kyrub-welcome
+          test "$GOOGLE_CLOUD_PROJECT" = demo-kyrub-welcome
+          test "$NODE_ENV" = test
+          test -z "${VERCEL:-}${FIREBASE_SERVICE_ACCOUNT_JSON:-}${GOOGLE_APPLICATION_CREDENTIALS:-}"
+          trap 'rm -f .firebase-owner-only-ci.json .firebase/firestore.owner-only-ci.rules' EXIT
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const baseline=readFileSync('.firebase/firestore.combined.rules','utf8');
+          const pattern=/match \/users\/\{userId\}\s*\{\s*allow read: if isSignedIn\(\);/g;
+          assert.equal([...baseline.matchAll(pattern)].length,1,'root rule must match exactly once');
+          const candidate=baseline.replace(pattern, `match /users/{userId} {
+                allow get: if isSignedIn() && request.auth.uid == userId;
+                allow list: if false;`);
+          const config=JSON.parse(readFileSync('firebase.welcome.json','utf8'));
+          config.firestore.rules='.firebase/firestore.owner-only-ci.rules';
+          writeFileSync('.firebase/firestore.owner-only-ci.rules',candidate);
+          writeFileSync('.firebase-owner-only-ci.json',JSON.stringify(config));
+          NODE
+          for fixture in profile-completion staff-directory social-directory admin-directory; do
+            echo "::group::Private account root: ${fixture}"
+            npx --yes firebase-tools emulators:exec \
+              --config .firebase-owner-only-ci.json --project demo-kyrub-welcome \
+              --only auth,firestore,functions \
+              "node --test --import tsx tests/${fixture}-browser.test.mjs"
+            echo "::endgroup::"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gamification-admin-isolated-browser
+          path: gamification-admin-isolated-*.png
+          if-no-files-found: ignore
+          retention-days: 3

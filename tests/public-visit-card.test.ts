@@ -91,7 +91,7 @@ test('promo tag uses verified e-mail and transactional claim; public card carrie
  assert.match(api,/claimPromotionalKyrubTag\(actor,id,identity\.email\)/);
  assert.match(api,/recoverPromotionalKyrubTag\(actor,id,identity\.email,data\.recoveryCode\)/);
  assert.match(api,/rotatePromotionalRecoveryCode\(actor,id\)/);
- assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation\)/);
+ assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation,/);
  assert.match(page,/claim-promotional/);
  assert.match(page,/recover-promotional/);
  assert.match(page,/SOS · Informações de emergência/);
@@ -134,7 +134,8 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  const mail=readFileSync('src/components/TagEmailLinkIdentity.tsx','utf8');
  assert.match(admin,/AdminKyrubTagPromotionalBatches/);
  assert.match(admin,/admin-kyrub-tag-promotional/);
- assert.match(admin,/AdminKyrubTagPilot/);
+ assert.doesNotMatch(admin,/AdminKyrubTagPilot|admin-kyrub-tag-pilot/);
+ assert.match(admin,/title="Kyrub Tag"/);
  assert.match(batches,/Gravar adesivo de teste/);
  assert.match(batches,/overwrite:false/);
  assert.match(batches,/physicalStatus:'not_verified'/);
@@ -146,7 +147,11 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  assert.match(batchService,/if\(original\.count!==count\)throw Error\('TAG_BATCH_CONFLICT'\)/);
  assert.match(identity,/kyrub_tag_minimal_identities/);
  assert.match(identity,/source:'kyrub_tag_promo'/);
- assert.match(identity,/if\(account\.exists\|\|current\.get\('mode'\)==='full'\)/);
+ assert.doesNotMatch(identity,/if\(account\.exists\|\|current\.get\('mode'\)==='full'\)/);
+ assert.match(identity,/return resolveTagIdentityMode\(tx,uid,account,marker\)/);
+ assert.match(identity,/const resolved=await resolveTagIdentityMode\(tx,uid,account,current\)/);
+ assert.match(identity,/if\(!marker\.exists\)return \{mode:account\.exists\?'full':'unclassified'\}/);
+ assert.match(identity,/marker\.get\('ingressReceiptId'\)===receiptId/);
  assert.match(identity,/promoteTagIdentityToKyrub/);
  assert.match(app,/VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE/);
  assert.match(app,/KyrubTagOnlyEntry/);

@@ -7,12 +7,15 @@ export const USER_COMMUNICATION_PREFERENCES_SCHEMA_VERSION = 1 as const;
 
 export interface UserCommunicationCategoryPreferences {
   store_chat: boolean;
+  social_chat?: boolean;
+  note_invitation?: boolean;
   order: boolean;
   loyalty: boolean;
   marketing: boolean;
   system: boolean;
   community_group_invite?: boolean;
   user_forward?: boolean;
+  freelance?: boolean;
 }
 
 export interface UserCommunicationPreferences {
@@ -51,12 +54,15 @@ export const buildDefaultUserCommunicationPreferences = (
       enabled: false,
       categories: {
         store_chat: true,
+        social_chat: true,
+        note_invitation: true,
         order: true,
         loyalty: true,
         marketing: false,
         system: true,
         community_group_invite: true,
         user_forward: true,
+        freelance: false,
       },
     },
     updatedAt: '',
@@ -85,6 +91,8 @@ export const buildUserCommunicationPreferences = (input: {
       enabled: input.browserEnabled === true,
       categories: {
         store_chat: input.categories.store_chat === true,
+        social_chat: input.categories.social_chat !== false,
+        note_invitation: input.categories.note_invitation !== false,
         order: input.categories.order === true,
         loyalty: input.categories.loyalty === true,
         marketing:
@@ -92,6 +100,7 @@ export const buildUserCommunicationPreferences = (input: {
         system: input.categories.system === true,
         community_group_invite: input.categories.community_group_invite !== false,
         user_forward: input.categories.user_forward !== false,
+        freelance: input.categories.freelance === true,
       },
     },
     updatedAt,

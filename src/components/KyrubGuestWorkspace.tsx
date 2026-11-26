@@ -1,3 +1,4 @@
+import {COMMERCIAL_V1_SCOPE} from '../../shared/commercialV1Scope';
 import { useEffect, useState } from 'react';
 import {
   Briefcase, Compass, GraduationCap, LogIn, X,
@@ -35,7 +36,7 @@ export function KyrubGuestWorkspace() {
   const [origin] = useState(() => loadStorefrontOriginContext());
 
   useEffect(() => {
-    if (panel !== 'deliveries') return;
+    if (panel !== 'deliveries' || !COMMERCIAL_V1_SCOPE.onDemandDelivery) return;
     const controller = new AbortController();
     setDiscoveryLoading(true);
     setDiscoveryError('');
@@ -84,6 +85,7 @@ export function KyrubGuestWorkspace() {
 
   const iconButtonClass = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition hover:text-orange-300';
   const openPanel = (target: GuestPanel) => {
+    if(target==='deliveries'&&!COMMERCIAL_V1_SCOPE.onDemandDelivery){setPanel(null);setFeedback('Entregas sob demanda em preparação. Consulte os Freelas.');return;}
     setPanel(target);
     setFeedback('');
   };

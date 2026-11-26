@@ -198,3 +198,19 @@ test('merchant policies are optional, bounded and propagated through all storefr
     assert.ok(content.includes('data.policies.size() <= 2000'));
   }
 });
+
+
+test('public storefront loads only current and previously visited banners, pauses hidden/offscreen rotation and preserves manual controls',()=>{
+ const hero=source('src/components/PublicStorefrontHero.tsx');
+ assert.match(hero,/index===imageIndex\|\|\(visited\.signature===signature&&visited\.urls\.includes\(image\)\)/);
+ assert.match(hero,/IntersectionObserver/);
+ assert.match(hero,/!inView \|\| !pageVisible \|\| reducedMotion/);
+ assert.match(hero,/visibilitychange/);
+ assert.match(hero,/prefers-reduced-motion: reduce/);
+ assert.match(hero,/onClick=\{previous\}/);
+ assert.match(hero,/onClick=\{next\}/);
+ assert.match(hero,/onClick=\{\(\)=>setImageIndex\(index\)\}/);
+ assert.match(hero,/decoding="async"/);
+ assert.match(source('src/components/CommunityPostCard.tsx'),/src=\{authorAvatar\} alt="" loading="lazy" decoding="async"/);
+ assert.match(source('src/components/PublicStorefrontQuickPanel.tsx'),/loading="lazy" decoding="async"/);
+});

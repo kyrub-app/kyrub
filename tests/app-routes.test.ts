@@ -325,3 +325,17 @@ describe('Kyrub public and operational routes', () => {
     assert.ok(storeChatSource.includes('h-[100dvh]'));
   });
 });
+
+test('legal documents are public read-only routes outside authenticated workspace', () => {
+  for (const [canonicalPath, documentType] of [['/termos-de-uso','terms'], ['/politica-de-privacidade','privacy']]) {
+    assert.deepEqual(resolveKyrubAppRoute(canonicalPath), {kind:'public-legal',documentType,canonicalPath});
+    const config = JSON.parse(readFileSync('vercel.json','utf8'));
+    assert.ok(config.rewrites.some((r: {source:string;destination:string}) => r.source === canonicalPath && r.destination === '/index.html'));
+  }
+  const app = readFileSync('src/App.tsx','utf8');
+  const service = readFileSync('server/governance/publicLegalDocumentService.ts','utf8');
+  assert.match(app,/route.kind === 'public-legal'.*PublicLegalDocumentRoute/);
+  assert.ok(service.includes("KYRUB_PUBLIC_LEGAL_DOCUMENTS_ENABLED !== 'true'"));
+  assert.ok(service.includes(".where('status', '==', 'published').limit(2)"));
+  assert.match(service,/projectPublicLegalDocument\(\[data\], type\)/);
+});

@@ -1,0 +1,204 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {setTimeout as delay} from 'node:timers/promises';
+import {initializeApp,deleteApp} from 'firebase-admin/app';
+import {getAuth} from 'firebase-admin/auth';
+import {getFirestore,FieldValue} from 'firebase-admin/firestore';
+import express from 'express';
+import {createServer as createViteServer} from 'vite';
+import tailwindcss from '@tailwindcss/vite';
+import {chromium} from 'playwright';
+import {createSocialDirectoryEmulatorRouter} from '../server/identity/socialDirectoryEmulatorRouter.ts';
+import {consumeDirectoryQuota} from '../server/identity/directoryQuotaService.ts';
+
+const projectId='demo-kyrub-welcome';
+assert.equal(process.env.GCLOUD_PROJECT,projectId);
+assert.equal(process.env.GOOGLE_CLOUD_PROJECT,projectId);
+assert.equal(process.env.NODE_ENV,'test');
+assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
+assert.equal(process.env.KYRUB_SOCIAL_DIRECTORY_PILOT,'true');
+assert.equal(process.env.VITE_KYRUB_SOCIAL_DIRECTORY_PILOT,'true');
+assert.ok(!process.env.VERCEL&&!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS);
+
+test('Chromium: native suggestions paginate public accounts and preserve private historical attribution and connections',{timeout:180000},async()=>{
+ const app=initializeApp({projectId},'social-directory-browser');
+ const auth=getAuth(app),db=getFirestore(app);
+ const email='social-browser-actor@example.invalid',password='fixture-social-password-2026';
+ let vite,server,browser,page;
+ const diagnostics=[],requests=[],privateAvatarRequests=[];
+ let issuedBearer='';
+ try{
+  const actor=await auth.createUser({email,password,emailVerified:true,displayName:'Titular fixture',photoURL:'https://example.invalid/private-sender-photo'});
+  const privateId='social-browser-private';
+  const batch=db.batch();
+  batch.set(db.doc('users/'+actor.uid),{uid:actor.uid,email,name:'Titular fixture',isProfileVisible:false});
+  for(let i=0;i<45;i++){
+   const suffix=String(i).padStart(2,'0'),uid='social-browser-'+suffix;
+   batch.set(db.doc('users/'+uid),{uid,name:'Contato público '+suffix,isProfileVisible:true,photoUrl:i===0?'https://example.invalid/author-photo':'',email:'fixture-secret-'+suffix+'@example.invalid',cpf:'fixture'});
+  }
+  batch.set(db.doc('users/'+privateId),{uid:privateId,name:'Nome reservado atual',isProfileVisible:false,email:'private@example.invalid',photoUrl:''});
+  const connectionId=[actor.uid,privateId].sort().join('_');
+  const connection=db.doc('connections/'+connectionId);
+  batch.set(connection,{senderId:actor.uid,receiverId:privateId,participantIds:[actor.uid,privateId].sort(),status:'accepted',senderName:'Titular fixture',receiverName:'Contato reservado histórico',senderRole:'Cliente',receiverRole:'Cliente',senderAvatar:'',receiverAvatar:'https://example.invalid/reserved-contact-avatar',senderBio:'',receiverBio:'Biografia histórica reservada fixture',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  const distantId='social-browser-zcontact';
+  batch.set(db.doc('users/'+distantId),{uid:distantId,name:'Contato público atualizado fora da página',isProfileVisible:true,photoUrl:'https://example.invalid/current-contact-photo',email:'outside-secret@example.invalid'});
+  const distantConnection=db.doc('connections/'+[actor.uid,distantId].sort().join('_'));
+  batch.set(distantConnection,{senderId:actor.uid,receiverId:distantId,participantIds:[actor.uid,distantId].sort(),status:'accepted',senderName:'Titular fixture',receiverName:'Contato público histórico fora da página',receiverAvatar:'https://example.invalid/old-contact-photo',receiverBio:'Biografia pública legada',receiverRole:'Função pública legada',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  await batch.commit();
+  const local=express();local.use(express.json({limit:'8kb'}));local.use('/api',createSocialDirectoryEmulatorRouter(db,auth));
+  vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
+  local.get('/',async(_req,res)=>res.type('html').send(await vite.transformIndexHtml('/','<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/social-directory-browser.tsx"></script></body></html>')));
+  local.use('/api',(_req,res)=>res.sendStatus(503));local.use(vite.middlewares);
+  server=local.listen(0,'127.0.0.1');
+  if(!server.listening)await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
+  browser=await chromium.launch({headless:true});
+  const context=await browser.newContext({viewport:{width:390,height:844}});
+  await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+  page=await context.newPage();
+  page.on('pageerror',error=>diagnostics.push(error.message));
+  page.on('request',request=>{if(request.url().includes('reserved-contact-avatar'))privateAvatarRequests.push(request.url());});
+  page.on('request',request=>{if(new URL(request.url()).pathname==='/api/social-directory-pilot/page')issuedBearer=request.headers().authorization||'';});
+  page.on('response',response=>{if(new URL(response.url()).pathname==='/api/social-directory-pilot/page'&&response.ok())requests.push(response.request().postDataJSON());});
+  await page.goto('http://127.0.0.1:'+server.address().port);
+  await page.getByLabel('Email de teste').fill(email);
+  await page.getByLabel('Senha de teste').fill(password);
+  await page.getByRole('button',{name:'Entrar na fixture'}).click();
+  await page.waitForFunction(()=>document.querySelector('[data-testid="visible-author"]')?.textContent==='Contato público 00');
+  assert.equal(await page.getByTestId('private-author').textContent(),'Autor histórico reservado');
+  assert.equal(await page.getByTestId('private-author-avatar').textContent(),'sem-foto');
+  assert.equal(await page.getByTestId('visible-author-avatar').textContent(),'https://example.invalid/author-photo');
+  await page.getByRole('button',{name:'Abrir conectados na fixture'}).click();
+  await page.getByText('Contato reservado histórico',{exact:true}).waitFor();
+  const publicCard=page.locator('article').filter({has:page.getByRole('heading',{name:'Contato público atualizado fora da página',exact:true})});
+  await publicCard.waitFor();
+  await publicCard.locator('img[src="https://example.invalid/current-contact-photo"]').waitFor({state:'attached'});
+  assert.equal(await publicCard.locator('img[src="https://example.invalid/old-contact-photo"]').count(),0);
+  assert.equal(await publicCard.getByText('Biografia pública legada',{exact:true}).count(),0);
+  await page.getByRole('button',{name:'Abrir novas conexões'}).click();
+  await page.getByRole('button',{name:/Sugestões/}).click();
+  await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'Contato público 44',exact:true,includeHidden:true}).count(),0);
+  await page.getByRole('button',{name:'Carregar mais sugestões'}).scrollIntoViewIfNeeded();
+  await page.getByRole('heading',{name:'Contato público 44',exact:true,includeHidden:true}).waitFor();
+  assert.ok(requests.some(body=>typeof body.after==='string'));
+  assert.equal(await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).count(),1);
+  // A new suggestion must send a request, never open a removal dialog.
+  const suggestion=page.locator('article').filter({has:page.getByRole('heading',{name:'Contato público 03',exact:true})});
+  await suggestion.getByRole('button',{name:'Conectar',exact:true}).click();
+  const suggestionRef=db.doc('connections/'+[actor.uid,'social-browser-03'].sort().join('_'));
+  await suggestion.getByRole('button',{name:'Cancelar',exact:true}).waitFor();
+  // The local Firestore listener can render a pending write before the
+  // emulator has acknowledged it. Verify persistence on the Admin SDK.
+  const awaitPersisted=async(predicate)=>{
+   const deadline=Date.now()+10000;
+   while(Date.now()<deadline){
+    const snapshot=await suggestionRef.get();
+    if(predicate(snapshot))return snapshot;
+    await delay(100);
+   }
+   throw Error('Connection write did not reach the emulator');
+  };
+  assert.equal((await awaitPersisted(snapshot=>snapshot.get('status')==='pending')).get('status'),'pending');
+  assert.equal(await page.getByRole('dialog',{name:'Confirmar remoção de contato'}).count(),0);
+  await suggestion.getByRole('button',{name:'Cancelar',exact:true}).click();
+  const cancelDialog=page.getByRole('dialog',{name:'Confirmar cancelamento de solicitação'});
+  await cancelDialog.waitFor();
+  await cancelDialog.getByRole('button',{name:'Cancelar solicitação',exact:true}).click();
+  await suggestion.getByRole('button',{name:'Conectar',exact:true}).waitFor();
+  assert.equal((await awaitPersisted(snapshot=>!snapshot.exists)).exists,false);
+
+  assert.equal(await page.getByText('Nome reservado atual',{exact:true}).count(),0);
+  assert.equal(await page.getByText('fixture-secret-00@example.invalid',{exact:true}).count(),0);
+  await page.screenshot({path:'gamification-admin-isolated-social-directory.png',fullPage:true});
+  await db.doc('users/social-browser-00').update({isProfileVisible:false});
+  await db.doc('users/'+distantId).update({isProfileVisible:false});
+  await page.getByRole('button',{name:'Fechar novos contatos'}).click();
+  await page.getByRole('button',{name:'Abrir novas conexões'}).click();
+  await page.getByRole('heading',{name:'Contato público 01',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).waitFor({state:'detached'});
+  assert.equal(await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).count(),0);
+  await page.getByRole('button',{name:'Fechar novos contatos'}).click();
+  await page.getByText('Contato reservado histórico',{exact:true}).waitFor();
+  assert.equal(await page.getByText('Biografia histórica reservada fixture',{exact:true}).count(),0);
+  assert.equal(await page.locator('img[src*="reserved-contact-avatar"]').count(),0);
+  assert.equal(privateAvatarRequests.length,0);
+  assert.equal((await connection.get()).get('status'),'accepted');
+  // Hiding presentation must not mutate the saved historical connection.
+  assert.equal((await connection.get()).get('receiverBio'),'Biografia histórica reservada fixture');
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(()=>document.querySelector('[data-testid="visible-author-avatar"]')?.textContent==='sem-foto');
+  assert.equal(await page.getByTestId('visible-author').textContent(),'Autor histórico público');
+  assert.equal(await page.getByTestId('private-author-avatar').textContent(),'sem-foto');
+  const revokedCard=page.locator('article').filter({has:page.getByRole('heading',{name:'Contato público histórico fora da página',exact:true})});
+  await revokedCard.waitFor();
+  assert.equal(await revokedCard.locator('img').count(),0);
+  assert.equal((await distantConnection.get()).get('status'),'accepted');
+  await page.getByRole('button',{name:'Fechar meu perfil'}).click();
+  await page.locator('#profile-social-hub-modal').waitFor({state:'detached'});
+  await page.getByRole('button',{name:'Solicitar conexão pela publicação fixture'}).click();
+  await page.waitForFunction(()=>document.querySelector('[data-testid="community-connection-result"]')?.textContent==='enviada');
+  const newConnection=(await db.doc('connections/'+[actor.uid,'social-browser-02'].sort().join('_')).get()).data();
+  assert.equal(newConnection.status,'pending');
+  assert.equal(newConnection.senderId,actor.uid);
+  assert.equal(newConnection.receiverId,'social-browser-02');
+  for(const field of ['senderAvatar','senderBio','senderRole','receiverAvatar','receiverBio','receiverRole'])assert.equal(Object.hasOwn(newConnection,field),false,field);
+
+  assert.ok(issuedBearer.startsWith('Bearer '));
+  // A token issued before email verification was removed must not grant
+  // directory access even if its cached email_verified claim is still true.
+  await auth.updateUser(actor.uid,{emailVerified:false});
+  const staleResponse=await fetch('http://127.0.0.1:'+server.address().port+'/api/social-directory-pilot/page',{
+   method:'POST',headers:{Authorization:issuedBearer,'Content-Type':'application/json'},body:'{}'
+  });
+  assert.equal(staleResponse.status,401);
+  await context.close();
+ }catch(error){
+  console.error('[social-browser]',JSON.stringify({diagnostics:diagnostics.slice(-20),requests}));
+  if(page&&!page.isClosed())await page.screenshot({path:'gamification-admin-isolated-social-failure.png',fullPage:true});
+  throw error;
+ }finally{
+  if(browser)await browser.close();
+  if(server)await new Promise(resolve=>server.close(resolve));
+  if(vite)await vite.close();
+  await deleteApp(app);
+ }
+});
+
+
+test('transactional directory quota shares capacity across independent SDK instances',{timeout:120000},async()=>{
+ const first=initializeApp({projectId},'directory-quota-first');
+ const second=initializeApp({projectId},'directory-quota-second');
+ try{
+  const a=getFirestore(first),b=getFirestore(second);
+  const uid='quota-fixture-actor',now=1_800_000_000_000;
+  // Simulate two server instances racing for the final available slots.
+  for(let i=0;i<10;i++)assert.deepEqual(await consumeDirectoryQuota(a,uid,'social',now),{allowed:true});
+  const concurrent=await Promise.all([
+   consumeDirectoryQuota(a,uid,'social',now),
+   consumeDirectoryQuota(b,uid,'social',now),
+   consumeDirectoryQuota(a,uid,'social',now),
+   consumeDirectoryQuota(b,uid,'social',now),
+  ]);
+  assert.equal(concurrent.filter(x=>x.allowed).length,2);
+  assert.equal(concurrent.filter(x=>!x.allowed).length,2);
+  assert.deepEqual(await consumeDirectoryQuota(b,uid,'social',now+59_000),{allowed:false,retryAfterSeconds:1});
+  assert.equal((await consumeDirectoryQuota(b,uid,'social',now-1000)).allowed,false);
+  assert.deepEqual(await consumeDirectoryQuota(b,uid,'staff',now),{allowed:true});
+  assert.deepEqual(await consumeDirectoryQuota(a,'quota-fixture-other','social',now),{allowed:true});
+  assert.deepEqual(await consumeDirectoryQuota(b,uid,'social',now+60_000),{allowed:true});
+  const {createHash}=await import('node:crypto');
+  const fixtures=[['social',uid],['staff',uid],['social','quota-fixture-other']];
+  const records=await a.getAll(...fixtures.map(([scope,actor])=>a.doc(
+   'directory_quota_private/'+createHash('sha256').update(scope+'\0'+actor).digest('hex')
+  )));
+  assert.equal(records.filter(record=>record.exists).length,3);
+  for(const record of records){
+   assert.match(record.id,/^[a-f0-9]{64}$/);
+   assert.deepEqual(Object.keys(record.data()).sort(),['count','scope','startedAtMs','version']);
+  }
+  await assert.rejects(()=>consumeDirectoryQuota(a,'invalid/actor','social',now),/DIRECTORY_QUOTA_INVALID/);
+ }finally{
+  await deleteApp(first);await deleteApp(second);
+ }
+});

@@ -1056,3 +1056,216 @@ test('pending memberships remain private to applicant and community owner', asyn
     getDocs(query(collection(visitor, 'community_members'), where('communityId', '==', communityId))),
   );
 });
+
+test('wall publication receipt is atomic, author-only, and prevents resurrection after removal', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const anonymous = environment.unauthenticatedContext().firestore();
+  const communityId = 'wall_receipt_case';
+  const postId = 'wall_12345678-1234-1234-1234-123456789abc';
+  const receiptPath = 'community_wall_publish_receipts';
+  const post = doc(owner, 'community_posts', postId);
+  const receipt = doc(owner, receiptPath, postId);
+  const pointer = doc(owner, 'community_square_posts', postId);
+  await createCommunity(owner, communityId, 'public');
+  const postData = () => ({
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub', authorAvatar: '',
+    content: 'Uma única publicação.', mediaUrls: [], allowComments: true, pinnedCommentId: '',
+    createdAtIso: '2026-11-25T00:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-25T00:00:00.000Z', updatedAt: serverTimestamp(),
+  });
+  const receiptData = () => ({postId, communityId, authorId: OWNER, requestHash: 'a'.repeat(64), createdAt: serverTimestamp()});
+  const missing = await assertSucceeds(getDoc(receipt));
+  if (missing.exists()) throw Error('receipt should not exist');
+  await assertFails(getDoc(doc(anonymous, receiptPath, postId)));
+  await assertFails(setDoc(post, postData()));
+  await assertFails(setDoc(receipt, receiptData()));
+  const malformed = writeBatch(owner);
+  malformed.set(post,postData());
+  malformed.set(receipt,{...receiptData(),communityId:'different_community'});
+  malformed.set(pointer,{postId,communityId,createdAt:serverTimestamp()});
+  await assertFails(malformed.commit());
+  await environment.withSecurityRulesDisabled(async ctx=>{
+    for(const path of ['community_posts',receiptPath,'community_square_posts']){
+      if((await getDoc(doc(ctx.firestore(),path,postId))).exists())throw Error('partial invalid atomic write');
+    }
+  });
+  const publish = () => runTransaction(owner, async tx => {
+    const previous = await tx.get(receipt);
+    if (previous.exists()) return 'replay';
+    tx.set(post, postData());
+    tx.set(receipt, receiptData());
+    tx.set(pointer, {postId, communityId, createdAt: serverTimestamp()});
+    return 'created';
+  });
+  // Isolate authorization of the first atomic write from concurrent retries.
+  if (await assertSucceeds(publish()) !== 'created') throw Error('first atomic commit must succeed');
+  const results = await Promise.all([publish(), publish()]);
+  if (results.some(x => x !== 'replay')) throw Error('expected two read-only replays after commit');
+  const first = await assertSucceeds(getDoc(receipt));
+  if (!first.exists()) throw Error('missing atomic receipt');
+  await assertSucceeds(getDoc(post));
+  await assertSucceeds(getDoc(pointer));
+  await assertFails(getDoc(doc(outsider, receiptPath, postId)));
+  await assertFails(getDocs(collection(owner, receiptPath)));
+  await assertFails(updateDoc(receipt, {requestHash: 'b'.repeat(64)}));
+  await assertFails(deleteDoc(receipt));
+  await assertSucceeds(deleteDoc(pointer));
+  await assertSucceeds(deleteDoc(post));
+  if (await publish() !== 'replay') throw Error('receipt must prevent resurrection');
+  await assertFails(setDoc(post, postData()));
+  await environment.withSecurityRulesDisabled(async ctx => {
+    if ((await getDoc(doc(ctx.firestore(), 'community_posts', postId))).exists()) throw Error('post resurrected');
+    if ((await getDoc(doc(ctx.firestore(), 'community_square_posts', postId))).exists()) throw Error('pointer resurrected');
+  });
+});
+
+test('wall receipt concurrent first publication never commits more than one original',async()=>{
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const communityId='wall_receipt_concurrent';
+  const postId='wall_abcdef12-1234-1234-1234-123456789abc';
+  await createCommunity(owner,communityId,'public');
+  const receipt=doc(owner,'community_wall_publish_receipts',postId);
+  const source=doc(owner,'community_posts',postId);
+  const pointer=doc(owner,'community_square_posts',postId);
+  const publish=()=>runTransaction(owner,async tx=>{
+    const previous=await tx.get(receipt);
+    if(previous.exists())return 'replay';
+    tx.set(source,{postId,communityId,authorId:OWNER,authorName:'Criador',authorAvatar:'',content:'Publicação concorrente',mediaUrls:[],allowComments:true,pinnedCommentId:'',createdAtIso:'2026-11-25T00:00:00.000Z',updatedAtIso:'2026-11-25T00:00:00.000Z',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    tx.set(receipt,{postId,communityId,authorId:OWNER,requestHash:'a'.repeat(64),createdAt:serverTimestamp()});
+    tx.set(pointer,{postId,communityId,createdAt:serverTimestamp()});
+    return 'created';
+  });
+  const result=await Promise.allSettled([publish(),publish()]);
+  if(result.filter(x=>x.status==='fulfilled'&&x.value==='created').length!==1)throw Error('expected exactly one initial commit');
+  for(const item of result)if(item.status==='rejected'&&!['permission-denied','aborted'].includes(item.reason?.code))throw item.reason;
+  if(await publish()!=='replay')throw Error('retry must be idempotent');
+  for(const item of [source,receipt,pointer])if(!(await assertSucceeds(getDoc(item))).exists())throw Error('atomic publication missing a document');
+});
+
+test('receipt publication preserves private and moderated visibility and public opt-out', async () => {
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const outsider=environment.authenticatedContext(OUTSIDER).firestore();
+  for(const [index,visibility] of (['private','moderated','public'] as const).entries()){
+    const communityId='wall_receipt_visibility_'+visibility;
+    const postId='wall_87654321-1234-1234-1234-123456789ab'+index;
+    await createCommunity(owner,communityId,visibility);
+    const post=doc(owner,'community_posts',postId);
+    const receipt=doc(owner,'community_wall_publish_receipts',postId);
+    const pointer=doc(owner,'community_square_posts',postId);
+    const payload=()=>({postId,communityId,authorId:OWNER,authorName:'Criador',authorAvatar:'',content:'Somente no mural',mediaUrls:[],allowComments:true,pinnedCommentId:'',createdAtIso:'2026-11-25T00:00:00.000Z',updatedAtIso:'2026-11-25T00:00:00.000Z',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    const receiptData=()=>({postId,communityId,authorId:OWNER,requestHash:'b'.repeat(64),createdAt:serverTimestamp()});
+    if(visibility!=='public'){
+      const denied=writeBatch(owner);
+      denied.set(post,payload());denied.set(receipt,receiptData());denied.set(pointer,{postId,communityId,createdAt:serverTimestamp()});
+      await assertFails(denied.commit());
+      if((await assertSucceeds(getDoc(receipt))).exists())throw Error('partial receipt on denied distribution');
+    }
+    await assertSucceeds(runTransaction(owner,async tx=>{
+      const prior=await tx.get(receipt);
+      if(prior.exists())throw Error('unexpected receipt');
+      tx.set(post,payload());tx.set(receipt,receiptData());
+    }));
+    if(!(await assertSucceeds(getDoc(post))).exists()||!(await assertSucceeds(getDoc(receipt))).exists())throw Error('missing source or receipt');
+    if((await assertSucceeds(getDoc(pointer))).exists())throw Error('opt-out or private source leaked to Praça');
+    await assertFails(getDoc(doc(outsider,'community_wall_publish_receipts',postId)));
+    if(visibility==='private')await assertFails(getDoc(doc(outsider,'community_posts',postId)));
+    else await assertSucceeds(getDoc(doc(outsider,'community_posts',postId)));
+    const source=await getDoc(post);
+    const distribution={postId,communityId,createdAt:source.data()!.createdAt};
+    if(visibility==='public'){
+      await assertSucceeds(setDoc(pointer,distribution));
+      await assertSucceeds(deleteDoc(pointer));
+      await assertSucceeds(getDoc(post));
+    }else await assertFails(setDoc(pointer,distribution));
+  }
+});
+
+
+test('staged community age gate protects wall, square and comments without replacing membership checks', async () => {
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const member=environment.authenticatedContext(MEMBER).firestore();
+  const outsider=environment.authenticatedContext(OUTSIDER).firestore();
+  const id='age_gate_community',postId='age_gate_post';
+  await createCommunity(owner,id,'public');
+  await joinPublic(member,id,MEMBER);
+  const writeAge=async(uid:string,status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid,status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'social_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const post=(authorId:string)=>({postId,communityId:id,authorId,authorName:'Membro',authorAvatar:'',
+    content:'Mural de teste',mediaUrls:[],createdAtIso:'2026-11-25T12:00:00Z',createdAt:serverTimestamp(),
+    updatedAtIso:'2026-11-25T12:00:00Z',updatedAt:serverTimestamp()});
+  await assertFails(setDoc(doc(member,'community_posts',postId),post(MEMBER)));
+  await writeAge(MEMBER,'verified_adult');
+  await writeAge(OUTSIDER,'verified_adult');
+  await assertFails(setDoc(doc(outsider,'community_posts',postId),post(OUTSIDER)));
+  await assertSucceeds(setDoc(doc(member,'community_posts',postId),post(MEMBER)));
+  const commentId='age_gate_comment';
+  const comment=()=>({commentId,communityId:id,postId,authorId:MEMBER,authorName:'Membro',authorAvatar:'',
+    text:'Comentario de teste',createdAtIso:'2026-11-25T12:00:00Z',createdAt:serverTimestamp()});
+  await writeAge(MEMBER,'inconclusive');
+  await assertFails(setDoc(doc(member,'community_post_comments',commentId),comment()));
+  await assertFails(setDoc(doc(member,'community_square_posts',postId),{postId,communityId:id,createdAt:serverTimestamp()}));
+  await writeAge(MEMBER,'verified_adult');
+  await assertSucceeds(setDoc(doc(member,'community_post_comments',commentId),comment()));
+  await writeAge(MEMBER,'suspended');
+  await assertSucceeds(deleteDoc(doc(member,'community_post_comments',commentId)));
+  await assertSucceeds(deleteDoc(doc(member,'community_posts',postId)));
+});
+
+
+test('staged eligibility governs community creation and admission without blocking departure', async()=>{
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const member=environment.authenticatedContext(MEMBER).firestore();
+  const id='age_admission',moderated='age_moderated';
+  const age=async(uid:string,status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid,status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'social_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await assertFails(createCommunity(owner,id,'public'));
+  await age(OWNER,'verified_adult');
+  await assertSucceeds(createCommunity(owner,id,'public'));
+  await assertFails(joinPublic(member,id,MEMBER));
+  await age(MEMBER,'verified_adult');
+  await assertSucceeds(joinPublic(member,id,MEMBER));
+  await assertSucceeds(createCommunity(owner,moderated,'moderated'));
+  const pending=doc(member,'community_members',memberId(moderated,MEMBER));
+  await assertSucceeds(setDoc(pending,membershipData(moderated,MEMBER,'pending')));
+  const approve=()=>{
+    const batch=writeBatch(owner);
+    batch.update(doc(owner,'community_members',memberId(moderated,MEMBER)),{
+      status:'active',updatedAtIso:'2026-11-25T12:01:00Z',updatedAt:serverTimestamp()
+    });
+    batch.update(doc(owner,'communities',moderated),{
+      memberCount:2,lastMembershipChangeId:memberId(moderated,MEMBER),
+      updatedAtIso:'2026-11-25T12:01:00Z',updatedAt:serverTimestamp(),
+      activityAtIso:'2026-11-25T12:01:00Z',activityAt:serverTimestamp()
+    });
+    return batch.commit();
+  };
+  await age(MEMBER,'suspended');
+  await assertFails(approve());
+  await age(MEMBER,'verified_adult');
+  await age(OWNER,'suspended');
+  await assertFails(approve());
+  await age(OWNER,'verified_adult');
+  await assertSucceeds(approve());
+  await age(MEMBER,'suspended');
+  const departure=writeBatch(member);
+  departure.delete(doc(member,'community_members',memberId(id,MEMBER)));
+  departure.update(doc(member,'communities',id),{
+    memberCount:1,lastMembershipChangeId:memberId(id,MEMBER),
+    updatedAtIso:'2026-11-25T12:02:00Z',updatedAt:serverTimestamp(),
+    activityAtIso:'2026-11-25T12:02:00Z',activityAt:serverTimestamp()
+  });
+  await assertSucceeds(departure.commit());
+});

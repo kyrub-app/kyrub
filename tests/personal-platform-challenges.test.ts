@@ -78,3 +78,37 @@ test('personal panel includes loading, retry, empty state and no action claiming
   assert.match(ui, /O progresso aparece após confirmação pelo sistema/);
   assert.doesNotMatch(ui, /fetch\(|setDoc\(|updateDoc\(|POST|onClaim|awardReward/);
 });
+
+
+test('institutional post consults the exact canonical challenge without a claim or reward mutation',()=>{
+ const card=read('src/components/CommunityPostCard.tsx');
+ const reference=read('src/components/OfficialChallengeReference.tsx');
+ const hook=read('src/hooks/usePlatformChallenges.ts');
+ assert.match(card,/institutional && post\.institutionalChallengeId === 'first_store_published'/);
+ assert.match(card,/challengeId=\{post\.institutionalChallengeId\}/);
+ assert.match(reference,/usePlatformChallenges\(true,viewerId\)/);
+ assert.match(reference,/\.find\(item=>item\.id===challengeId\)/);
+ assert.match(reference,/Consultar o desafio não concede recompensas/);
+ assert.match(reference,/Desafio indisponível/);
+ assert.match(reference,/Concluído com registro/);
+ assert.doesNotMatch(reference,/\b(?:fetch|setDoc|updateDoc|awardReward|onClaim)\s*\(/);
+ assert.match(hook,/method: 'GET'/);
+ assert.match(hook,/auth\.currentUser\?\.uid!==uid/);
+ assert.match(hook,/result\.uid===expectedViewerId/);
+});
+
+
+test('confirmed publication refreshes canonical rewards and challenge catalog without granting from UI',()=>{
+ const modal=read('src/components/modals/StoreConfigModal.tsx');
+ const account=read('src/components/tabs/PitangaAccount.tsx');
+ const hook=read('src/hooks/usePlatformChallenges.ts');
+ const journey=read('src/components/SemeaduraJourneyPanel.tsx');
+ assert.match(modal,/if \(!response\.ok\) throw Error\(\x60FIRST_STORE_PUBLICATION_HTTP_[\s\S]*?FIRST_STORE_PUBLICATION_INVALID_RESPONSE[\s\S]*?if\(auth\.currentUser!==user\)throw Error\('FIRST_STORE_PUBLICATION_SESSION_CHANGED'\);\s*if\(targetPublished\)notifyRewardRefresh\(user,'publication'\)/);
+ assert.match(account,/notifyRewardRefresh\(session,'conversion'\)/);
+ assert.match(account,/rewardRefreshGeneration\(session\)/);
+ assert.match(hook,/subscribeRewardRefresh\(session/);
+ assert.match(hook,/if\(reason!=='conversion'\)retry\(\)/);
+ assert.match(hook,/result\.session===auth\.currentUser/);
+ assert.match(journey,/if\(reason==='return'\)void read\(\)/);
+ assert.doesNotMatch(journey,/kyrub-semeadura-updated/);
+});

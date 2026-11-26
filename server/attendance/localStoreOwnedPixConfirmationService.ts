@@ -1,5 +1,7 @@
 import type { DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
+import {requireFinancialPolicyInTransaction} from '../identity/stagedFinancialAuthorization.js';
 import {
   isPaymentAuthoritativelyPaid,
   normalizeCanonicalPayment,
@@ -93,7 +95,7 @@ export interface LocalStoreOwnedPixConfirmationResult {
 }
 
 export const confirmStoreOwnedPixLocalPayment = async (input: {
-  authenticatedUserId: string; value: unknown; now?: Date;
+  authenticatedUserId: string; value: unknown; now?: Date; authorization?:string;
 }): Promise<LocalStoreOwnedPixConfirmationResult> => {
   const request = parseConfirmation(input.value);
   const actorUserId = clean(input.authenticatedUserId, 180);
@@ -104,6 +106,8 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
   const attestedAt = now.toISOString();
 
   return adminDb.runTransaction(async transaction => {
+    await requireHumanOrderOperation(transaction,request.storeId,actorUserId,'payments.create',storeContext.canonicalStoreId);
+    await requireFinancialPolicyInTransaction(transaction,input.authorization??'',actorUserId);
     const intentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/paymentIntents/${request.paymentIntentId}`);
     const paymentRef = adminDb.doc(`stores/${storeContext.canonicalStoreId}/payments/${request.paymentId}`);
     const bindingRef = adminDb.doc(storeOwnedPixPaymentBindingPath(storeContext.canonicalStoreId, request.providerPaymentId));

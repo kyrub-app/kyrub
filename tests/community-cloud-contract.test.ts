@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { inspectActiveFirestoreRules } from '../scripts/inspect-active-firestore-rules.mjs';
+import { compareFirestoreReleaseSources } from '../scripts/compare-firestore-release-sources.mjs';
+import { createSessionFeedRegistry } from '../src/utils/sessionFeedRegistry';
+import { createDetailSubscriptionRegistry } from '../src/utils/squareDetailSubscriptionRegistry';
+import { classifyCommunityMediaInventory, parseCommunityMediaReference, summarizeCommunityMediaInventory, type InventoryEvidence, type MediaObject } from '../server/communities/communityMediaOrphanInventory';
+import { selectWallDraft, resolveWallUploads } from '../src/utils/communityWallUploadRetry';
+import { optimizeCommunityWallImage, readWallJpegSize, type WallJpegCodec } from '../src/utils/communityWallImageOptimization';
 import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
 
 const read = (path: string) => readFileSync(path, 'utf8');
@@ -195,8 +202,8 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /accept="video\/mp4,video\/webm"/);
   assert.match(ui, /capture="environment"/);
   assert.match(ui, /Até 4 anexos/);
-  assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
-  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare, allowComments: wallAllowComments \}\)/);
+  assert.match(ui, /uploadCommunityPostMedia\(communityId, file, attempt\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: requestedSquare,\s*allowComments, attempt: \{ postId: draft\.postId, owner \}/);
   assert.match(ui, /<CommunityPostCard/);
   assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
@@ -276,7 +283,9 @@ test('community author controls comments and one pinned comment in both mural an
   const rules = read('firestore.communities.fragment.rules');
   assert.match(composer, /const \[wallAllowComments, setWallAllowComments\] = useState\(true\)/);
   assert.match(composer, /aria-label="Permitir comentários nesta publicação"/);
-  assert.match(composer, /allowComments: wallAllowComments/);
+  assert.match(composer, /const \[content, requestedSquare, allowComments\] = pending/);
+  assert.match(composer, /shareWallToSquare, wallAllowComments\] as \[string, boolean, boolean\]/);
+  assert.match(composer, /allowComments, attempt: \{ postId: draft\.postId, owner \}/);
   assert.match(api, /allowComments: input\.allowComments !== false/);
   assert.match(api, /pinnedCommentId: ''/);
   assert.match(api, /allowComments: data\.allowComments !== false/);
@@ -374,13 +383,13 @@ test('author menu removes the publication after confirmation, without self-conne
   const service = read('server/communities/communityPostRemovalService.ts');
   const moderation = read('server/admin/socialModerationService.ts');
 
-  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /const isMine = !institutional && viewerId === post\.authorId/);
   assert.match(card, /\{isMine && \([\s\S]*?Remover publicação/);
   assert.match(card, /window\.confirm\('Remover esta publicação definitivamente/);
   assert.match(card, /void run\('remove', onRemove\)/);
   assert.doesNotMatch(card, /Ocultar publicação/);
-  assert.match(card, /\{!isMine && !connection && \(/);
-  assert.match(card, /\{!isMine && connected && \(/);
+  assert.match(card, /\{!institutional && !isMine && !connection && \(/);
+  assert.match(card, /\{!institutional && !isMine && connected && \(/);
   assert.match(card, /\{!isMine && \([\s\S]*?Denunciar publicação/);
   assert.match(container, /onRemove=\{\(\) => removeOwnCommunityPost\(post\)\}/);
   assert.match(client, /transport=community-author-remove/);
@@ -405,7 +414,7 @@ test('Promover entry only appears for a community post author and never starts a
   const card = read('src/components/CommunityPostCard.tsx');
   const preview = read('src/components/ads/KyrubAdsCommunityPromotionPreview.tsx');
 
-  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /const isMine = !institutional && viewerId === post\.authorId/);
   assert.match(card, /\{isMine && \([\s\S]*?<Megaphone className="h-4 w-4" \/> Promover/);
   assert.match(card, /setPromotionPreviewOpen\(true\)/);
   assert.match(card, /promotionPreviewOpen && isMine/);
@@ -473,7 +482,7 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(cloud, /batch\.set\(doc\(db, 'community_square_posts', reference\.id\)/);
   assert.match(cloud, /await batch\.commit\(\)/);
   assert.match(cloudUI, /Exibir também na Praça por 24 horas/);
-  assert.match(cloudUI, /shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare/);
+  assert.match(cloudUI, /selectedCommunity\.visibility === 'public' && shareWallToSquare/);
   assert.match(cloudUI, /selectedCommunity.visibility === 'moderated'/);
   assert.match(cloudUI, /selectedCommunity.visibility === 'private'/);
   assert.match(cloudUI, /subscribeCommunitySquareIds/);
@@ -486,7 +495,7 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(index, /community.visibility !== 'public'/);
   assert.match(index, /onSnapshot\(doc\(db, 'communities', pointer\.communityId\)/);
   assert.match(index, /onSnapshot\(doc\(db, 'community_posts', pointer\.postId\)/);
-  assert.match(index, /window\.setInterval\(publish, 60_000\)/);
+  assert.match(index, /window\.setInterval\(\(\) => rebuild\(\), 60_000\)/);
   assert.match(index, /withinCommunitySquareWindow/);
   assert.match(index, /post\.communityId !== pointer\.communityId/);
   assert.doesNotMatch(index, /authorId: user\.uid,\s*createdAt/); // Public pointer stores no author ID.
@@ -510,7 +519,14 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(hub, /withinCommunitySquareWindow\(Date\.parse\(post\.createdAt/);
   assert.match(cloudUI, /OPEN_COMMUNITY_FROM_SQUARE_EVENT/);
   assert.match(rules, /match \/community_square_posts\/\{postId\}/);
-  assert.match(rules, /getAfter\(\/databases\/\$\(database\)\/documents\/community_posts\/\$\(postId\)\)\.data\.createdAt == incoming\(\)\.createdAt/);
+  const squareRule = rules.slice(rules.indexOf('match /community_square_posts/{postId}'), rules.indexOf('match /community_square_forwards/{forwardId}'));
+  const squareSource = rules.slice(rules.indexOf('function hasValidSquareSource(postId)'), rules.indexOf('match /community_wall_publish_receipts/{postId}'));
+  assert.match(squareRule, /hasValidSquareSource\(postId\)/);
+  assert.match(squareSource, /let source = getAfter\(\/databases\/\$\(database\)\/documents\/community_posts\/\$\(postId\)\)/);
+  assert.match(squareSource, /source\.data\.createdAt == incoming\(\)\.createdAt/);
+  assert.match(squareSource, /source\.data\.authorId == request\.auth\.uid/);
+  assert.match(squareSource, /source\.data\.communityId == incoming\(\)\.communityId/);
+  assert.match(squareSource, /community\.data\.visibility == 'public'/);
   assert.match(rules, /\.data\.visibility == 'public'/);
   assert.match(rules, /allow update: if false/);
   assert.match(cleanup, /adminDb\.collection\('community_square_posts'\)\.doc\(postId\)\.delete\(\)/);
@@ -917,4 +933,390 @@ test('340px community catalog keeps Conhecer and Participar labels complete', ()
   // Membership/fallback actions are also allowed to wrap, not clip.
   assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words/);
   assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 bg-slate-900\/90 px-2 text-center/);
+});
+
+const wallJpegFixture = (width = 4000, height = 3000, size = 1024 * 1024) => {
+  const bytes = new Uint8Array(size);
+  // Synthetic SOF header; codec is mocked, not a real encoded photo.
+  bytes.set([0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, height >> 8, height & 255, width >> 8, width & 255, 1, 1, 0x11, 0]);
+  return new Blob([bytes], { type: 'image/jpeg' });
+};
+
+test('wall JPEG optimizer preserves oriented aspect and closes bitmap, returning smaller JPEG', async () => {
+  const source = wallJpegFixture();
+  let closed = 0;
+  let target: {width: number; height: number} | undefined;
+  const output = new Blob([new Uint8Array(200 * 1024)], { type: 'image/jpeg' });
+  const codec: WallJpegCodec = {
+    async decode() { return { width: 3000, height: 4000, close() { closed++; } }; },
+    async encode(_image, size) { target = size; return output; },
+  };
+  assert.deepEqual(readWallJpegSize(new Uint8Array(await source.arrayBuffer())), {width: 4000, height: 3000});
+  assert.equal(await optimizeCommunityWallImage(source, codec), output);
+  assert.deepEqual(target, {width: 1350, height: 1800});
+  assert.equal(closed, 1);
+});
+
+test('wall optimizer skips small files, non-JPEG, malformed and oversized pixel dimensions before decode', async () => {
+  let calls = 0;
+  const codec: WallJpegCodec = {
+    async decode() { calls++; throw Error('unexpected decode'); },
+    async encode() { return null; },
+  };
+  const bytes = new Uint8Array(1024 * 1024);
+  for (const file of [
+    wallJpegFixture(100, 100, 1000),
+    wallJpegFixture(9000, 9000),
+    new Blob([bytes], {type: 'image/jpeg'}),
+    new Blob([bytes], {type: 'image/png'}),
+    new Blob([bytes], {type: 'image/webp'}),
+    new Blob([bytes], {type: 'video/mp4'}),
+  ]) assert.equal(await optimizeCommunityWallImage(file, codec), file);
+  assert.equal(calls, 0);
+});
+
+test('wall optimizer falls back without increasing bytes and releases bitmap on encoder failure', async () => {
+  const source = wallJpegFixture();
+  let closed = 0;
+  const outputs = [null, new Blob([], {type: 'image/jpeg'}), new Blob([new Uint8Array(source.size)], {type: 'image/jpeg'}), new Blob([new Uint8Array(100)], {type: 'image/png'})];
+  for (const output of outputs) {
+    assert.equal(await optimizeCommunityWallImage(source, {
+      async decode() { return {width: 800, height: 600, close() { closed++; }}; },
+      async encode(_image, size) { assert.deepEqual(size, {width: 800, height: 600}); return output; },
+    }), source);
+  }
+  assert.equal(await optimizeCommunityWallImage(source, {
+    async decode() { return {width: 800, height: 600, close() { closed++; }}; },
+    async encode() { throw Error('codec unavailable'); },
+  }), source);
+  assert.equal(closed, outputs.length + 1);
+});
+
+test('wall upload keeps original validation and uploads optimized blob with same scoped metadata', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  assert.match(cloud, /await optimizeCommunityWallImage\(file\)/);
+  assert.match(cloud, /uploadBytes\(destination, uploadFile, \{/);
+  assert.match(cloud, /customMetadata: \{ communityId, ownerId: user.uid, purpose: 'community-wall' \}/);
+});
+
+test('wall draft retains attachment and post IDs on partial failure and commit retry, not across changed scope', async () => {
+  const owner = {}, files = [{}, {}, {}];
+  let id = 0;
+  const newId = () => String(++id);
+  const draft = selectWallDraft(null, owner, 'community', 'text', files, newId);
+  const stored = new Map<string, string>();
+  const writes: string[] = [];
+  let fail = true;
+  const upload = async (_: object, attempt: {id:string; started:boolean}) => {
+    if (stored.has(attempt.id)) return stored.get(attempt.id)!;
+    attempt.started = true;
+    const url = 'url-' + attempt.id;
+    stored.set(attempt.id, url);
+    writes.push(attempt.id);
+    if (fail && attempt.id === '2') throw Error('response lost after upload');
+    return url;
+  };
+  await assert.rejects(resolveWallUploads(draft, () => {}, upload), /response lost/);
+  fail = false;
+  const retry = selectWallDraft(draft, owner, 'community', 'text', files, newId);
+  assert.equal(retry, draft);
+  assert.deepEqual(await resolveWallUploads(retry, () => {}, upload), ['url-1','url-2','url-3']);
+  assert.deepEqual(writes, ['1','2','3']);
+  assert.notEqual(selectWallDraft(draft, {}, 'community', 'text', files, newId), draft);
+  assert.notEqual(selectWallDraft(draft, owner, 'other', 'text', files, newId), draft);
+  assert.notEqual(selectWallDraft(draft, owner, 'community', 'edited', files, newId), draft);
+  assert.notEqual(selectWallDraft(draft, owner, 'community', 'text', [...files].reverse(), newId), draft);
+  draft.commitStarted = true;
+  const retryCommit = selectWallDraft(draft, owner, 'community', 'text', files, newId);
+  assert.equal(retryCommit, draft);
+  assert.equal(retryCommit.postId, draft.postId);
+  assert.deepEqual(await resolveWallUploads(retryCommit, () => {}, async () => {
+    throw Error('unexpected upload after commit');
+  }), ['url-1','url-2','url-3']);
+  assert.throws(() => selectWallDraft(draft, owner, 'community', 'edited', files, newId), /anterior/);
+  assert.notEqual(selectWallDraft(draft, {}, 'community', 'text', files, newId).postId, draft.postId);
+});
+
+test('wall retry aborts when the draft scope changes mid-upload', async () => {
+  const draft = selectWallDraft(null, {}, 'community', 'text', [1,2], () => 'id');
+  let current = true, calls = 0;
+  await assert.rejects(resolveWallUploads(draft, () => {
+    if (!current) throw Error('scope changed');
+  }, async () => { calls++; current = false; return 'url'; }), /scope changed/);
+  assert.equal(calls, 1);
+});
+
+test('wall retry consults scoped metadata and only object-not-found permits a new upload', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(cloud, /getMetadata\(destination\)/);
+  assert.match(cloud, /storage\/object-not-found/);
+  assert.match(cloud, /metadata\.customMetadata\?\.ownerId !== user\.uid/);
+  assert.match(ui, /draft\.commitStarted = true;\s*setWallCommitPending\(true\);\s*await createCommunityPost/);
+  assert.match(ui, /wallSubmitLock\.current = true/);
+});
+
+test('wall publication transaction uses immutable receipt before writing source or Praça pointer', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const branch = cloud.slice(cloud.indexOf('const attempt = input.attempt;'), cloud.indexOf("const reference = doc(collection(db, 'community_posts'));", cloud.indexOf('const attempt = input.attempt;')));
+  assert.match(branch, /tx\.get\(receiptRef\)/);
+  assert.ok(branch.indexOf('return attempt.postId;') < branch.indexOf('tx.set(postRef'));
+  assert.match(branch, /tx\.set\(receiptRef/);
+  assert.match(branch, /data\.requestHash !== requestHash/);
+  assert.match(rules, /match \/community_wall_publish_receipts\/\{postId\}/);
+  assert.match(rules, /!isWallReceiptPostId\(postId\) \|\| hasNewWallPublishReceipt\(postId\)/);
+});
+
+test('offline media inventory normalizes tokens and rejects other buckets or malformed paths', () => {
+  const bucket = 'demo-kyrub.example';
+  const name = 'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789abc.jpg';
+  const url = 'https://firebasestorage.googleapis.com/v0/b/' + bucket + '/o/' + encodeURIComponent(name);
+  assert.deepEqual(parseCommunityMediaReference(url + '?alt=media&token=one', bucket), {bucket, name});
+  assert.deepEqual(parseCommunityMediaReference(url + '?alt=media&token=two', bucket), {bucket, name});
+  assert.equal(parseCommunityMediaReference(url, 'different'), null);
+  assert.equal(parseCommunityMediaReference(url.replace('googleapis.com', 'googleapis.com.example'), bucket), null);
+  assert.equal(parseCommunityMediaReference(url + '%2Fnested', bucket), null);
+  assert.equal(parseCommunityMediaReference(url.replace(encodeURIComponent(name), '%ZZ'), bucket), null);
+});
+
+test('orphan inventory fails closed with incomplete evidence and protects live, pending and recent media', () => {
+  const bucket = 'demo-kyrub.example', now = 2_000_000_000_000;
+  const make = (index: number, age: number): MediaObject => ({
+    bucket, name: 'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789ab' + index + '.jpg',
+    generation: '123', sizeBytes: 100, createdAtMs: now - age * 86400000,
+  });
+  const objects = [make(1, 30), make(2, 30), make(3, 1), make(4, 30)];
+  const evidence: InventoryEvidence = {
+    bucket, observedAtMs: now, objectsComplete: true, referencesComplete: true, writersQuiesced: true,
+    references: [objects[0]], pending: [objects[1]],
+  };
+  const classify = (e: InventoryEvidence) => classifyCommunityMediaInventory(objects, e).map(x => x.status);
+  assert.deepEqual(classify(evidence), ['referenced','pending','recent','review_candidate']);
+  for (const flag of ['objectsComplete','referencesComplete','writersQuiesced'] as const)
+    assert.deepEqual(classify({...evidence, [flag]: false}), ['referenced','pending','recent','unknown']);
+  const summary = summarizeCommunityMediaInventory(classifyCommunityMediaInventory(objects, evidence));
+  assert.deepEqual(summary.review_candidate, {count:1, bytes:100});
+  assert.equal(classifyCommunityMediaInventory([objects[3],objects[3]], evidence)[0].status, 'unknown');
+  assert.equal(classifyCommunityMediaInventory([{...objects[3], generation:''}], evidence)[0].status, 'unknown');
+  assert.equal(classifyCommunityMediaInventory([{...objects[3], bucket:'other'}], evidence)[0].status, 'unknown');
+});
+
+test('orphan review is disabled by malformed completeness evidence and inconsistent inventory', () => {
+  const bucket = 'demo-kyrub.example', now = 2_000_000_000_000;
+  const make = (index:number):MediaObject => ({
+    bucket, name:'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789ab'+index+'.jpg',
+    generation:'123', sizeBytes:100, createdAtMs:now-30*86400000,
+  });
+  const [live, unused, bad] = [make(1),make(2),make(3)];
+  const evidence:InventoryEvidence={bucket,observedAtMs:now,objectsComplete:true,referencesComplete:true,writersQuiesced:true,references:[live],pending:[]};
+  assert.deepEqual(classifyCommunityMediaInventory([live,unused],evidence).map(x=>x.status),['referenced','review_candidate']);
+  const invalidEvidence = [
+    {...evidence,objectsComplete:'true' as unknown as boolean},
+    {...evidence,references:[live,{bucket,name:'invalid'}]},
+    {...evidence,pending:[{...bad,bucket:'other'}]},
+    {...evidence,pending:undefined as unknown as InventoryEvidence['pending']},
+  ];
+  for(const input of invalidEvidence)assert.deepEqual(classifyCommunityMediaInventory([live,unused],input).map(x=>x.status),['referenced','unknown']);
+  for(const inventory of [[live,unused,{...bad,generation:'0'}],[live,unused,{...bad,createdAtMs:now+1}],[live,unused,bad,bad]]) {
+    const result=classifyCommunityMediaInventory(inventory,evidence);
+    assert.equal(result[0].status,'referenced');
+    assert.equal(result[1].status,'unknown');
+    assert.ok(result.every(x=>x.status!=='review_candidate'));
+  }
+  const huge=[{...unused,sizeBytes:Number.MAX_SAFE_INTEGER},{...bad,sizeBytes:1}];
+  assert.deepEqual(summarizeCommunityMediaInventory(classifyCommunityMediaInventory(huge,evidence)).review_candidate,{count:2,bytes:null});
+  assert.equal(summarizeCommunityMediaInventory(classifyCommunityMediaInventory([{...bad,sizeBytes:-1}],evidence)).unknown.bytes,null);
+});
+
+test('incremental square listeners retain unchanged keys, close removed keys and reject stale callbacks', () => {
+  const starts: string[] = [], stops: string[] = [], clears: string[] = [];
+  const callbacks = new Map<string, {isCurrent: () => boolean; fail: () => void}>();
+  const registry = createDetailSubscriptionRegistry<string>((value, isCurrent, fail) => {
+    starts.push(value);
+    callbacks.set(value, {isCurrent, fail});
+    return () => stops.push(value);
+  }, value => clears.push(value));
+  registry.reconcile(new Map([['a','a'],['b','b']]));
+  const old = callbacks.get('a')!;
+  registry.reconcile(new Map([['a','a'],['b','b']]));
+  assert.deepEqual(starts, ['a','b']);
+  registry.reconcile(new Map([['b','b'],['c','c']]));
+  assert.deepEqual(starts, ['a','b','c']);
+  assert.deepEqual(stops, ['a']);
+  assert.deepEqual(clears, ['a']);
+  assert.equal(old.isCurrent(), false);
+  old.fail();
+  assert.deepEqual(clears, ['a']);
+  registry.reconcile(new Map([['a','a'],['b','b'],['c','c']]));
+  assert.equal(old.isCurrent(), false);
+  assert.equal(callbacks.get('a')!.isCurrent(), true);
+  registry.close();
+  assert.equal(callbacks.get('b')!.isCurrent(), false);
+  assert.equal(callbacks.get('c')!.isCurrent(), false);
+  registry.reconcile(new Map([['d','d']]));
+  assert.deepEqual(starts, ['a','b','c','a']);
+});
+
+test('incremental square listener failures clear cached data and retry only on upstream refresh', () => {
+  let starts = 0, clears = 0;
+  let current: (() => boolean) | undefined;
+  let fail: (() => void) | undefined;
+  const registry = createDetailSubscriptionRegistry<string>((_value, isCurrent, onFailure) => {
+    starts++;
+    current = isCurrent;
+    fail = onFailure;
+    return () => {};
+  }, () => clears++);
+  const desired = new Map([['a','a']]);
+  registry.reconcile(desired);
+  const old = current!;
+  fail!();
+  assert.equal(clears, 1);
+  assert.equal(old(), false);
+  registry.reconcile(desired);
+  assert.equal(starts, 1);
+  registry.reconcile(desired, true);
+  assert.equal(starts, 2);
+  assert.equal(old(), false);
+  assert.equal(current!(), true);
+  registry.close();
+});
+
+test('square feed preserves authoritative community checks and reconciles live detail subscriptions', () => {
+  const feed = read('src/utils/communitySquareFeed.ts');
+  assert.match(feed, /postDetails\.reconcile\(desiredPosts, retryFailed\)/);
+  assert.match(feed, /communityDetails\.reconcile\(desiredCommunities, retryFailed\)/);
+  assert.match(feed, /JSON\.stringify\(\[pointer\.postId, pointer\.communityId\]\)/);
+  assert.match(feed, /community\.visibility !== 'public'/);
+  assert.match(feed, /auth\.currentUser\?\.uid !== viewerId/);
+  assert.doesNotMatch(feed, /stopDetails/);
+});
+
+test('shared square feed starts once, replays a defensive snapshot and stops on last unsubscribe', () => {
+  const user = {};
+  let starts = 0, stops = 0;
+  let emit: (value: string[]) => void = () => {};
+  const registry = createSessionFeedRegistry<string[], object>(() => user, (_key, change) => {
+    starts++; emit = change; return () => { stops++; };
+  }, () => [], values => [...values]);
+  const first: string[][] = [], second: string[][] = [];
+  const a = registry.subscribe(v => first.push(v), () => {});
+  emit(['a']);
+  first[0].push('local');
+  const b = registry.subscribe(v => second.push(v), () => {});
+  assert.equal(starts, 1);
+  assert.deepEqual(second, [['a']]);
+  a();
+  assert.equal(stops, 0);
+  emit(['b']);
+  assert.deepEqual(second, [['a'], ['b']]);
+  b();
+  assert.equal(stops, 1);
+  const c = registry.subscribe(v => first.push(v), () => {});
+  assert.equal(starts, 2);
+  assert.equal(first.length, 1);
+  c();
+});
+
+test('shared square feed retracts old session immediately on invalidation and rejects queued callbacks', () => {
+  let user: object | null = {};
+  const old: string[][] = [], next: string[][] = [];
+  const emissions: ((value: string[]) => void)[] = [];
+  let stops = 0;
+  const registry = createSessionFeedRegistry<string[], object>(() => user, (_key, change) => {
+    emissions.push(change); return () => { stops++; };
+  }, () => [], v => [...v]);
+  const a = registry.subscribe(v => old.push(v), () => {});
+  emissions[0](['old']);
+  user = {}; // even a fresh session for the same account gets a new object
+  registry.invalidate();
+  assert.deepEqual(old, [['old'], []]);
+  assert.equal(stops, 1);
+  const b = registry.subscribe(v => next.push(v), () => {});
+  emissions[0](['stale']);
+  assert.deepEqual(next, []);
+  emissions[1](['new']);
+  assert.deepEqual(next, [['new']]);
+  a();
+  assert.equal(stops, 1);
+  user = null;
+  registry.invalidate();
+  assert.deepEqual(next, [['new'], []]);
+  assert.equal(stops, 2);
+  b();
+});
+
+test('shared square feed propagates errors to active consumers without keeping listeners after teardown', () => {
+  const user = {};
+  let fail: (error: Error) => void = () => {};
+  let stops = 0;
+  const registry = createSessionFeedRegistry<string[], object>(() => user, (_key, _change, error) => {
+    fail = error; return () => { stops++; };
+  }, () => [], v => [...v]);
+  const errors: string[] = [];
+  const a = registry.subscribe(() => {}, e => errors.push('a:' + e.message));
+  const b = registry.subscribe(() => {}, e => errors.push('b:' + e.message));
+  fail(Error('denied'));
+  a();
+  fail(Error('offline'));
+  b();
+  fail(Error('stale'));
+  assert.deepEqual(errors, ['a:denied','b:denied','b:offline']);
+  assert.equal(stops, 1);
+});
+
+test('square consumers use the same session-scoped feed without persistent cache', () => {
+  const feed = read('src/utils/communitySquareFeed.ts');
+  assert.match(feed, /sharedSquareFeed\.subscribe\(onChange, onError\)/);
+  assert.match(feed, /onAuthStateChanged\(auth, \(\) => sharedSquareFeed\.invalidate\(\)\)/);
+  assert.match(feed, /withinCommunitySquareWindow\(Date\.parse\(item\.distributedAt\), Date\.now\(\)\)/);
+  assert.doesNotMatch(feed, /localStorage|sessionStorage|indexedDB/);
+});
+
+test('offline Firestore release comparison blocks unknown active drift without treating equality as approval',()=>{
+  const baseline="rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { allow read, write: if false; } }";
+  const candidate=baseline+'\n// candidate';
+  assert.equal(compareFirestoreReleaseSources({baseline,active:baseline,candidate}).status,'source_match_review_required');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:baseline+'\n// drift',candidate}).status,'blocked_active_drift');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:baseline,candidate:baseline}).status,'blocked_no_change');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:'',candidate}).status,'blocked_invalid_source');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:'{}',candidate}).status,'blocked_invalid_source');
+});
+
+test('active Firestore inspection reads only fixed release and ruleset and rejects drift or foreign resources',async()=>{
+  const baseline="rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { allow read, write: if false; } }";
+  const candidate=baseline+'\n// candidate';
+  const name='projects/kyrub-b8d0e/releases/cloud.firestore';
+  const rulesetName='projects/kyrub-b8d0e/rulesets/abc-123';
+  const release={name,rulesetName,updateTime:'2026-11-25T00:00:00Z'};
+  const ruleset={name:rulesetName,source:{files:[{name:'firestore.rules',content:baseline}]}};
+  const calls:string[]=[];
+  const inspect=(responses:unknown[])=>inspectActiveFirestoreRules({baseline,candidate,getJson:async (path:string)=>{calls.push(path);return responses.shift();}});
+  const result=await inspect([release,ruleset,release]);
+  assert.deepEqual(calls,[name,rulesetName,name]);
+  assert.equal(result.status,'source_match_review_required');
+  assert.equal(result.rulesetName,rulesetName);
+  assert.equal(JSON.stringify(result).includes(baseline),false);
+  await assert.rejects(inspect([{...release,rulesetName:'projects/other/rulesets/abc'}]),/ACTIVE_RULES_READ_BLOCKED/);
+  await assert.rejects(inspect([release,{...ruleset,name:'projects/other/rulesets/abc'}]),/ACTIVE_RULES_READ_BLOCKED/);
+  await assert.rejects(inspect([release,ruleset,{...release,updateTime:'2026-11-25T00:00:01Z'}]),/ACTIVE_RULES_READ_BLOCKED/);
+  await assert.rejects(inspect([release,{...ruleset,source:{files:[...ruleset.source.files,...ruleset.source.files]}}]),/ACTIVE_RULES_READ_BLOCKED/);
+  const drift=await inspect([release,{...ruleset,source:{files:[{name:'firestore.rules',content:baseline+'\n// drift'}]}},release]);
+  assert.equal(drift.status,'blocked_active_drift');
+});
+
+test('publication destination directory loads only while selecting or retaining a community destination',()=>{
+  const ui=read('src/components/ProfilePublishingDestinationsCloudBridge.tsx');
+  const hook=read('src/hooks/useCommunityDirectory.ts');
+  assert.match(ui,/Boolean\(host && \(\(publishMenuOpen && communityPanelOpen\) \|\| selectedCommunityId\)\)/);
+  assert.match(ui,/useCommunityDirectory\(directoryEnabled\)/);
+  assert.match(ui,/selectedCommunityId && directoryEnabled && !directoryLoading && !directoryError/);
+  assert.match(hook,/export function useCommunityDirectory\(enabled = true\)/);
+  assert.match(hook,/if \(!user \|\| !enabled\)/);
+  assert.match(hook,/active && auth.currentUser === user/);
+  assert.match(hook,/active = false;\s*unsubscribeDiscoverable\(\)/);
+  assert.match(hook,/document.visibilityState === 'hidden'/);
+  assert.match(hook,/document.removeEventListener\('visibilitychange', onVisible\)/);
+  assert.match(ui,/Carregando comunidades…/);
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -26,7 +26,7 @@ type PurchaseView = StorePurchase & {
   receivedReceiptCount: number;
 };
 
-type ProcurementOverview = {
+export type ProcurementOverview = {
   storeId: string;
   suppliers: StoreSupplier[];
   purchases: PurchaseView[];
@@ -38,6 +38,7 @@ interface StoreProcurementWorkspaceProps {
   section: ProcurementSection;
   replenishmentDraft?: PurchaseListEntry[];
   onReplenishmentDraftConsumed?: () => void;
+  renderPurchaseFinance?: (overview: ProcurementOverview, loading: boolean, refresh: () => Promise<void>) => ReactNode;
 }
 
 const statusLabel: Record<StorePurchase['status'], string> = {
@@ -62,6 +63,7 @@ const requestProcurement = async <T,>(
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
+  if(auth.currentUser?.uid!==user.uid||init?.signal?.aborted)throw new Error('Consulta encerrada.');
   const response = await fetch(
     init?.method === 'POST'
       ? '/api/store-procurement'
@@ -341,6 +343,7 @@ export function StoreProcurementWorkspace({
   section,
   replenishmentDraft = [],
   onReplenishmentDraftConsumed,
+  renderPurchaseFinance,
 }: StoreProcurementWorkspaceProps) {
   const [overview, setOverview] = useState<ProcurementOverview>(() => emptyOverview(storeId));
   const [loading, setLoading] = useState(true);
@@ -348,36 +351,64 @@ export function StoreProcurementWorkspace({
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
+  const pendingRead=useRef<AbortController|null>(null);
+  const scope=useRef<object|null>(null);
   const load = useCallback(async (): Promise<void> => {
+    const context=scope.current;
+    if(!context)return;
+    const uid=auth.currentUser?.uid;
+    pendingRead.current?.abort();
+    const controller=new AbortController();
+    pendingRead.current=controller;
+    const isCurrent=()=>scope.current===context&&pendingRead.current===controller&&!controller.signal.aborted&&auth.currentUser?.uid===uid;
     setLoading(true);
     try {
-      setOverview(await requestProcurement<ProcurementOverview>(storeId));
+      const next=await requestProcurement<ProcurementOverview>(storeId,{signal:controller.signal});
+      if(!isCurrent())return;
+      if(next.storeId!==storeId)throw new Error('Contexto de loja divergente.');
+      setOverview(next);
       setError('');
     } catch (loadError) {
+      if(!isCurrent())return;
+      setOverview(emptyOverview(storeId));
       setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar compras.');
     } finally {
-      setLoading(false);
+      if(isCurrent())setLoading(false);
     }
   }, [storeId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    scope.current={};
+    setOverview(emptyOverview(storeId));
+    setBusy(false);
+    setNotice('');
+    setError('');
+    void load();
+    return ()=>{scope.current=null;pendingRead.current?.abort();pendingRead.current=null;};
+  }, [load,storeId]);
 
   const execute = async (work: () => Promise<unknown>, successMessage: string): Promise<void> => {
+    const context=scope.current;
+    const uid=auth.currentUser?.uid;
+    if(!context||!uid)return;
+    const isCurrent=()=>scope.current===context&&auth.currentUser?.uid===uid;
     setBusy(true);
     setError('');
     setNotice('');
     try {
       await work();
+      if(!isCurrent())return;
       setNotice(successMessage);
       await load();
     } catch (actionError) {
-      setError(actionError instanceof Error ? actionError.message : 'Não foi possível concluir a operação.');
+      if(isCurrent())setError(actionError instanceof Error ? actionError.message : 'Não foi possível concluir a operação.');
     } finally {
-      setBusy(false);
+      if(isCurrent())setBusy(false);
     }
   };
 
-  return <section className="space-y-4" data-kyrub-procurement-section={section}>
+  return <>
+  <section className="space-y-4" data-kyrub-procurement-section={section}>
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <div>
         <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Compras e recebimentos</span>
@@ -433,5 +464,7 @@ export function StoreProcurementWorkspace({
         )}
       />
     )}
-  </section>;
+  </section>
+  {section==='purchases'&&renderPurchaseFinance?.(overview,loading||busy,load)}
+  </>;
 }

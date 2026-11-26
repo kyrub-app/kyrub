@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDownToLine,
@@ -174,19 +174,29 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  const pendingRead=useRef<AbortController|null>(null);
   const load = async (): Promise<void> => {
+    pendingRead.current?.abort();
+    const controller=new AbortController();
+    pendingRead.current=controller;
     const user = auth.currentUser;
     if (!user) {
+      setMovements([]);
+      setSummary(undefined);
+      setValuation(undefined);
       setError('Faça login novamente para consultar as movimentações.');
       setLoading(false);
       return;
     }
+    const isCurrent=()=>!controller.signal.aborted&&pendingRead.current===controller&&auth.currentUser?.uid===user.uid;
     setLoading(true);
     setError('');
     try {
       const token = await user.getIdToken();
+      if(!isCurrent())return;
       const response = await fetch(`/api/store-procurement/movements?storeId=${encodeURIComponent(storeId)}`, {
         headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
       });
       const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
       if (!contentType.includes('application/json')) {
@@ -194,18 +204,27 @@ export function StoreInventoryMovementTimeline({ storeId }: Props) {
       }
       const payload = await response.json() as Payload;
       if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar as movimentações.');
+      if(!isCurrent())return;
       setMovements(Array.isArray(payload.movements) ? payload.movements : []);
       setSummary(payload.summary);
       setValuation(payload.valuation);
     } catch (caught) {
+      if(!isCurrent())return;
+      setMovements([]);
+      setSummary(undefined);
+      setValuation(undefined);
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar as movimentações.');
     } finally {
-      setLoading(false);
+      if(isCurrent())setLoading(false);
     }
   };
 
   useEffect(() => {
+    setMovements([]);
+    setSummary(undefined);
+    setValuation(undefined);
     void load();
+    return ()=>{pendingRead.current?.abort();pendingRead.current=null;};
   }, [storeId]);
 
   const visible = useMemo(

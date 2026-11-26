@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   Building2,
   Check,
@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { Store } from '../../types';
 import { auth } from '../../utils/firebase';
+import {staffDirectoryPilotEnabled,searchStaffDirectoryPilot,inviteStaffDirectoryPilot} from '../../utils/storeStaffDirectoryPilot';
 import {
   STORE_ROLE_LABELS,
   canAssignStoreRole,
@@ -88,6 +89,7 @@ export const StoreTeamWorkspace = ({
   const [members, setMembers] = useState<StoreMemberDirectoryRecord[]>([]);
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const searchedTerm=useRef('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [isLoadingAccess, setIsLoadingAccess] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
@@ -118,6 +120,16 @@ export const StoreTeamWorkspace = ({
   const assignableRoles = selectedAccess
     ? assignableRolesFor(selectedAccess.role)
     : [];
+  const searchScope=useRef({user,storeId:selectedAccess?.store.id,canManageMembers,revision:0});
+  const currentScope=searchScope.current;
+  if(currentScope.user!==user||currentScope.storeId!==selectedAccess?.store.id||currentScope.canManageMembers!==canManageMembers){
+    searchScope.current={user,storeId:selectedAccess?.store.id,canManageMembers,revision:currentScope.revision+1};
+  }
+  useEffect(()=>{
+    setDirectoryResults([]);
+    setIsSearching(false);
+    setSearchTerm('');
+  },[user,selectedAccess?.store.id,canManageMembers]);
 
   useEffect(() => {
     if (!user) {
@@ -263,36 +275,52 @@ export const StoreTeamWorkspace = ({
 
   const handleSearch = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
-    if (!searchTerm.trim()) return;
+    if (!searchTerm.trim()||!user||auth.currentUser!==user||!selectedAccess||!canManageMembers) return;
+    const scope=searchScope.current;
+    const revision=++scope.revision;
+    const isCurrent=()=>searchScope.current===scope&&scope.revision===revision&&auth.currentUser===user;
+    setDirectoryResults([]);
     setIsSearching(true);
+    const term=searchTerm.trim();
+    searchedTerm.current='';
     try {
-      const results = await searchExistingKyrubUsers(searchTerm);
+      const results = staffDirectoryPilotEnabled()
+        ? await searchStaffDirectoryPilot(user,selectedAccess.store.id,term,inviteRole)
+        : await searchExistingKyrubUsers(term);
+      if(!isCurrent())return;
+      searchedTerm.current=term;
       setDirectoryResults(
         results.filter(result =>
-          result.uid !== user?.uid && !members.some(member => member.userId === result.uid)
+          result.uid !== user.uid && !members.some(member => member.userId === result.uid)
         )
       );
       if (results.length === 0) {
         notify('Nenhuma conta Kyrub encontrada com esse dado exato.', 'info');
       }
     } catch (error) {
+      if(!isCurrent())return;
       console.error('Falha ao buscar usuário Kyrub:', error);
       notify('Não foi possível consultar o diretório de usuários.', 'error');
     } finally {
-      setIsSearching(false);
+      if(isCurrent())setIsSearching(false);
     }
   };
 
   const handleInvite = async (targetUser: KyrubDirectoryUser): Promise<void> => {
-    if (!user || !selectedAccess) return;
+    if (!user || auth.currentUser!==user || !selectedAccess || !canManageMembers || !canAssignStoreRole(selectedAccess.role,inviteRole)) return;
+    if(!directoryResults.some(result=>result.uid===targetUser.uid))return;
     await runBusy(`invite-${targetUser.uid}`, async () => {
       try {
-        await inviteExistingKyrubUser(user, {
-          store: selectedAccess.store,
-          actorRole: selectedAccess.role,
-          targetUser,
-          role: inviteRole,
-        });
+        if(staffDirectoryPilotEnabled()){
+          await inviteStaffDirectoryPilot(user,selectedAccess.store.id,searchedTerm.current,inviteRole,targetUser.uid);
+        }else{
+          await inviteExistingKyrubUser(user, {
+            store: selectedAccess.store,
+            actorRole: selectedAccess.role,
+            targetUser,
+            role: inviteRole,
+          });
+        }
         setDirectoryResults(current =>
           current.filter(result => result.uid !== targetUser.uid)
         );
@@ -656,7 +684,7 @@ export const StoreTeamWorkspace = ({
                             )}
                             <div className="min-w-0 flex-1">
                               <strong className="block truncate text-xs text-white">{result.name}</strong>
-                              <span className="block truncate text-[10px] text-slate-500">{result.email}</span>
+                              {result.email && <span className="block truncate text-[10px] text-slate-500">{result.email}</span>}
                             </div>
                             <button
                               type="button"

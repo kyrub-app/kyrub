@@ -38,6 +38,7 @@ const provider = async () => ({
     remainingFinancialObligationMinor: 2330,
     message: 'Verified read for test',
   },
+  residual: {state:'review_required' as const,remainingMinor:null,reason:'local_history_uncertain',executionEnabled:false as const},
   notice: 'GET only',
 });
 

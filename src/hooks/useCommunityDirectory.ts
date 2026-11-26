@@ -58,7 +58,7 @@ const mergeCommunities = (...sources: CloudCommunity[][]): CloudCommunity[] => {
   );
 };
 
-export function useCommunityDirectory() {
+export function useCommunityDirectory(enabled = true) {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [discoverable, setDiscoverable] = useState<CloudCommunity[]>([]);
   const [publicReconciled, setPublicReconciled] = useState<CloudCommunity[]>([]);
@@ -93,28 +93,38 @@ export function useCommunityDirectory() {
     }), []);
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !enabled) {
       setLoading(false);
+      setDiscoverable([]);
+      setOwned([]);
+      setMemberships([]);
+      setError('');
       return;
     }
 
+    let active = true;
+    const isCurrent = () => active && auth.currentUser === user;
+    setLoading(true);
     let discoverableReady = false;
     let ownedReady = false;
     let membershipsReady = false;
     const updateLoading = () =>
-      setLoading(!(discoverableReady && ownedReady && membershipsReady));
+      { if (isCurrent()) setLoading(!(discoverableReady && ownedReady && membershipsReady)); };
     const reportError = (value: Error) => {
+      if (!isCurrent()) return;
       console.warn('Não foi possível sincronizar as comunidades.', value);
       setError('Não foi possível sincronizar todas as comunidades agora.');
     };
 
     const unsubscribeDiscoverable = subscribeDiscoverableCommunities(
       communities => {
+        if (!isCurrent()) return;
         discoverableReady = true;
         setDiscoverable(communities);
         updateLoading();
       },
       errorValue => {
+        if (!isCurrent()) return;
         discoverableReady = true;
         reportError(errorValue);
         updateLoading();
@@ -123,11 +133,13 @@ export function useCommunityDirectory() {
     const unsubscribeOwned = subscribeOwnedCommunities(
       user.uid,
       communities => {
+        if (!isCurrent()) return;
         ownedReady = true;
         setOwned(communities);
         updateLoading();
       },
       errorValue => {
+        if (!isCurrent()) return;
         ownedReady = true;
         reportError(errorValue);
         updateLoading();
@@ -136,11 +148,13 @@ export function useCommunityDirectory() {
     const unsubscribeMemberships = subscribeUserMemberships(
       user.uid,
       values => {
+        if (!isCurrent()) return;
         membershipsReady = true;
         setMemberships(values);
         updateLoading();
       },
       errorValue => {
+        if (!isCurrent()) return;
         membershipsReady = true;
         reportError(errorValue);
         updateLoading();
@@ -148,11 +162,12 @@ export function useCommunityDirectory() {
     );
 
     return () => {
+      active = false;
       unsubscribeDiscoverable();
       unsubscribeOwned();
       unsubscribeMemberships();
     };
-  }, [user]);
+  }, [user, enabled]);
 
   useEffect(() => {
     knownPublicIdsRef.current = new Set(
@@ -174,18 +189,18 @@ export function useCommunityDirectory() {
   // bounded refresh, including private communities absent from the Praça API.
   // This never clears IndexedDB or changes offline behavior.
   useEffect(() => {
-    if (!user) {
+    if (!user || !enabled) {
       setOwnedReconciled([]);
       return;
     }
     let active = true;
     let running = false;
     const refreshOwned = async () => {
-      if (running || !active) return;
+      if (running || !active || auth.currentUser !== user || document.visibilityState === 'hidden') return;
       running = true;
       try {
         const values = await getOwnedCommunitiesFromServer(user);
-        if (active && auth.currentUser?.uid === user.uid) setOwnedReconciled(values);
+        if (active && auth.currentUser === user) setOwnedReconciled(values);
       } catch {
         // Preserve existing entries when temporarily offline.
       } finally {
@@ -195,13 +210,15 @@ export function useCommunityDirectory() {
     void refreshOwned();
     const onFocus = () => { void refreshOwned(); };
     window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
     const interval = window.setInterval(onFocus, 5 * 60 * 1000);
     return () => {
       active = false;
       window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
       window.clearInterval(interval);
     };
-  }, [user]);
+  }, [user, enabled]);
 
 
 
@@ -210,7 +227,7 @@ export function useCommunityDirectory() {
   // (no persistent listener cache). Full SDK listeners remain responsible for
   // membership, private communities, and mutations; permissions are unchanged.
   useEffect(() => {
-    if (!user) {
+    if (!user || !enabled) {
       setPublicReconciled([]);
       setPublicCommunities([]);
       return;
@@ -219,7 +236,7 @@ export function useCommunityDirectory() {
     let running = false;
     const controller = new AbortController();
     const refreshPublic = async () => {
-      if (running) return;
+      if (running || !active || auth.currentUser !== user || document.visibilityState === 'hidden') return;
       running = true;
       try {
         const response = await fetch('/api/square/public', {
@@ -236,13 +253,14 @@ export function useCommunityDirectory() {
           .map(parsePublicDirectoryCommunity)
           .filter((item): item is PublicDirectoryCommunity => item !== null)
           .slice(0, 30);
-        if (active) setPublicCommunities(cards);
+        if (!active || auth.currentUser !== user) return;
+        setPublicCommunities(cards);
         const ids = [...new Set(cards.map(item => item.id))]
           .filter(id => !knownPublicIdsRef.current.has(id));
         const settled = await Promise.allSettled(
           ids.map(id => getPublicCommunityFromServer(id))
         );
-        if (!active) return;
+        if (!active || auth.currentUser !== user) return;
         setPublicReconciled(settled.flatMap(item =>
           item.status === 'fulfilled' && item.value ? [item.value] : []
         ));
@@ -258,16 +276,19 @@ export function useCommunityDirectory() {
       }
     };
     void refreshPublic();
-    const interval = window.setInterval(() => void refreshPublic(), 5 * 60 * 1000);
+    const onVisible = () => { void refreshPublic(); };
+    document.addEventListener('visibilitychange', onVisible);
+    const interval = window.setInterval(onVisible, 5 * 60 * 1000);
     return () => {
       active = false;
       controller.abort();
+      document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(interval);
     };
-  }, [user]);
+  }, [user, enabled]);
 
   useEffect(() => {
-    if (!user || memberships.length === 0) {
+    if (!enabled || !user || memberships.length === 0) {
       setPrivateMembershipCommunities([]);
       return;
     }
@@ -289,19 +310,19 @@ export function useCommunityDirectory() {
     let cancelled = false;
     Promise.all(missingIds.map(getCommunity))
       .then(values => {
-        if (cancelled) return;
+        if (cancelled || auth.currentUser !== user) return;
         setPrivateMembershipCommunities(
           values.filter((value): value is CloudCommunity => Boolean(value))
         );
       })
       .catch(value => {
-        if (cancelled) return;
+        if (cancelled || auth.currentUser !== user) return;
         console.warn('Não foi possível carregar comunidades privadas.', value);
       });
     return () => {
       cancelled = true;
     };
-  }, [discoverable, memberships, owned, user]);
+  }, [discoverable, memberships, owned, user, enabled]);
 
   const directory = useMemo<CommunityDirectoryItem[]>(() => {
     const membershipByCommunity = new Map(
@@ -336,7 +357,7 @@ export function useCommunityDirectory() {
     memberships,
     loading,
     error,
-    activeCommunities: directory.filter(
+    activeCommunities: (enabled && user === auth.currentUser ? directory : []).filter(
       community => community.isOwner || community.isActiveMember
     ),
   };
