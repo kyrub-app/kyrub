@@ -1,3 +1,4 @@
+import type {Auth} from 'firebase-admin/auth';
 import {FieldPath,type Firestore} from 'firebase-admin/firestore';
 import {isDocumentId} from './publicSocialAddressPolicy.js';
 
@@ -46,4 +47,34 @@ export async function readVisibleAuthorIdentities(db:Firestore,actorUid:string,a
   const entry=projectVisibleDirectoryEntry(doc.id,data);
   return entry?[{id:entry.id,name:entry.name,avatar:entry.photoUrl}]:[];
  });
+}
+
+/** Exact collaborator lookup. Auth owns email-to-UID binding; a mutable
+ * account document's email is never a search credential or response field.
+ * Both name and email lookup respect explicit social visibility. */
+export async function searchVisibleNoteCollaborators(db:Firestore,auth:Auth,actorUid:string,term:unknown){
+ if(!isDocumentId(actorUid)||typeof term!=='string'||term.trim().length<3||term.trim().length>254)
+  throw Error('DIRECTORY_INPUT_INVALID');
+ const search=term.trim();
+ const fields=['uid','name','photoUrl','isProfileVisible'];
+ if(search.includes('@')){
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(search))throw Error('DIRECTORY_INPUT_INVALID');
+  let target;
+  try{target=await auth.getUserByEmail(search.toLowerCase());}
+  catch(error){if((error as {code?:string}).code==='auth/user-not-found')return [];throw error;}
+  if(target.disabled||!target.emailVerified||target.uid===actorUid||!isDocumentId(target.uid))return [];
+  const [snapshot]=await db.getAll(db.doc('users/'+target.uid),{fieldMask:fields});
+  const data=snapshot.data(),entry=data?projectVisibleDirectoryEntry(target.uid,data):null;
+  return entry?[entry]:[];
+ }
+ const snapshot=await db.collection('users').where('name','==',search).where('isProfileVisible','==',true)
+  .select(...fields).limit(10).get();
+ const candidates=snapshot.docs.flatMap(doc=>{
+  const entry=projectVisibleDirectoryEntry(doc.id,doc.data());
+  return entry&&entry.id!==actorUid?[entry]:[];
+ });
+ if(!candidates.length)return [];
+ const users=await auth.getUsers(candidates.map(entry=>({uid:entry.id})));
+ const allowed=new Set(users.users.filter(user=>!user.disabled&&user.emailVerified).map(user=>user.uid));
+ return candidates.filter(entry=>allowed.has(entry.id));
 }
