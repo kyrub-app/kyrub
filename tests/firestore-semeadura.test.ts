@@ -352,6 +352,18 @@ test('server directory pages only visible canonical identities without leaking p
  await assert.rejects(readVisibleSocialDirectoryPage(db,'directory-00','../private'),/DIRECTORY_INPUT_INVALID/);
 });
 
+// Firestore-only fixture: Auth bindings are supplied independently from mutable user documents.
+function staffIdentityFixture(bindings:Record<string,string>){
+ const identity=(uid:string|undefined)=>{
+  if(!uid)throw Object.assign(Error('not found'),{code:'auth/user-not-found'});
+  return {uid,emailVerified:true,disabled:false};
+ };
+ return {
+  async getUserByEmail(email:string){return identity(bindings[email]);},
+  async getUser(uid:string){return identity(Object.values(bindings).includes(uid)?uid:undefined);}
+ };
+}
+
 test('staff lookup is scoped to canonical store authority and exact contact without exposing private fields',async()=>{
  const {searchStoreStaffDirectory}=await import('../server/identity/storeStaffDirectoryService.js');
  const store=db.doc('stores/staff-directory');
@@ -363,7 +375,7 @@ test('staff lookup is scoped to canonical store authority and exact contact with
  batch.set(db.doc('users/staff-private'),{uid:'staff-private',name:'Nome privado',email:'private@example.invalid',photoUrl:'https://example.invalid/private',isProfileVisible:false});
  batch.set(db.doc('users/staff-public'),{uid:'staff-public',name:'Nome visível',email:'visible@example.invalid',photoUrl:'https://example.invalid/public',isProfileVisible:true});
  await batch.commit();
- const lookup=(actor:string,term:string,role='seller')=>searchStoreStaffDirectory(db,actor,'staff-directory',term,role);
+ const lookup=(actor:string,term:string,role='seller')=>searchStoreStaffDirectory(db,staffIdentityFixture({'private@example.invalid':'staff-private','visible@example.invalid':'staff-public'}),actor,'staff-directory',term,role);
  for(const actor of ['staff-outsider','staff-suspended','staff-seller'])await assert.rejects(lookup(actor,'private@example.invalid'),/STAFF_DIRECTORY_FORBIDDEN/);
  await assert.rejects(lookup('staff-manager','private@example.invalid','manager'),/STAFF_DIRECTORY_FORBIDDEN/);
  assert.deepEqual(await lookup('staff-owner','PRIVATE@example.invalid','manager'),[{uid:'staff-private',name:'Conta Kyrub',photoUrl:''}]);
@@ -381,7 +393,7 @@ test('staff invitation revalidates authority, exact lookup, eligibility and uniq
  await store.set({id:storeId,ownerId:owner,name:'Loja de teste'});
  await store.collection('members').doc(manager).set({storeId,userId:manager,role:'manager',status:'active'});
  await targetRef.set({uid:target,name:'Nome reservado',email:'target@example.invalid',photoUrl:'https://example.invalid/private',isProfileVisible:false});
- const invite=(actor:string,term:string,role='seller')=>createStoreStaffInvitation(db,actor,storeId,target,term,role);
+ const invite=(actor:string,term:string,role='seller')=>createStoreStaffInvitation(db,staffIdentityFixture({'target@example.invalid':target}),actor,storeId,target,term,role);
  await assert.rejects(invite('outsider','target@example.invalid'),/STAFF_DIRECTORY_FORBIDDEN/);
  await assert.rejects(invite(manager,'target@example.invalid','manager'),/STAFF_DIRECTORY_FORBIDDEN/);
  await assert.rejects(invite(owner,'Nome reservado'),/STAFF_DIRECTORY_FORBIDDEN/);
