@@ -2,7 +2,7 @@
  * Identity is the exact initiating Auth session object, not just a UID.
  * Returning to the app revalidates remote activity at most once per 30s
  * per mounted consumer; explicit successful local operations bypass throttle. */
-export type RewardRefreshReason='conversion'|'publication'|'return';
+export type RewardRefreshReason='conversion'|'publication'|'profile_completion'|'return';
 type LocalReason=Exclude<RewardRefreshReason,'return'>;
 const eventName='kyrub-reward-refresh';
 const generations=new WeakMap<object,number>();
@@ -21,7 +21,7 @@ export function subscribeRewardRefresh(session:object,isCurrent:()=>boolean,onRe
  };
  const onLocal=(event:Event)=>{
   const detail=(event as CustomEvent<{session?:object;reason?:LocalReason}>).detail;
-  if(isCurrent()&&detail?.session===session&&(detail.reason==='conversion'||detail.reason==='publication'))onRefresh(detail.reason);
+  if(isCurrent()&&detail?.session===session&&(detail.reason==='conversion'||detail.reason==='publication'||detail.reason==='profile_completion'))onRefresh(detail.reason);
  };
  window.addEventListener(eventName,onLocal);
  window.addEventListener('focus',onReturn);
