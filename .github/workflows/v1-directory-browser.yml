@@ -1,0 +1,75 @@
+name: V1 directory candidate Chromium journeys
+on:
+  pull_request:
+    paths:
+      - 'tests/*directory-browser.test.mjs'
+      - 'tests/fixtures/*directory-browser.tsx'
+      - 'tests/fixtures/gamification-control-plane-browser.tsx'
+      - 'src/utils/firebase.ts'
+      - 'src/components/ProfileSocialHubNative.tsx'
+      - 'server/identity/*Directory*.ts'
+      - 'scripts/build-cadastral-privacy-candidate.ts'
+      - '.github/workflows/v1-directory-browser.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: test
+      GCLOUD_PROJECT: demo-kyrub-welcome
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-welcome
+      FIREBASE_PROJECT_ID: demo-kyrub-welcome
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      VITE_KYRUB_DIRECTORY_BROWSER_EMULATOR: 'true'
+      KYRUB_STAFF_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_STAFF_DIRECTORY_PILOT: 'true'
+      KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+      KYRUB_ADMIN_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_ADMIN_DIRECTORY_PILOT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - run: node --import tsx scripts/build-cadastral-privacy-candidate.ts
+      - name: Run real React components against isolated candidate rules
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GCLOUD_PROJECT" = demo-kyrub-welcome
+          test "$NODE_ENV" = test
+          test -z "${VERCEL:-}${FIREBASE_SERVICE_ACCOUNT_JSON:-}${GOOGLE_APPLICATION_CREDENTIALS:-}"
+          trap 'rm -f .firebase-directory-browser-ci.json .firebase/privacy-review-only/browser-ci.rules' EXIT
+          node --input-type=module <<'NODE'
+          import {readFileSync,writeFileSync,copyFileSync} from 'node:fs';
+          const config=JSON.parse(readFileSync('firebase.security.json','utf8'));
+          config.firestore.rules='.firebase/privacy-review-only/browser-ci.rules';
+          copyFileSync('.firebase/privacy-review-only/cadastral-candidate.rules.txt',config.firestore.rules);
+          writeFileSync('.firebase-directory-browser-ci.json',JSON.stringify(config));
+          NODE
+          for fixture in staff-directory social-directory admin-directory; do
+            npx --yes firebase-tools emulators:exec --config .firebase-directory-browser-ci.json --project demo-kyrub-welcome --only auth,firestore "node --test --import tsx tests/${fixture}-browser.test.mjs"
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v1-directory-isolated-browser-evidence
+          path: gamification-admin-isolated-*.png
+          if-no-files-found: ignore
+          retention-days: 3

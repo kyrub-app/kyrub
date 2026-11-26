@@ -22,8 +22,16 @@ const firebaseConfig = {
   appId: '1:636039448089:web:85a6c6620341bc5bcb8c88',
 };
 
-const isolatedE2E = import.meta.env?.DEV === true &&
-  import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true';
+const isolatedDirectory = import.meta.env?.DEV === true &&
+  import.meta.env?.VITE_KYRUB_DIRECTORY_BROWSER_EMULATOR === 'true';
+if (isolatedDirectory && (typeof window === 'undefined' ||
+  window.location.hostname !== '127.0.0.1' || window.location.protocol !== 'http:' ||
+  import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true')) {
+  throw Error('DIRECTORY_BROWSER_REQUIRES_ISOLATION');
+}
+const isolatedE2E = isolatedDirectory || (import.meta.env?.DEV === true &&
+  import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true');
+const isolatedProject = isolatedDirectory ? 'demo-kyrub-welcome' : 'kyrub-security-test';
 if (isolatedE2E && (typeof window === 'undefined' ||
   !['localhost', '127.0.0.1'].includes(window.location.hostname))) {
   throw Error('FIREBASE_E2E_REQUIRES_LOCALHOST');
@@ -53,7 +61,7 @@ function isolatedPilotConfig() {
   return {apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId};
 }
 const selectedConfig = isolatedE2E
-  ? { ...firebaseConfig, projectId: 'kyrub-security-test', authDomain: 'kyrub-security-test.firebaseapp.com', storageBucket: 'kyrub-security-test.firebasestorage.app', apiKey: 'fake-emulator-key', appId: '1:000000000000:web:fictional' }
+  ? { ...firebaseConfig, projectId: isolatedProject, authDomain: isolatedProject+'.firebaseapp.com', storageBucket: isolatedProject+'.firebasestorage.app', apiKey: 'fake-emulator-key', appId: '1:000000000000:web:fictional' }
   : pilotClientRequested ? isolatedPilotConfig() : firebaseConfig;
 
 const app = getApps().length === 0
@@ -62,7 +70,7 @@ const app = getApps().length === 0
 
 // A pre-initialized Firebase app must never bypass the pilot's isolated
 // configuration: refuse the session rather than authenticate on production.
-if (pilotClientRequested && app.options.projectId !== selectedConfig.projectId) {
+if ((pilotClientRequested || isolatedE2E) && app.options.projectId !== selectedConfig.projectId) {
   throw Error('TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH');
 }
 

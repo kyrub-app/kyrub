@@ -2163,9 +2163,10 @@ export function ProfileSocialHubNative() {
                       </div>
                       <button
                         type="button"
-                        onClick={() =>
-                          setRemoveContactTarget(friend)
-                        }
+                        onClick={() => {
+                          if (friend.connectionStatus === 'pending_sent') setRemoveContactTarget(friend);
+                          else void directory.handleToggleFriend(friend.id);
+                        }}
                         className="m-2 mt-auto flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-500 px-2 text-[9px] font-black uppercase text-slate-950"
                       >
                         <UserPlus className="h-4 w-4" />
@@ -2197,17 +2198,17 @@ export function ProfileSocialHubNative() {
       )}
 
       {removeContactTarget && (
-        <div className="fixed inset-0 z-[193] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-label="Confirmar remoção de contato">
+        <div className="fixed inset-0 z-[193] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-label={removeContactTarget.connectionStatus === 'pending_sent' ? 'Confirmar cancelamento de solicitação' : 'Confirmar remoção de contato'}>
           <section className="w-full max-w-sm rounded-3xl border border-red-500/25 bg-slate-950 p-5">
-            <h3 className="text-base font-black text-white">Remover esta conexão?</h3>
-            <p className="mt-2 text-xs text-slate-400">{removeContactTarget.name} deixará de aparecer entre seus conectados.</p>
+            <h3 className="text-base font-black text-white">{removeContactTarget.connectionStatus === 'pending_sent' ? 'Cancelar esta solicitação?' : 'Remover esta conexão?'}</h3>
+            <p className="mt-2 text-xs text-slate-400">{removeContactTarget.connectionStatus === 'pending_sent' ? `A solicitação enviada a ${removeContactTarget.name} será cancelada.` : `${removeContactTarget.name} deixará de aparecer entre seus conectados.`}</p>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setRemoveContactTarget(null)} className="h-11 rounded-xl border border-slate-800 bg-slate-900 text-xs text-slate-300">Cancelar</button>
               <button type="button" onClick={() => {
                 const friendId = removeContactTarget.id;
                 setRemoveContactTarget(null);
                 void directory.handleToggleFriend(friendId);
-              }} className="h-11 rounded-xl bg-red-500 text-xs font-black text-white">Remover</button>
+              }} className="h-11 rounded-xl bg-red-500 text-xs font-black text-white">{removeContactTarget.connectionStatus === 'pending_sent' ? 'Cancelar solicitação' : 'Remover'}</button>
             </div>
           </section>
         </div>
