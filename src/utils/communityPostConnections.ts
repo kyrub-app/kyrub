@@ -89,13 +89,17 @@ export const requestCommunityPostConnection = async (userId: string): Promise<vo
     participantIds: [user.uid, userId].sort(),
     status: 'pending',
     senderName: (user.displayName || 'Kairubido').slice(0, 160),
-    senderRole: 'Cliente',
-    senderAvatar: user.photoURL || '',
-    senderBio: '',
     receiverName: profile.name,
-    receiverRole: profile.role,
-    receiverAvatar: profile.avatar,
-    receiverBio: profile.bio,
+    // In the protected directory retain attribution, not a second copy of
+    // the participants' current public presentation or private account photo.
+    ...(!socialDirectoryPilotEnabled()?{
+      senderRole: 'Cliente',
+      senderAvatar: user.photoURL || '',
+      senderBio: '',
+      receiverRole: profile.role,
+      receiverAvatar: profile.avatar,
+      receiverBio: profile.bio,
+    }:{}),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
