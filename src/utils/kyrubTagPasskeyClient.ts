@@ -12,7 +12,7 @@ export async function confirmKyrubTagPasskey(optionsJSON:AuthenticationOptions){
  return startAuthentication({optionsJSON});
 }
 
-export type TagPasskeyAction='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account';
+export type TagPasskeyAction='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account'|'identify-owner';
 export async function runKyrubTagPasskey(tagId:string,purpose:TagPasskeyAction,presentation?:unknown,recoveryCode?:string,accountToken?:string){
  if(!/^[a-f0-9]{32}$/.test(tagId)||!supportsKyrubTagPasskey())throw Error('TAG_PASSKEY_UNSUPPORTED');
  const url='/api/health?transport=kyrub-tag-passkey&id='+encodeURIComponent(tagId);
