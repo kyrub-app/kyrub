@@ -93,11 +93,15 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   const visitor=await device();
   await visitor.page.getByRole('button',{name:'Compartilhar',exact:true}).waitFor();
   assert.equal(await visitor.page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  assert.equal(await visitor.page.getByRole('region',{name:'Central do Titular'}).count(),0);
   await visitor.page.getByRole('button',{name:'SOS',exact:true}).click();
   await visitor.page.getByText('Emergência no Brasil',{exact:true}).waitFor();
   await visitor.ctx.close();
   await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
-  await page.getByRole('button',{name:'Editar',exact:true}).click();
+  const central=page.getByRole('region',{name:'Central do Titular'});
+  await central.waitFor();
+  assert.equal(await central.getByText('Ainda indisponível',{exact:true}).count(),4);
+  await central.getByRole('button',{name:'Editar CID',exact:true}).click();
   assert.deepEqual((await ref.get()).data(),original);
   assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),0);
   await page.getByLabel('Nome',{exact:true}).fill('Cartão atualizado');
@@ -148,6 +152,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   assert.equal(await page.getByRole('img',{name:'QR Code Pix para pagamento'}).count(),0);
   await page.screenshot({path:'passkey-browser-public-card.png',fullPage:true});
   await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
+  await page.getByRole('button',{name:'Segurança',exact:true}).click();
   await page.getByRole('button',{name:'Bloquear tag perdida'}).click();
   await page.getByText('Este cartão está bloqueado. As informações do titular não estão públicas.',{exact:true}).waitFor();
   assert.equal(await page.getByText('Cartão atualizado',{exact:true}).count(),0);
