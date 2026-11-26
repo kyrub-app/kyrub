@@ -1460,7 +1460,7 @@ test('social directory HTTP pilot authenticates, paginates and hydrates only exp
  const actor=await googleSignIn('social-directory-http-actor');
  await waitForAward(actor.localId);
  const visible='social-http-visible-fixture',hidden='social-http-hidden-fixture';
- const prior=process.env.KYRUB_SOCIAL_DIRECTORY_PILOT;
+ const prior=process.env.KYRUB_SOCIAL_DIRECTORY_PILOT,priorNodeEnv=process.env.NODE_ENV;
  const visibleRef=db.doc('users/'+visible),hiddenRef=db.doc('users/'+hidden);
  const http=express();http.use(express.json({limit:'8kb'}));http.use('/api',createSocialDirectoryEmulatorRouter(db,auth));
  const listener=http.listen(0,'127.0.0.1');
@@ -1472,6 +1472,7 @@ test('social directory HTTP pilot authenticates, paginates and hydrates only exp
  try{
   await visibleRef.set({uid:visible,name:'Nome público',photoUrl:'https://example.invalid/photo',isProfileVisible:true,email:'private@example.invalid',cpf:'fixture'});
   await hiddenRef.set({uid:hidden,name:'Nome reservado',photoUrl:'https://example.invalid/hidden',isProfileVisible:false,email:'hidden@example.invalid'});
+  process.env.NODE_ENV='test';
   delete process.env.KYRUB_SOCIAL_DIRECTORY_PILOT;
   assert.equal((await post('page')).status,404);
   process.env.KYRUB_SOCIAL_DIRECTORY_PILOT='true';
@@ -1496,5 +1497,6 @@ test('social directory HTTP pilot authenticates, paginates and hydrates only exp
   await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   await Promise.all([visibleRef.delete(),hiddenRef.delete(),auth.updateUser(actor.localId,{disabled:false})]);
   if(prior===undefined)delete process.env.KYRUB_SOCIAL_DIRECTORY_PILOT;else process.env.KYRUB_SOCIAL_DIRECTORY_PILOT=prior;
+  if(priorNodeEnv===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=priorNodeEnv;
  }
 });
