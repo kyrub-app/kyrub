@@ -172,7 +172,7 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
    else if(record.purpose==='unblock')tx.update(tagRef,{blocked:false,enabled:true,blockedAt:null,updatedAt:stamp});
    else if(record.purpose==='link-account'&&accountActor)tx.update(tagRef,{linkedAccountId:accountActor,linkedAccountAt:current!.linkedAccountAt??stamp,updatedAt:stamp});
    else if(record.purpose==='rotate-recovery'&&recoveryCode)tx.update(tagRef,{passkeyRecoveryHash:tagPasskeyRecoveryHash(tagId,recoveryCode),recoveryRotatedAt:stamp});
-   else throw Error('TAG_INVALID');
+   else if(record.purpose!=='identify-owner')throw Error('TAG_INVALID');
   }
   // Consume proof atomically with the mutation: a failed or racing write cannot
   // grant ownership; no general-purpose login session is created.
