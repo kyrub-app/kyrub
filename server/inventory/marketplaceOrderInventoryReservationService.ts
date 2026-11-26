@@ -411,7 +411,7 @@ export const reserveMarketplaceOrderInventoryOnAcceptance = async (
         reservedByItem: addReservationLines(reserved, lines),
         updatedAt: now,
       },
-      { merge: true }
+      { mergeFields: ['inventoryDocumentPath', 'ownerUserId', 'canonicalStoreId', 'reservedByItem', 'updatedAt'] }
     );
     transaction.set(
       reservationRef,
@@ -472,7 +472,7 @@ const finishReservation = async (input: {
         reservedByItem: subtractReservationLines(reserved, lines),
         updatedAt: now,
       },
-      { merge: true }
+      { mergeFields: ['reservedByItem', 'updatedAt'] }
     );
     transaction.set(
       reservationRef,
