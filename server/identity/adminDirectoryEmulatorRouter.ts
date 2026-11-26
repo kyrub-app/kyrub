@@ -3,7 +3,7 @@ import type {Auth} from 'firebase-admin/auth';
 import type {Firestore} from 'firebase-admin/firestore';
 import {isDocumentId} from './publicSocialAddressPolicy.js';
 import {consumeDirectoryQuota} from './directoryQuotaService.js';
-import {lookupAdminDirectoryIdentity} from './adminDirectoryIdentityService.js';
+import {lookupAdminDirectoryIdentity,countAdminDirectoryUsers} from './adminDirectoryIdentityService.js';
 
 const PROJECT='demo-kyrub-welcome';
 export function adminDirectoryPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv=process.env){
@@ -17,7 +17,7 @@ export function adminDirectoryPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv=pr
 /** Test-only transport; production MFA and deployment are not attested. */
 export function createAdminDirectoryEmulatorRouter(db:Firestore,auth:Auth){
  const router=express.Router();
- router.all('/admin-directory-pilot/identity',async(req,res)=>{
+ router.all(['/admin-directory-pilot/identity','/admin-directory-pilot/count'],async(req,res)=>{
   res.set('Cache-Control','private, no-store');
   if(!adminDirectoryPilotEnabled(db)||auth.app.options.projectId!==PROJECT||
    !['127.0.0.1','::1','::ffff:127.0.0.1'].includes(req.socket.remoteAddress||'')||
@@ -37,11 +37,16 @@ export function createAdminDirectoryEmulatorRouter(db:Firestore,auth:Auth){
    const quota=await consumeDirectoryQuota(db,uid,'admin');
    if(quota.allowed===false){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
   }catch{res.status(503).json({error:'ADMIN_DIRECTORY_UNAVAILABLE'});return;}
+  const countOnly=req.path.endsWith('/count');
   const body=req.body;
-  if(Object.keys(req.query).length||!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof body.term!=='string'){
+  if(Object.keys(req.query).length||!body||typeof body!=='object'||Array.isArray(body)||
+   (countOnly?Object.keys(body).length!==0:Object.keys(body).length!==1||typeof body.term!=='string')){
    res.status(400).json({error:'ADMIN_DIRECTORY_INVALID'});return;
   }
-  try{res.json({user:await lookupAdminDirectoryIdentity(db,auth,uid,body.term)});}
+  try{
+   if(countOnly){res.json({count:await countAdminDirectoryUsers(db,uid)});return;}
+   res.json({user:await lookupAdminDirectoryIdentity(db,auth,uid,body.term)});
+  }
   catch(error){
    const code=error instanceof Error?error.message:'';
    if(code==='ADMIN_DIRECTORY_INVALID'){res.status(400).json({error:code});return;}
