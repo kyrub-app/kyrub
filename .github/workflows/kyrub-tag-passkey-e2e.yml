@@ -6,6 +6,9 @@ on:
       - 'server/identity/kyrubTagService.ts'
       - 'server/identity/kyrubTagPilotIsolation.ts'
       - 'tests/kyrub-tag-passkey-emulator.test.ts'
+      - 'tests/firestore-kyrub-tag-passkey-private.test.ts'
+      - 'firestore*.rules'
+      - 'scripts/compose-firestore-rules.mjs'
       - 'tests/fixtures/kyrub-tag-software-authenticator.ts'
       - '.github/workflows/kyrub-tag-passkey-e2e.yml'
   workflow_dispatch:
@@ -42,7 +45,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-tag-passkey-e2e --only firestore,auth "node --test --test-concurrency=1 --import tsx tests/kyrub-tag-passkey-emulator.test.ts" 2>&1 | tee passkey-e2e.log
+          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-tag-passkey-e2e --only firestore,auth "node --test --test-concurrency=1 --import tsx tests/kyrub-tag-passkey-emulator.test.ts tests/firestore-kyrub-tag-passkey-private.test.ts" 2>&1 | tee passkey-e2e.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
