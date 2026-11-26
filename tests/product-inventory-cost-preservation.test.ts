@@ -32,12 +32,17 @@ describe('product inventory edits preserve economic basis', () => {
     assert.equal(item?.costBasisUpdatedAt, '2026-09-30T18:00:00.000Z');
   });
 
-  test('product/composition persistence explicitly keeps economic fields in catalog writes', () => {
+  test('composition persistence never writes the catalog or economic fields', () => {
     assert.match(productInventorySource, /costBasisStatus/);
     assert.match(productInventorySource, /averageUnitCostMinor/);
     assert.match(productInventorySource, /lastPurchaseUnitCostMinor/);
     assert.match(productInventorySource, /inventoryValueMinor/);
     assert.match(productInventorySource, /costBasisSource/);
-    assert.match(productInventorySource, /Economic cost[\s\S]*preserved/);
+    const persistence = productInventorySource.slice(productInventorySource.indexOf('export const persistProductInventorySettings'));
+    assert.match(persistence, /planProductCompositionEdit\(/);
+    assert.match(persistence, /productCompositions: settings\.compositions/);
+    assert.match(persistence, /compositions: settings\.compositions/);
+    assert.doesNotMatch(persistence, /(?:inventoryCatalog|catalog|averageUnitCostMinor|inventoryValueMinor)\s*:\s*(?:settings\.|normalizedCatalog|current\.)/);
+    assert.match(persistence, /transaction\.set\(reference, data, \{ mergeFields: Object\.keys\(data\) \}\)/);
   });
 });
