@@ -12,6 +12,12 @@ on:
       - 'tests/gamification-admin-browser.test.mjs'
       - 'tests/profile-completion-browser.test.mjs'
       - 'tests/staff-directory-browser.test.mjs'
+      - 'tests/social-directory-browser.test.mjs'
+      - 'tests/fixtures/social-directory-browser.tsx'
+      - 'server/identity/social*Directory*.ts'
+      - 'src/utils/social*Directory*.ts'
+      - 'src/hooks/useLiveAuthorIdentities.ts'
+      - 'src/components/ProfileSocialHubNative.tsx'
       - 'tests/fixtures/staff-directory-browser.tsx'
       - 'server/identity/storeStaffDirectory*.ts'
       - 'src/utils/storeStaffDirectoryPilot.ts'
@@ -54,6 +60,8 @@ jobs:
       VITE_KYRUB_PROFILE_COMPLETION_PILOT: 'true'
       KYRUB_STAFF_DIRECTORY_PILOT: 'true'
       VITE_KYRUB_STAFF_DIRECTORY_PILOT: 'true'
+      KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
       VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR: 'true'
       VITE_GAMIFICATION_SUPERVISION_PROTOTYPE: 'true'
       VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT: 'true'
@@ -97,6 +105,12 @@ jobs:
           --config firebase.welcome.json --project demo-kyrub-welcome
           --only auth,firestore,functions
           "node --test --import tsx tests/staff-directory-browser.test.mjs"
+      - name: Verify social directory pagination and privacy in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/social-directory-browser.test.mjs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
