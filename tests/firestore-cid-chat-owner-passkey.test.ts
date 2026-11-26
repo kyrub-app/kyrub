@@ -18,7 +18,7 @@ const now=Date.UTC(2026,10,26,12);
 const tagId='e'.repeat(32),occurrenceId='f'.repeat(32);
 const ownerId='tagpk_'+randomBytes(32).toString('base64url');
 const scope=isolatedTagPasskeyScope(origin,origin);
-const participant=(id:string)=>({id,channels:[{channel:'email' as const,address:id+'@example.invalid',verifiedAt:now-1000,consent:true}]});
+const participant=(id:string)=>({id,channels:[{channel:'email' as const,address:id.toLowerCase()+'@example.invalid',verifiedAt:now-1000,consent:true}]});
 const profile={tagId,ownerId,displayName:'CID fictício',active:true,enabled:true,owner:participant(ownerId),contacts:[participant('contact-test')]};
 const occurrence=planCidSosAlert(profile,{id:occurrenceId,confirmed:true,reason:'Animal encontrado',sms:false},now,[]).occurrence;
 const liveTag=db.collection('kyrub_official_tags').doc(tagId),liveCredential=db.collection('kyrub_tag_passkey_credentials').doc(tagId);
