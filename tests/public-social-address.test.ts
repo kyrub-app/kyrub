@@ -126,3 +126,18 @@ test('author presentation follows the current session without replacing immutabl
  assert.match(community,/const visible = data.isProfileVisible === true/);
  assert.doesNotMatch(community,/user.displayName \|\| user.email/);
 });
+
+test('staff directory pilot is isolated and does not fall back after protected requests fail',()=>{
+ const client=readFileSync('src/utils/storeStaffDirectoryPilot.ts','utf8');
+ const workspace=readFileSync('src/components/store/StoreTeamWorkspace.tsx','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(client,/import\.meta\.env\?\.DEV===true/);
+ assert.match(client,/VITE_KYRUB_STAFF_DIRECTORY_PILOT==='true'/);
+ assert.match(client,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(client,/auth\.currentUser!==user/);
+ assert.match(client,/method:'POST',cache:'no-store'/);
+ assert.match(workspace,/staffDirectoryPilotEnabled\(\)\s*\?\s*await searchStaffDirectoryPilot/);
+ assert.match(workspace,/await inviteStaffDirectoryPilot\(user,selectedAccess\.store\.id,searchedTerm\.current,inviteRole,targetUser\.uid\)/);
+ assert.match(server,/KYRUB_STAFF_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
+ assert.match(server,/routerPromise\?\?=Promise\.all/);
+});
