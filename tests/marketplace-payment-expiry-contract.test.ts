@@ -155,3 +155,9 @@ test('manual expiry maintenance remains available as a protected recovery path',
     destination: '/api/action-execute?transport=marketplace-payment-expiry',
   });
 });
+
+test('reservation state writes replace the reservedByItem map, including deleted item keys', () => {
+  assert.match(reservationSource, /reservedByItem: addReservationLines\(reserved, lines\),\s*updatedAt: now,\s*\},\s*\{ mergeFields: \['inventoryDocumentPath', 'ownerUserId', 'canonicalStoreId', 'reservedByItem', 'updatedAt'\] \}/);
+  assert.match(reservationSource, /reservedByItem: subtractReservationLines\(reserved, lines\),\s*updatedAt: now,\s*\},\s*\{ mergeFields: \['reservedByItem', 'updatedAt'\] \}/);
+  assert.match(reservationSource, /else delete next\[line\.inventoryItemId\]/);
+});

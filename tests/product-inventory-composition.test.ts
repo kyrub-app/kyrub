@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { availableCatalogAfterReservations, reservedQuantities, calculateCompositionAvailableStock } from '../shared/inventoryConsumption.js';
 import { normalizeKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformation';
 import { buildKyrubInventoryTransformationProposal } from '../shared/kyrubInventoryTransformationIntent';
 import {
@@ -98,6 +99,30 @@ describe('product inventory and composition', () => {
     });
 
     assert.equal(calculateProductAvailableStock(catalog, composition), 30);
+  });
+
+  test('sellable capacity subtracts active reservations without changing physical inventory', () => {
+    const physical = catalog.map(item => ({ ...item }));
+    const recipe = parseProductComposition({
+      kind: 'recipe', yieldQuantity: 1,
+      lines: [{ inventoryItemId: 'flour', quantity: 1000 }]
+    });
+    const available = availableCatalogAfterReservations(
+      physical, reservedQuantities({ flour: 2000, cheese: 9999, invalid: -1 })
+    );
+    assert.equal(calculateCompositionAvailableStock(available, recipe), 3);
+    assert.equal(physical[0].currentQuantity, 5000);
+    assert.equal(available[1].currentQuantity, 0);
+    assert.equal(calculateCompositionAvailableStock(
+      availableCatalogAfterReservations(physical, reservedQuantities({})), recipe
+    ), 5);
+    assert.match(actionExecuteSource, /inventoryReservationStates\/\$\{reservationStateId\}/);
+    assert.match(actionExecuteSource, /transaction\.getAll\(inventoryRef, stateRef\)/);
+    assert.match(actionExecuteSource, /resolveCanonicalInventoryAuthorityInTransaction\(/);
+    assert.match(actionExecuteSource, /legacyTenantId \? legacyTenantId !== storeId : ownerId !== storeId/);
+    assert.match(actionExecuteSource, /authority\.ownerUserId !== ownerId/);
+    assert.match(actionExecuteSource, /doc\(authority\.inventoryDocumentPath\)/);
+    assert.match(actionExecuteSource, /inventory\.availableCatalogAfterReservations\(/);
   });
 
   test('uses the same composition model for retail bundles', () => {

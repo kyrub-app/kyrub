@@ -107,6 +107,32 @@ const finitePositive = (value: unknown): number | null =>
 const roundQuantity = (value: number): number =>
   Math.round((value + Number.EPSILON) * 1_000_000) / 1_000_000;
 
+export const reservedQuantities = (value: unknown): Record<string, number> => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const result: Record<string, number> = {};
+  for (const [inventoryItemId, rawQuantity] of Object.entries(
+    value as Record<string, unknown>
+  )) {
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(inventoryItemId)) continue;
+    if (typeof rawQuantity !== 'number' || !Number.isFinite(rawQuantity) || rawQuantity <= 0) {
+      continue;
+    }
+    result[inventoryItemId] = roundQuantity(rawQuantity);
+  }
+  return result;
+};
+
+export const availableCatalogAfterReservations = (
+  catalog: InventoryCatalogRecord[],
+  reserved: Record<string, number>
+): InventoryCatalogRecord[] =>
+  catalog.map(item => ({
+    ...item,
+    currentQuantity: roundQuantity(
+      Math.max(0, item.currentQuantity - (reserved[item.id] ?? 0))
+    ),
+  }));
+
 const addProductQuantity = (
   quantities: Map<string, number>,
   productId: string,

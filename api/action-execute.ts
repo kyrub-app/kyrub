@@ -417,16 +417,46 @@ export default async function handler(
         import('../server/firebaseAdmin.js'),
         import('../shared/inventoryConsumption.js'),
       ]);
-      const tenantRef = firebaseAdmin.adminDb.doc(`tenants/${storeId}`);
-      const inventoryRef = firebaseAdmin.adminDb.doc(
-        `users/${storeId}/private_store/inventory`
-      );
-      const [tenantSnapshot, inventorySnapshot] = await Promise.all([
-        tenantRef.get(),
-        inventoryRef.get(),
+      const [{ createHash }, authorityService] = await Promise.all([
+        import('node:crypto'),
+        import('../server/inventory/canonicalInventoryAuthorityService.js'),
       ]);
+      const tenantRef = firebaseAdmin.adminDb.doc(`tenants/${storeId}`);
+      const snapshot = await firebaseAdmin.adminDb.runTransaction(async transaction => {
+        const tenantSnapshot = await transaction.get(tenantRef);
+        if (!tenantSnapshot.exists) return null;
 
-      if (!tenantSnapshot.exists) {
+        const canonicalValue = clean(tenantSnapshot.get('canonicalStoreId'));
+        const canonicalStoreId = safePublicId(canonicalValue);
+        if (canonicalValue && !canonicalStoreId) {
+          throw new Error('STOREFRONT_INVENTORY_AUTHORITY_INVALID');
+        }
+        let authority = authorityService.legacyTenantInventoryAuthority(storeId);
+        if (canonicalStoreId) {
+          const storeSnapshot = await transaction.get(
+            firebaseAdmin.adminDb.doc(`stores/${canonicalStoreId}`)
+          );
+          const ownerId = clean(storeSnapshot.get('ownerId'));
+          const legacyTenantId = clean(storeSnapshot.get('legacyTenantId'));
+          if (!storeSnapshot.exists || !ownerId ||
+              (legacyTenantId ? legacyTenantId !== storeId : ownerId !== storeId)) {
+            throw new Error('STOREFRONT_INVENTORY_STORE_LINK_UNVERIFIED');
+          }
+          authority = await authorityService.resolveCanonicalInventoryAuthorityInTransaction(
+            transaction, canonicalStoreId
+          );
+          if (authority.ownerUserId !== ownerId) {
+            throw new Error('STOREFRONT_INVENTORY_OWNER_MISMATCH');
+          }
+        }
+        const inventoryRef = firebaseAdmin.adminDb.doc(authority.inventoryDocumentPath);
+        const reservationStateId = createHash('sha256').update(inventoryRef.path).digest('hex');
+        const stateRef = firebaseAdmin.adminDb.doc(`inventoryReservationStates/${reservationStateId}`);
+        const [inventorySnapshot, stateSnapshot] = await transaction.getAll(inventoryRef, stateRef);
+        return { tenantSnapshot, inventorySnapshot, stateSnapshot };
+      }, { readOnly: true });
+
+      if (!snapshot) {
         response.status(404).json({
           error: 'Loja não encontrada.',
           code: 'STORE_NOT_FOUND',
@@ -434,6 +464,7 @@ export default async function handler(
         return;
       }
 
+      const { tenantSnapshot, inventorySnapshot, stateSnapshot } = snapshot;
       const tenantData = tenantSnapshot.data();
       const inventoryData = inventorySnapshot.data();
       const publicProducts = Array.isArray(tenantData?.publicProducts)
@@ -442,8 +473,12 @@ export default async function handler(
       const stockByProductId: Record<string, number> = {};
 
       if (inventorySnapshot.exists && publicProducts.length > 0) {
-        const catalog = inventory.parseInventoryCatalogRecords(
+        const physicalCatalog = inventory.parseInventoryCatalogRecords(
           inventoryData?.inventoryCatalog ?? inventoryData?.catalog
+        );
+        const catalog = inventory.availableCatalogAfterReservations(
+          physicalCatalog,
+          inventory.reservedQuantities(stateSnapshot.data()?.reservedByItem)
         );
         const compositions = inventory.parseInventoryCompositionRecords(
           inventoryData?.compositions ?? inventoryData?.productCompositions
