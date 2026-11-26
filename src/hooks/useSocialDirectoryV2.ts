@@ -162,7 +162,6 @@ export function useSocialDirectoryV2({
           id: otherUid,
           name:
             dbUser?.name ||
-            dbUser?.email ||
             snapshotName ||
             previousFriend?.name ||
             'Usuário do Kyrub',
@@ -179,12 +178,11 @@ export function useSocialDirectoryV2({
             '',
           bio:
             dbUser?.bio ||
-            dbUser?.whatsapp ||
             snapshotBio ||
             previousFriend?.bio ||
             '',
           isProfileVisible:
-            dbUser?.isProfileVisible !== false,
+            dbUser?.isProfileVisible === true,
           favorited: previousFriend?.favorited ?? false,
           connectionStatus: 'accepted',
           connectionId: connection.id
@@ -208,7 +206,6 @@ export function useSocialDirectoryV2({
           connectionId: connection.id,
           name:
             sender?.name ||
-            sender?.email ||
             connection.senderName ||
             'Usuário do Kyrub',
           role: sender
@@ -220,7 +217,6 @@ export function useSocialDirectoryV2({
             '',
           bio:
             sender?.bio ||
-            sender?.whatsapp ||
             connection.senderBio ||
             '',
           connectionStatus: 'pending_received'
@@ -287,20 +283,17 @@ export function useSocialDirectoryV2({
         senderName:
           profileName ||
           currentUser.displayName ||
-          currentUser.email ||
           'Usuário do Kyrub',
         senderRole,
         senderAvatar: profilePhotoUrl || currentUser.photoURL || '',
         senderBio: profileAddress || '',
         receiverName:
           targetUser.name ||
-          targetUser.email ||
           'Usuário do Kyrub',
         receiverRole: getUserRole(targetUser),
         receiverAvatar: targetUser.photoUrl || '',
         receiverBio:
           targetUser.bio ||
-          targetUser.whatsapp ||
           '',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
@@ -321,7 +314,7 @@ export function useSocialDirectoryV2({
       .filter(
         user =>
           user.id !== currentUid &&
-          user.isProfileVisible !== false
+          user.isProfileVisible === true
       )
       .map(user => {
         const connection = connections.find(item =>
@@ -344,11 +337,11 @@ export function useSocialDirectoryV2({
 
         return {
           id: user.id,
-          name: user.name || user.email || 'Usuário do Kyrub',
+          name: user.name || 'Usuário do Kyrub',
           role: getUserRole(user),
           added: connectionStatus === 'accepted',
           avatar: user.photoUrl || '',
-          bio: user.bio || user.whatsapp || '',
+          bio: user.bio || '',
           isProfileVisible: true,
           favorited: existingFriend?.favorited ?? false,
           connectionStatus,
