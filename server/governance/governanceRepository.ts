@@ -1,3 +1,4 @@
+import { assertLegalDraftWrite, isIngressLegalType } from './legalPublicationWritePolicy.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {
@@ -17,10 +18,12 @@ export const saveGovernanceDocument = async (
   input: GovernanceDocument
 ): Promise<GovernanceDocument> => {
   const document = assertGovernanceDocument(input);
-  await adminDb.doc(documentPath(document.id)).set(
-    { ...document, serverUpdatedAt: FieldValue.serverTimestamp() },
-    { merge: false }
-  );
+  const ref = adminDb.doc(documentPath(document.id));
+  await adminDb.runTransaction(async transaction => {
+    const prior = await transaction.get(ref);
+    assertLegalDraftWrite(document, prior.data());
+    transaction.set(ref, { ...document, serverUpdatedAt: FieldValue.serverTimestamp() });
+  });
   return document;
 };
 
@@ -34,6 +37,9 @@ export const transitionGovernanceDocument = async (input: {
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new Error('GOVERNANCE_DOCUMENT_NOT_FOUND');
     const current = assertGovernanceDocument(snapshot.data() as GovernanceDocument);
+    // Generic lifecycle calls have no reviewed legal publication authority.
+    // Do not allow this legacy entrypoint to approve, publish or supersede ingress documents.
+    if (isIngressLegalType(current.type)) throw Error('LEGAL_PUBLICATION_AUTHORITY_REQUIRED');
     assertGovernanceTransition(current.status, input.to);
     const next: GovernanceDocument = {
       ...current,
