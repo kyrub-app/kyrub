@@ -90,8 +90,15 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await page.getByRole('heading',{name:'Pessoa de homologação',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),1);
   assert.equal(await page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  const visitor=await device();
+  await visitor.page.getByRole('button',{name:'Compartilhar',exact:true}).waitFor();
+  assert.equal(await visitor.page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  await visitor.page.getByRole('button',{name:'SOS',exact:true}).click();
+  await visitor.page.getByText('Emergência no Brasil',{exact:true}).waitFor();
+  await visitor.ctx.close();
   await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
   await page.getByRole('button',{name:'Editar',exact:true}).click();
+  assert.deepEqual((await ref.get()).data(),original);
   assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),0);
   await page.getByLabel('Nome',{exact:true}).fill('Cartão atualizado');
   await page.getByRole('button',{name:'Confirmar alterações com chave de acesso'}).click();
