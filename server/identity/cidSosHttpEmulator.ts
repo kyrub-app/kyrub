@@ -1,6 +1,7 @@
 // Standalone homologation handler. Never mount in server.ts or any production/preview route.
 // The caller must bind exclusively to a local TLS test server with this exact host.
 import type {IncomingMessage,ServerResponse} from 'node:http';
+import type {TLSSocket} from 'node:tls';
 import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import {assertCidSosEmulator,createCidSosEmulatorStore} from './cidSosEmulatorStore.js';
 import {createCidChatEmulatorStore,CID_CHAT_EMULATOR_ORIGIN} from './cidChatEmulatorStore.js';
@@ -56,7 +57,7 @@ export function createCidSosHttpEmulatorHandler(deliverSimulatedConfirmation:(en
   try{
    assertCidSosEmulator();
    // No CORS, no forwarded-origin trust, no GET state changes or credential-bearing query.
-   if(req.method!=='POST'||req.headers.host!==host||req.headers.origin!==origin||req.headers['x-cid-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'CID_HTTP_DENIED'});
+   if((req.socket as TLSSocket).encrypted!==true||req.socket.localAddress!=='127.0.0.1'||req.socket.remoteAddress!=='127.0.0.1'||req.method!=='POST'||req.headers.host!==host||req.headers.origin!==origin||req.headers['x-cid-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'CID_HTTP_DENIED'});
    const match=/^\/cid-homologation\/api\/([a-f0-9]{32})\/([A-Za-z0-9_-]{22,80})\/(emit|owner-begin|owner-finish|contact-request|contact-confirm|read|send|close|revoke)$/.exec(req.url??'');
    if(!match)return respond(res,404,{error:'CID_HTTP_DENIED'});
    const [,tagId,occurrenceId,action]=match,path=prefix+'/'+tagId+'/'+occurrenceId+'/';
