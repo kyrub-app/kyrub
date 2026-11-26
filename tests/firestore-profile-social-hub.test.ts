@@ -58,10 +58,14 @@ test('owner creates and updates the public profile extension', async () => {
   );
 });
 
-test('another authenticated user can read but cannot change the profile', async () => {
+test('another authenticated user can read an explicitly visible profile but cannot change it', async () => {
   const owner = environment.authenticatedContext(OWNER_ID).firestore();
   const visitor = environment.authenticatedContext('profile-visitor').firestore();
   await assertSucceeds(setDoc(doc(owner, PROFILE_PATH), profilePayload()));
+  await assertFails(getDoc(doc(visitor, PROFILE_PATH)));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'users', OWNER_ID), { uid: OWNER_ID, isProfileVisible: true });
+  });
   await assertSucceeds(getDoc(doc(visitor, PROFILE_PATH)));
   await assertFails(
     updateDoc(doc(visitor, PROFILE_PATH), {
