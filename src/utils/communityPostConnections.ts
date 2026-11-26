@@ -51,10 +51,10 @@ export const readCommunityPostPublicProfile = async (userId: string): Promise<Co
   const snapshot = await getDoc(doc(db, 'users', userId));
   if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
   const data = snapshot.data();
-  const visible = data.isProfileVisible !== false;
+  const visible = data.isProfileVisible === true;
   return {
     id: userId,
-    name: typeof data.name === 'string' && data.name ? data.name : 'Kairubido',
+    name: visible && typeof data.name === 'string' && data.name ? data.name : 'Kairubido',
     avatar: visible && typeof data.photoUrl === 'string' ? data.photoUrl : '',
     role: visible && typeof data.role === 'string' ? data.role : 'Kairubido',
     bio: visible && typeof data.bio === 'string' ? data.bio : '',
@@ -76,7 +76,7 @@ export const requestCommunityPostConnection = async (userId: string): Promise<vo
     receiverId: userId,
     participantIds: [user.uid, userId].sort(),
     status: 'pending',
-    senderName: (user.displayName || user.email || 'Kairubido').slice(0, 160),
+    senderName: (user.displayName || 'Kairubido').slice(0, 160),
     senderRole: 'Cliente',
     senderAvatar: user.photoURL || '',
     senderBio: '',
