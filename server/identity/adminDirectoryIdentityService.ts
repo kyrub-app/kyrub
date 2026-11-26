@@ -45,3 +45,22 @@ export async function lookupAdminDirectoryIdentity(db:Firestore,auth:Auth,actorU
   return user;
  });
 }
+
+
+/** Aggregate only; no user documents are returned. Recheck the live grant
+ * after the count so a revoked or suspended administrator receives no result.
+ * Caller verifies current identity and applies the directory quota. */
+export async function countAdminDirectoryUsers(db:Firestore,actorUid:string):Promise<number>{
+ if(!isDocumentId(actorUid))throw Error('ADMIN_DIRECTORY_INVALID');
+ const grantRef=db.doc('kyrub_admin/control_plane/admins/'+actorUid);
+ const requireGrant=async()=>{
+  const grant=(await grantRef.get()).data();
+  if(grant?.uid!==actorUid||grant.status!=='active'||!allowedRoles.has(grant.role))
+   throw Error('ADMIN_DIRECTORY_FORBIDDEN');
+ };
+ await requireGrant();
+ const total=(await db.collection('users').count().get()).data().count;
+ if(!Number.isSafeInteger(total)||total<0)throw Error('ADMIN_DIRECTORY_UNAVAILABLE');
+ await requireGrant();
+ return total;
+}
