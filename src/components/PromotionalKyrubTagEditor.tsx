@@ -134,7 +134,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode,initialDr
   <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <strong>Destinos no Kyrub (opcionais)</strong>
    <p className="text-sm text-slate-300">Informe o identificador (trecho final do endereço) de um destino público. Um perfil pessoal deve pertencer à sua própria conta; lojas e comunidades são indicações públicas.</p>
-   {(['profile','store','community'] as const).map(kind=><label key={kind} className="block text-sm">{kind==='profile'?'Meu perfil':kind==='store'?'Loja':'Comunidade'}<input className="mt-1 min-h-11 w-full rounded-lg bg-[#1D2924] p-3" value={destinations[kind]??''} placeholder={kind==='profile'?'kyrub.com/kairubido/seu-perfil':kind==='store'?'kyrub.com/@sua-loja':'kyrub.com/comunidade/sua-comunidade'} maxLength={120} disabled={busy||uploading||tag.blocked} onChange={e=>setDestinations(prev=>({...prev,[kind]:e.target.value}))}/></label>)}
+   {(['profile','store','community'] as const).map(kind=><label key={kind} className="block text-sm">{kind==='profile'?'Meu perfil':kind==='store'?'Loja':'Comunidade'}<input className="mt-1 min-h-11 w-full rounded-lg bg-[#1D2924] p-3" value={destinations[kind]??''} placeholder={kind==='profile'?'kyrub.com/seu-perfil':kind==='store'?'kyrub.com/@sua-loja':'kyrub.com/comunidade/sua-comunidade'} maxLength={120} disabled={busy||uploading||tag.blocked} onChange={e=>setDestinations(prev=>({...prev,[kind]:e.target.value}))}/></label>)}
   </section>
   <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <strong>Contatos de emergência (opcionais)</strong>
