@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
 import type { Firestore } from 'firebase-admin/firestore';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 
@@ -69,39 +70,20 @@ export const seedVerifiedPost = async (
     }
 
     const authorProgressRef = db.doc(`users/${authorId}/semeaduraProgress/summary`);
-    const communityProgressRef = communityId
-      ? db.doc(`communities/${communityId}/semeaduraProgress/summary`) : null;
-    const [authorProgress, communityProgress] = await Promise.all([
-      tx.get(authorProgressRef),
-      communityProgressRef ? tx.get(communityProgressRef) : Promise.resolve(null),
-    ]);
-    // These are display counters, NOT balances or rewards. Reject corruption,
-    // missing projections on already active posts, and mismatched ownership.
-    const verifyProgress = (
-      snapshot: { exists: boolean; data: () => Record<string, unknown> | undefined } | null,
-      scopeId: string, field: 'authorId' | 'communityId',
-    ): number => {
-      if (!snapshot?.exists) {
-        if (stats.exists) throw new Error('SEMEADURA_PROJECTION_UNAVAILABLE');
-        return 0;
-      }
-      const value = snapshot.data();
-      if (value?.[field] !== scopeId ||
-          !Number.isSafeInteger(value?.acceptedSeeds) ||
-          !Number.isSafeInteger(value?.[field === 'authorId' ? 'pitangueiras' : 'bosques']) ||
-          Number(value?.acceptedSeeds) < 0) {
-        throw new Error('SEMEADURA_PROJECTION_INVALID');
-      }
-      const progress = calculatePitangueiraJourney(Number(value.acceptedSeeds));
-      if ((field === 'authorId' && value.pitangueiras !== progress.pitangueiras) ||
-          (field === 'communityId' && value.bosques !== progress.bosques)) {
-        throw new Error('SEMEADURA_PROJECTION_INVALID');
-      }
-      return Number(value.acceptedSeeds);
-    };
-    const authorTotal = verifyProgress(authorProgress, authorId, 'authorId');
-    const communityTotal = communityProgressRef
-      ? verifyProgress(communityProgress, communityId, 'communityId') : 0;
+    // Only the original author accumulates progress. Preserve legacy community
+    // documents untouched; community identity remains on receipts for access checks.
+    const authorProgress = await tx.get(authorProgressRef);
+    const authorValue = authorProgress.data();
+    if (!authorProgress.exists && stats.exists) {
+      throw new Error('SEMEADURA_PROJECTION_UNAVAILABLE');
+    }
+    if (authorProgress.exists && (
+      authorValue?.authorId !== authorId ||
+      !Number.isSafeInteger(authorValue?.acceptedSeeds) ||
+      Number(authorValue?.acceptedSeeds) < 0 ||
+      authorValue?.pitangueiras !== Math.floor(Number(authorValue?.acceptedSeeds) / 1000)
+    )) throw new Error('SEMEADURA_PROJECTION_INVALID');
+    const authorTotal = authorProgress.exists ? Number(authorValue?.acceptedSeeds) : 0;
     const data = stats.data();
     if (stats.exists && (
       data?.postId !== postId || data?.kind !== kind ||
@@ -136,7 +118,14 @@ export const seedVerifiedPost = async (
     if (plan.status !== 'accepted') {
       return { status: plan.status, count: plan.count, closed: plan.nowClosed, authorId };
     }
-    const occurredAt = new Date().toISOString();
+    const now = new Date();
+    const day = semeaduraDay(now);
+    const quotaRef = db.doc(`users/${actor}/semeaduraDailyUsage/${day}`);
+    const quota = await tx.get(quotaRef);
+    const used = readSemeaduraDailyCount(quota.data(), actor, day);
+    if (used >= SEMEADURA_DAILY_LIMIT) throw new Error('SEMEADURA_DAILY_LIMIT_REACHED');
+    const occurredAt = now.toISOString();
+    tx.set(quotaRef, { actorId: actor, day, schemaVersion: 1, count: used + 1, updatedAt: occurredAt });
     tx.create(receiptRef, {
       kind, postId, communityId, authorId, actorId: actor, occurredAt,
     });
@@ -148,8 +137,7 @@ export const seedVerifiedPost = async (
     if (stats.exists) tx.update(statsRef, nextStats);
     else tx.create(statsRef, { ...nextStats, createdAt: occurredAt });
     const nextAuthorTotal = authorTotal + 1;
-    const nextCommunityTotal = communityTotal + 1;
-    if (!Number.isSafeInteger(nextAuthorTotal) || !Number.isSafeInteger(nextCommunityTotal)) {
+    if (!Number.isSafeInteger(nextAuthorTotal)) {
       throw new Error('SEMEADURA_PROJECTION_OVERFLOW');
     }
     const authorData = {
@@ -159,15 +147,6 @@ export const seedVerifiedPost = async (
     };
     if (authorProgress.exists) tx.update(authorProgressRef, authorData);
     else tx.create(authorProgressRef, { ...authorData, createdAt: occurredAt });
-    if (communityProgressRef) {
-      const communityData = {
-        communityId, acceptedSeeds: nextCommunityTotal,
-        bosques: Math.floor(nextCommunityTotal / SEEDS_PER_BOSQUE),
-        updatedAt: occurredAt,
-      };
-      if (communityProgress?.exists) tx.update(communityProgressRef, communityData);
-      else tx.create(communityProgressRef, { ...communityData, createdAt: occurredAt });
-    }
     if (plan.count > SEEDS_PER_BOSQUE) throw Error('SEMEADURA_CAP_BROKEN');
     return { status: 'accepted' as const, count: plan.count, closed: plan.nowClosed, authorId };
   });
@@ -192,8 +171,10 @@ export const readVerifiedPostSemeadura = async (
   const postRef = db.doc(`${kind === 'community' ? 'community_posts' : 'social_posts'}/${postId}`);
   const statsRef = db.collection('semeadura_post_stats').doc(key);
   const receiptRef = statsRef.collection('receipts').doc(actor);
-  const [post, stats, receipt] = await Promise.all([
+  const day = semeaduraDay(new Date());
+  const [post, stats, receipt, quota] = await Promise.all([
     postRef.get(), statsRef.get(), receiptRef.get(),
+    db.doc(`users/${actor}/semeaduraDailyUsage/${day}`).get(),
   ]);
   if (!post.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
   const postData = post.data();
@@ -241,7 +222,7 @@ export const readVerifiedPostSemeadura = async (
   return {
     count, closed: count === SEEDS_PER_BOSQUE, seeded: receipt.exists,
     canSemear: canParticipate && actor !== authorId && !receipt.exists &&
-      count < SEEDS_PER_BOSQUE,
+      count < SEEDS_PER_BOSQUE && readSemeaduraDailyCount(quota.data(), actor, day) < SEMEADURA_DAILY_LIMIT,
     authorId, pitangueiras: Math.floor(count / 1000),
     bosqueCompleted: count === SEEDS_PER_BOSQUE,
   };
@@ -265,7 +246,7 @@ export const readPersonalSemeaduraJourney = async (db: Firestore, uid: string) =
 };
 
 /**
- * Collective public journey: visual only, not a credit for community owners.
+ * Deprecated compatibility route: no collective progression or historic totals exposed.
  * Private communities remain restricted to active members or the owner.
  */
 export const readCommunitySemeaduraJourney = async (
@@ -274,10 +255,9 @@ export const readCommunitySemeaduraJourney = async (
   communityId: string,
 ) => {
   if (!safeUid(uid) || !safeUid(communityId)) throw new Error('SEMEADURA_INVALID_INPUT');
-  const [community, membership, progress] = await Promise.all([
+  const [community, membership] = await Promise.all([
     db.doc(`communities/${communityId}`).get(),
     db.doc(`community_members/${communityId}__${uid}`).get(),
-    db.doc(`communities/${communityId}/semeaduraProgress/summary`).get(),
   ]);
   if (!community.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
   const owner = community.data()?.ownerId === uid;
@@ -286,12 +266,5 @@ export const readCommunitySemeaduraJourney = async (
   if (!['public', 'moderated'].includes(community.data()?.visibility) && !owner && !active) {
     throw new Error('SEMEADURA_COMMUNITY_ACCESS_DENIED');
   }
-  if (!progress.exists) return calculatePitangueiraJourney(0);
-  const data = progress.data();
-  if (data?.communityId !== communityId ||
-      !Number.isSafeInteger(data.acceptedSeeds) || data.acceptedSeeds < 0 ||
-      data.bosques !== Math.floor(data.acceptedSeeds / SEEDS_PER_BOSQUE)) {
-    throw new Error('SEMEADURA_PROJECTION_INVALID');
-  }
-  return calculatePitangueiraJourney(data.acceptedSeeds);
+  return calculatePitangueiraJourney(0);
 };
