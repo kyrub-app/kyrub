@@ -82,6 +82,20 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await page.getByRole('heading',{name:'Contato público 44',exact:true,includeHidden:true}).waitFor();
   assert.ok(requests.some(body=>typeof body.after==='string'));
   assert.equal(await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).count(),1);
+  // A new suggestion must send a request, never open a removal dialog.
+  const suggestion=page.locator('article').filter({has:page.getByRole('heading',{name:'Contato público 03',exact:true})});
+  await suggestion.getByRole('button',{name:'Conectar',exact:true}).click();
+  const suggestionRef=db.doc('connections/'+[actor.uid,'social-browser-03'].sort().join('_'));
+  await suggestion.getByRole('button',{name:'Cancelar',exact:true}).waitFor();
+  assert.equal((await suggestionRef.get()).get('status'),'pending');
+  assert.equal(await page.getByRole('dialog',{name:'Confirmar remoção de contato'}).count(),0);
+  await suggestion.getByRole('button',{name:'Cancelar',exact:true}).click();
+  const cancelDialog=page.getByRole('dialog',{name:'Confirmar cancelamento de solicitação'});
+  await cancelDialog.waitFor();
+  await cancelDialog.getByRole('button',{name:'Cancelar solicitação',exact:true}).click();
+  await suggestion.getByRole('button',{name:'Conectar',exact:true}).waitFor();
+  assert.equal((await suggestionRef.get()).exists,false);
+
   assert.equal(await page.getByText('Nome reservado atual',{exact:true}).count(),0);
   assert.equal(await page.getByText('fixture-secret-00@example.invalid',{exact:true}).count(),0);
   await page.screenshot({path:'gamification-admin-isolated-social-directory.png',fullPage:true});
