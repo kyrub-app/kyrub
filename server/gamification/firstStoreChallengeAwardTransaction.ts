@@ -1,7 +1,6 @@
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
 import { planFirstStoreChallengeReward, type VerifiedFirstStoreEvent } from './firstStoreChallengeReward.js';
-import { applyPitangaEarnInTransaction } from './pitangaEarnTransaction.js';
 
 /**
  * Trusted transaction primitive. Call only after verifying store ownership and
@@ -21,6 +20,7 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
   },
 ): Promise<{ replay: boolean; pitangas: number; xp: number }> => {
   const plan = planFirstStoreChallengeReward(input.challenge, input.event);
+  if (plan.pitangas !== 0 || plan.xp !== 2) throw new Error('FIRST_STORE_CHALLENGE_NOT_ELIGIBLE');
   const uid = plan.userId;
   const awardId = plan.idempotencyKey;
   if (input.balanceRef.path !== `users/${uid}/pitangaBalance/balance` ||
@@ -50,26 +50,10 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
       (plan.pitangas === 0 && pitangaEntry.exists)) {
       throw new Error('FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT');
     }
-    if (plan.pitangas > 0) {
-      if (!pitangaEntry.exists || pitangaEntry.data()?.deltaKCoins !== plan.pitangas ||
-          pitangaEntry.data()?.userId !== uid || pitangaEntry.data()?.sourceId !== plan.challengeId ||
-          pitangaEntry.data()?.idempotencyKey !== `pitanga_earn_${awardId}`) {
-        throw new Error('FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT');
-      }
-    }
     return { replay: true, pitangas: plan.pitangas, xp: plan.xp };
   }
   if (xpEntry.exists || pitangaEntry.exists) throw new Error('FIRST_STORE_REWARD_PARTIAL_STATE');
-  // The canonical Pitanga balance must already exist after verified migration.
-  // This deliberately fails closed for un-migrated users.
-  if (plan.pitangas > 0) {
-    await applyPitangaEarnInTransaction(tx, {
-      userId: uid, awardId, sourceType: 'challenge', sourceId: plan.challengeId,
-      amount: plan.pitangas, occurredAt: input.event.createdAt,
-      balanceRef: input.balanceRef, ledgerRef: input.pitangaLedgerRef,
-      legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence'),
-    });
-  }
+  // The first-store award is XP-only; it never initializes or credits Pitangas.
   if (plan.xp > 0) {
     tx.create(input.xpLedgerRef, {
       id: input.xpLedgerRef.id, userId: uid, deltaXp: plan.xp,
