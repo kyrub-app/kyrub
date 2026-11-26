@@ -87,6 +87,10 @@ test('Chromium: saved private profile and canonical identifier complete reward e
    const external=[];
    await context.route('**/*',route=>{if(new URL(route.request().url()).hostname!=='127.0.0.1'){external.push(route.request().url());return route.abort();}return route.continue();});
    page=await context.newPage();
+   const diagnostics=[];
+   page.on('pageerror',error=>diagnostics.push('pageerror: '+error.message));
+   page.on('console',message=>{if(['error','warning'].includes(message.type()))diagnostics.push(message.type()+': '+message.text().slice(0,500));});
+   page.on('requestfailed',request=>diagnostics.push('requestfailed: '+new URL(request.url()).pathname+' '+request.failure()?.errorText));
    await page.goto(origin);
    await page.getByLabel('Email de teste').fill(person.email);
    await page.getByLabel('Senha de teste').fill(password);
@@ -96,9 +100,17 @@ test('Chromium: saved private profile and canonical identifier complete reward e
    const receipt=person.root.collection('challengeRewards').doc(challenge);
    const event=async(action,status)=>{
     const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/profile-completion-pilot'&&r.request().method()==='POST');
-    await action();
-    const result=await response;
-    assert.equal(result.status(),200);assert.deepEqual(await result.json(),{status});
+    try{
+     await action();
+     const result=await response;
+     assert.equal(result.status(),200);assert.deepEqual(await result.json(),{status});
+    }catch(error){
+     console.error('[profile-browser]',i,status,JSON.stringify(diagnostics.slice(-15)));
+     console.error('[profile-browser-state]',await page.locator('#unified-public-profile-editor [role="status"]').allTextContents());
+     console.error('[profile-browser-persisted]',{profileExists:(await person.root.collection('public_profile').doc('main').get()).exists,accountName:(await person.root.get()).get('name'),balance:(await person.balance.get()).get('availableKCoins')});
+     await page.screenshot({path:'gamification-admin-isolated-profile-failure-'+i+'.png',fullPage:true});
+     throw error;
+    }
    };
    const save=async()=>{
     await page.getByLabel('Nome de exibição').fill('Perfil personalizado');
