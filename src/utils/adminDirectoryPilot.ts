@@ -27,3 +27,18 @@ export async function lookupAdminDirectoryPilot(user:User,term:string):Promise<A
  return {uid:data.uid,name:data.name,email:data.email,photoUrl:data.photoUrl,isProfileVisible:data.isProfileVisible,
   createdAt:data.createdAt,updatedAt:data.updatedAt};
 }
+
+
+export async function countAdminDirectoryUsersPilot(user:User):Promise<number>{
+ if(!adminDirectoryPilotEnabled()||auth.currentUser!==user)throw Error('Consulta administrativa indisponível.');
+ const token=await user.getIdToken();
+ if(auth.currentUser!==user)throw Error('Sessão alterada.');
+ const response=await fetch('/api/admin-directory-pilot/count',{
+  method:'POST',cache:'no-store',credentials:'omit',redirect:'error',
+  headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:'{}'
+ });
+ if(!response.ok||auth.currentUser!==user)throw Error('Consulta administrativa indisponível ou não autorizada.');
+ const payload=await response.json();
+ if(auth.currentUser!==user||!Number.isSafeInteger(payload?.count)||payload.count<0)throw Error('Resposta administrativa inválida.');
+ return payload.count;
+}
