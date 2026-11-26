@@ -21,6 +21,15 @@ const opaque=(s:unknown):s is string=>typeof s==='string'&&/^[A-Za-z0-9_-]{43}$/
 const time=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
 type Credential={id:string;secret:string};
 type Challenge=TagPasskeyChallenge&{central:true;version:string;attempts:number;mutation?:{config:CidSosConfig;sessionId:string}};
+type Channel=ChannelGrant['channel'];
+type Route={participantId:string;channel:Channel;address:string};
+type ChannelChallenge={id:string;tagId:string;ownerId:string;revision:number;route:Route;digest:string;issuedAt:number;expiresAt:number;attempts:number;usedAt?:number;grantVerifiedAt?:number;revokeDigest?:string};
+const matches=(secret:unknown,digest:unknown)=>opaque(secret)&&typeof digest==='string'&&/^[a-f0-9]{64}$/.test(digest)&&timingSafeEqual(Buffer.from(hash(secret),'hex'),Buffer.from(digest,'hex'));
+const sameGrant=(g:ChannelGrant,r:Route,tagId:string,ownerId:string)=>g.tagId===tagId&&g.ownerId===ownerId&&g.participantId===r.participantId&&g.channel===r.channel&&g.address===r.address;
+function configuredRoute(config:CidSosConfig,participantId:string,channel:Channel):Route{
+ const participant=[config.owner,...config.contacts].find(p=>p.id===participantId),entry=participant?.channels.find(c=>c.channel===channel);
+ if(!entry)return deny();return {participantId,channel,address:entry.address};
+}
 type Session={id:string;tagId:string;ownerId:string;credentialId:string;digest:string;issuedAt:number;expiresAt:number;revokedAt?:number};
 export function createCidOwnerCentralEmulator(tagId:string){
  assertCidSosEmulator();if(!isTagId(tagId))return deny();
@@ -31,6 +40,7 @@ export function createCidOwnerCentralEmulator(tagId:string){
  const challenges=central.collection('challenges'),sessions=central.collection('sessions');
  const liveTag=db.collection('kyrub_official_tags').doc(tagId),liveCredential=db.collection('kyrub_tag_passkey_credentials').doc(tagId);
  const configRef=root.collection('private').doc('config'),grantRef=root.collection('private').doc('grants');
+ const channelChallenges=central.collection('channelChallenges'),channelQuota=central.collection('channelQuotas');
  const quota=db.collection('cid_sos_emulator_owner_quotas').doc(tagId);
  const check=(now:number)=>{assertCidSosEmulator();if(!time(now))return deny();};
  async function current(tx:Transaction){
@@ -150,6 +160,60 @@ export function createCidOwnerCentralEmulator(tagId:string){
     tx.set(configRef,{config});tx.set(grantRef,{grants:retained});
     tx.update(liveCredential,{credential:next,lastVerifiedAt:new Date(now).toISOString()});tx.update(ref,{usedAt:now});
     return {revision:config.revision,simulated:true as const};
+   });
+  },
+  // Private delivery adapter only. No endpoint returns the envelope or accepts
+  // a caller-supplied destination. Contact consent must be separate and explicit.
+  async prepareChannelConsentForDelivery(credential:Credential,participantId:string,channel:Channel,now:number){
+   check(now);return db.runTransaction(async tx=>{
+    check(now);const c=await authorize(tx,credential,now),[s,g]=await Promise.all([tx.get(configRef),tx.get(grantRef)]);
+    const config=s.get('config') as CidSosConfig|undefined,grants=(g.get('grants')??[]) as ChannelGrant[];
+    if(!config||config.tagId!==tagId||config.ownerId!==c.ownerId||!Array.isArray(grants))return deny();
+    const route=configuredRoute(config,participantId,channel);
+    if(grants.some(x=>sameGrant(x,route,tagId,c.ownerId)&&x.consent&&x.revokedAt===undefined))return deny();
+    const qref=channelQuota.doc(hash(participantId+':'+channel)),q=await tx.get(qref);
+    const bucket=Math.floor(now/600000),count=q.get('bucket')===bucket?q.get('count'):0;
+    if(!Number.isSafeInteger(count)||count<0||count>=3)return deny();
+    const id=token(),secret=token(),record:ChannelChallenge={id,tagId,ownerId:c.ownerId,revision:config.revision,route,digest:hash(secret),issuedAt:now,expiresAt:now+300000,attempts:0};
+    tx.set(qref,{bucket,count:count+1});tx.create(channelChallenges.doc(id),record);
+    return {publicResult:{challengeId:id,simulated:true as const},deliveryEnvelope:{route,secret}};
+   });
+  },
+  async confirmChannelConsent(id:string,secret:unknown,consent:unknown,now:number){
+   check(now);if(!opaque(id)||consent!==true)return deny();
+   const result=await db.runTransaction(async tx=>{
+    check(now);const ref=channelChallenges.doc(id);
+    const [s,c,g]=await Promise.all([tx.get(ref),tx.get(configRef),tx.get(grantRef)]),live=await current(tx);
+    const challenge=s.data() as ChannelChallenge|undefined,config=c.get('config') as CidSosConfig|undefined,grants=(g.get('grants')??[]) as ChannelGrant[];
+    if(!challenge||challenge.id!==id||challenge.tagId!==tagId||challenge.ownerId!==live.ownerId||challenge.usedAt!==undefined||!time(challenge.issuedAt)||!time(challenge.expiresAt)||now<challenge.issuedAt||now>=challenge.expiresAt||!Number.isSafeInteger(challenge.attempts)||challenge.attempts<0||challenge.attempts>=3||!config||config.tagId!==tagId||config.ownerId!==live.ownerId||config.revision!==challenge.revision||!Array.isArray(grants))return deny();
+    const route=configuredRoute(config,challenge.route.participantId,challenge.route.channel);
+    if(route.address!==challenge.route.address)return deny();
+    if(!matches(secret,challenge.digest)){tx.update(ref,{attempts:challenge.attempts+1});return null;}
+    const prior=grants.filter(x=>sameGrant(x,route,tagId,live.ownerId));
+    if(prior.some(x=>x.revokedAt===undefined||x.verifiedAt>=now))return deny();
+    const grant:ChannelGrant={tagId,ownerId:live.ownerId,...route,verifiedAt:now,consent:true};
+    const updated=[...grants.filter(x=>!sameGrant(x,route,tagId,live.ownerId)),grant];
+    if(updated.length>120)return deny();
+    const revokeSecret=token();
+    tx.set(grantRef,{grants:updated});
+    tx.update(ref,{usedAt:now,attempts:challenge.attempts+1,grantVerifiedAt:now,revokeDigest:hash(revokeSecret)});
+    return {confirmed:true as const,simulated:true as const,revocation:{id,secret:revokeSecret}};
+   });
+   if(!result)return deny();return result;
+  },
+  // A recipient can withdraw consent without a Kyrub account, even after a
+  // configuration edit or tag block. Only the exact grant can be revoked.
+  async revokeChannelConsent(id:string,secret:unknown,now:number){
+   check(now);if(!opaque(id))return deny();
+   return db.runTransaction(async tx=>{
+    check(now);const ref=channelChallenges.doc(id),[s,g]=await Promise.all([tx.get(ref),tx.get(grantRef)]);
+    const record=s.data() as ChannelChallenge|undefined,grants=g.get('grants') as ChannelGrant[]|undefined;
+    if(!record||record.id!==id||record.tagId!==tagId||!time(record.grantVerifiedAt)||now<record.grantVerifiedAt||!matches(secret,record.revokeDigest)||!Array.isArray(grants))return deny();
+    const grant=grants.find(x=>sameGrant(x,record.route,tagId,record.ownerId)&&x.verifiedAt===record.grantVerifiedAt);
+    if(!grant)return deny();
+    if(grant.revokedAt!==undefined)return {revoked:true as const,duplicate:true};
+    tx.set(grantRef,{grants:grants.map(x=>x===grant?{...x,revokedAt:now}:x)});
+    return {revoked:true as const,duplicate:false};
    });
   },
   async revoke(credential:Credential,now:number){check(now);return db.runTransaction(async tx=>{check(now);const c=await authorize(tx,credential,now);tx.update(c.ref,{revokedAt:now});return {revoked:true as const};});}
