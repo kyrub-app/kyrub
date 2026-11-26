@@ -12,7 +12,8 @@ import {
   type QueryDocumentSnapshot,
   type Timestamp,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, db } from './firebase';
+import {adminDirectoryPilotEnabled,lookupAdminDirectoryPilot} from './adminDirectoryPilot';
 import {
   hasAdminPermission,
   recordAdminDirectorySearch,
@@ -445,7 +446,11 @@ export const lookupAdminDirectory = async (
     throw new Error('Informe o e-mail completo ou um UID válido.');
   }
 
-  const user = await findUser(lookup);
+  const pilot=adminDirectoryPilotEnabled();
+  const session=auth.currentUser;
+  if(pilot&&(!session||session.uid!==authenticatedUser.uid))throw Error('Sessão administrativa alterada.');
+  const user=pilot&&session?await lookupAdminDirectoryPilot(session,lookup.value):await findUser(lookup);
+  if(pilot&&auth.currentUser!==session)throw Error('Sessão administrativa alterada.');
   if (!user) {
     return {
       lookup,
@@ -475,7 +480,8 @@ export const lookupAdminDirectory = async (
     ? await loadAiUsageSummary(user.uid)
     : emptyAiUsageSummary('restricted');
 
-  void recordAdminDirectorySearch(authenticatedUser, profile, user.uid).catch(
+  if(pilot&&auth.currentUser!==session)throw Error('Sessão administrativa alterada.');
+  if(!pilot)void recordAdminDirectorySearch(authenticatedUser, profile, user.uid).catch(
     error => console.warn('Administrative directory audit unavailable.', error)
   );
 
