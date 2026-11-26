@@ -283,9 +283,12 @@ if (process.env.KYRUB_PROFILE_COMPLETION_PILOT==='true'&&process.env.NODE_ENV===
     process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
     process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
     !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  const {adminDb,adminAuth}=await import('./server/firebaseAdmin.js');
-  const {createProfileCompletionEmulatorRouter}=await import('./server/gamification/profileCompletionEmulatorRouter.js');
-  app.use('/api',createProfileCompletionEmulatorRouter(adminDb,adminAuth));
+  app.use('/api',async (req,res,next)=>{
+    if(req.path!=='/profile-completion-pilot'){next();return;}
+    const {adminDb,adminAuth}=await import('./server/firebaseAdmin.js');
+    const {createProfileCompletionEmulatorRouter}=await import('./server/gamification/profileCompletionEmulatorRouter.js');
+    createProfileCompletionEmulatorRouter(adminDb,adminAuth)(req,res,next);
+  });
 }
 
 app.use(
