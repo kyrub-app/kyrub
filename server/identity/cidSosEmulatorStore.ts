@@ -5,6 +5,7 @@ import {getFirestore} from 'firebase-admin/firestore';
 import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import type {TrustedTag,CidSosConfig,ChannelGrant} from './cidSosPrivateConfig.js';
+import {observeCidVoluntaryLocation} from './cidAssistedLocation.js';
 import type {CidSosOccurrence} from './cidSosAlertPolicy.js';
 import {recordSimulatedCidSos,type PrivateSosStore,type PrivateSosTransaction,type PendingSosMessage} from './cidSosOccurrenceStore.js';
 import {normalizeCidSosRequest} from '../../shared/cidSosRequest.js';
@@ -72,6 +73,12 @@ export function createCidSosEmulatorStore(tagId:string){
     createOccurrence:async record=>{
      requireTag(record.tagId);requireId(record.id);if(created||!locked.exists)return deny();
      const revision=locked.get('revision');
+     const trusted=locked.get('tag') as TrustedTag|undefined;
+     if(!trusted||trusted.tagId!==tagId||trusted.ownerId!==record.ownerId)return deny();
+     const observation=observeCidVoluntaryLocation(trusted,record);
+     // Atomically retain a pointer to the most recent committed voluntary fix.
+     // No duplicate coordinate store, and unrelated later alerts cannot erase it.
+     if(observation)tx.set(root.collection('private').doc('last-shared'),{occurrenceId:record.id,observedAt:observation.observedAt});
      if(!Number.isSafeInteger(revision)||revision<0||!Number.isSafeInteger(revision+1))return deny();
      tx.create(records.doc(record.id),record);tx.create(index.doc(record.id),{tagId});
      tx.update(root,{revision:revision+1});created=true;
