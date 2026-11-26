@@ -11,6 +11,11 @@ on:
       - 'tests/fixtures/gamification-control-plane-browser.tsx'
       - 'tests/gamification-admin-browser.test.mjs'
       - 'tests/profile-completion-browser.test.mjs'
+      - 'tests/staff-directory-browser.test.mjs'
+      - 'tests/fixtures/staff-directory-browser.tsx'
+      - 'server/identity/storeStaffDirectory*.ts'
+      - 'src/utils/storeStaffDirectoryPilot.ts'
+      - 'src/components/store/StoreTeamWorkspace.tsx'
       - 'tests/fixtures/profile-completion-browser.tsx'
       - 'server/gamification/profileCompletion*.ts'
       - 'server/identity/publicSocialAddress*.ts'
@@ -47,6 +52,8 @@ jobs:
       KYRUB_SEMEADURA_NO_WELCOME_PILOT: 'true'
       KYRUB_PROFILE_COMPLETION_PILOT: 'true'
       VITE_KYRUB_PROFILE_COMPLETION_PILOT: 'true'
+      KYRUB_STAFF_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_STAFF_DIRECTORY_PILOT: 'true'
       VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR: 'true'
       VITE_GAMIFICATION_SUPERVISION_PROTOTYPE: 'true'
       VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT: 'true'
@@ -84,6 +91,12 @@ jobs:
           --config firebase.welcome.json --project demo-kyrub-welcome
           --only auth,firestore,functions
           "node --test --import tsx tests/profile-completion-browser.test.mjs"
+      - name: Verify ERP staff invitation and acceptance in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/staff-directory-browser.test.mjs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
