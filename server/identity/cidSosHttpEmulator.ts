@@ -106,7 +106,7 @@ export function createCidSosHttpEmulatorHandler(deliverSimulatedConfirmation:(en
     exact(input,['revocation']);const handle=credential(input.revocation);
     return respond(res,200,await central.revokeChannelConsent(handle.id,handle.secret,now));
    }
-   const match=/^\/cid-homologation\/api\/([a-f0-9]{32})\/([A-Za-z0-9_-]{22,80})\/(emit|owner-begin|owner-finish|contact-request|contact-confirm|read|send|close|revoke)$/.exec(req.url??'');
+   const match=/^\/cid-homologation\/api\/([a-f0-9]{32})\/([A-Za-z0-9_-]{22,80})\/(emit|owner-begin|owner-finish|contact-request|contact-confirm|read|send|close|export|preserve|revoke)$/.exec(req.url??'');
    if(!match)return respond(res,404,{error:'CID_HTTP_DENIED'});
    const [,tagId,occurrenceId,action]=match,path=prefix+'/'+tagId+'/'+occurrenceId+'/';
    const input=await body(req),now=Date.now();
@@ -137,6 +137,8 @@ export function createCidSosHttpEmulatorHandler(deliverSimulatedConfirmation:(en
    const session=cookie(req);
    if(action==='read'){exact(input,[]);return respond(res,200,await chat.read(session,now));}
    if(action==='send'){exact(input,['id','body']);return respond(res,200,await chat.send(session,input,now));}
+   if(action==='export'){exact(input,['format']);return respond(res,200,await chat.exportOccurrence(session,input.format,now));}
+   if(action==='preserve'){exact(input,['reason']);return respond(res,200,await chat.preserveEvidence(session,input.reason,now));}
    if(action==='close'){exact(input,['resolution']);return respond(res,200,await chat.resolve(session,input.resolution,now));}
    if(action==='revoke'){exact(input,[]);await chat.revokeOwnSession(session,now);setCookie(res,path);return respond(res,200,{revoked:true});}
    return deny();

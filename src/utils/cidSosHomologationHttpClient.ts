@@ -29,7 +29,14 @@ export function createCidSosHomologationHttpClient(tagId:string){
   return {read:async()=>{const v=await post<CidChatView>(id,'read',{});if(v.id!==id||v.role!==role)return deny();return v;},
    send:async input=>{await post(id,'send',input);},
    revoke:async()=>{await post(id,'revoke',{});},
-   ...(role==='owner'?{resolve:async(resolution:CidSosResolution)=>{await post(id,'close',{resolution});}}:{})};
+   ...(role==='owner'?{exportOccurrence:async(format:'text'|'structured')=>{
+    const result=await post<{reportId:string;format:string;content:string;simulated:true}>(id,'export',{format});
+    if(result.simulated!==true||result.format!==format||typeof result.content!=='string'||!/^[a-f0-9-]{36}$/.test(result.reportId))return deny();
+    const blob=new Blob([result.content],{type:format==='text'?'text/plain;charset=utf-8':'application/json'});
+    const url=URL.createObjectURL(blob),link=document.createElement('a');
+    link.href=url;link.download='kyrub-cid-homologacao-'+result.reportId+(format==='text'?'.txt':'.json');
+    document.body.append(link);try{link.click();}finally{link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+   },preserveEvidence:async(reason:string)=>post<{id:string;status:'pending-review'}>(id,'preserve',{reason}),resolve:async(resolution:CidSosResolution)=>{await post(id,'close',{resolution});}}:{})};
  }
  function emitter(smsAvailable:boolean,requestLocation?:()=>Promise<Omit<CidSosSharedLocation,'consent'>>):HomologationEntry{
   let previous:{id:string;seed:string}|undefined;
