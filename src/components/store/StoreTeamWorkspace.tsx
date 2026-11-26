@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { Store } from '../../types';
 import { auth } from '../../utils/firebase';
+import {staffDirectoryPilotEnabled,searchStaffDirectoryPilot,inviteStaffDirectoryPilot} from '../../utils/storeStaffDirectoryPilot';
 import {
   STORE_ROLE_LABELS,
   canAssignStoreRole,
@@ -88,6 +89,7 @@ export const StoreTeamWorkspace = ({
   const [members, setMembers] = useState<StoreMemberDirectoryRecord[]>([]);
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const searchedTerm=useRef('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [isLoadingAccess, setIsLoadingAccess] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
@@ -279,9 +281,14 @@ export const StoreTeamWorkspace = ({
     const isCurrent=()=>searchScope.current===scope&&scope.revision===revision&&auth.currentUser===user;
     setDirectoryResults([]);
     setIsSearching(true);
+    const term=searchTerm.trim();
+    searchedTerm.current='';
     try {
-      const results = await searchExistingKyrubUsers(searchTerm);
+      const results = staffDirectoryPilotEnabled()
+        ? await searchStaffDirectoryPilot(user,selectedAccess.store.id,term,inviteRole)
+        : await searchExistingKyrubUsers(term);
       if(!isCurrent())return;
+      searchedTerm.current=term;
       setDirectoryResults(
         results.filter(result =>
           result.uid !== user.uid && !members.some(member => member.userId === result.uid)
@@ -304,12 +311,16 @@ export const StoreTeamWorkspace = ({
     if(!directoryResults.some(result=>result.uid===targetUser.uid))return;
     await runBusy(`invite-${targetUser.uid}`, async () => {
       try {
-        await inviteExistingKyrubUser(user, {
-          store: selectedAccess.store,
-          actorRole: selectedAccess.role,
-          targetUser,
-          role: inviteRole,
-        });
+        if(staffDirectoryPilotEnabled()){
+          await inviteStaffDirectoryPilot(user,selectedAccess.store.id,searchedTerm.current,inviteRole,targetUser.uid);
+        }else{
+          await inviteExistingKyrubUser(user, {
+            store: selectedAccess.store,
+            actorRole: selectedAccess.role,
+            targetUser,
+            role: inviteRole,
+          });
+        }
         setDirectoryResults(current =>
           current.filter(result => result.uid !== targetUser.uid)
         );
@@ -673,7 +684,7 @@ export const StoreTeamWorkspace = ({
                             )}
                             <div className="min-w-0 flex-1">
                               <strong className="block truncate text-xs text-white">{result.name}</strong>
-                              <span className="block truncate text-[10px] text-slate-500">{result.email}</span>
+                              {result.email && <span className="block truncate text-[10px] text-slate-500">{result.email}</span>}
                             </div>
                             <button
                               type="button"
