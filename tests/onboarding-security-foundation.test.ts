@@ -136,7 +136,7 @@ test('stored age eligibility denies mismatched identity, unknown capability and 
 
 test('profile award is isolated and cannot reach real Firebase even with the pilot flag',async()=>{
  const {profileCompletionPilotEnabled,grantIsolatedProfileCompletion}=await import('../server/gamification/profileCompletionAwardPilot.js');
- const db={projectId:'demo-kyrub-welcome'} as Parameters<typeof profileCompletionPilotEnabled>[0];
+ const db={projectId:'demo-kyrub-welcome'} as unknown as Parameters<typeof profileCompletionPilotEnabled>[0];
  const env={KYRUB_PROFILE_COMPLETION_PILOT:'true',NODE_ENV:'test',GCLOUD_PROJECT:'demo-kyrub-welcome',
   GOOGLE_CLOUD_PROJECT:'demo-kyrub-welcome',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099'};
  assert.equal(profileCompletionPilotEnabled(db,env),true);
@@ -144,7 +144,7 @@ test('profile award is isolated and cannot reach real Firebase even with the pil
   {GOOGLE_APPLICATION_CREDENTIALS:'present'},{FIRESTORE_EMULATOR_HOST:'remote:8088'},
   {FIREBASE_AUTH_EMULATOR_HOST:''},{KYRUB_PROFILE_COMPLETION_PILOT:'false'},{GCLOUD_PROJECT:'kyrub-b8d0e'}])
   assert.equal(profileCompletionPilotEnabled(db,{...env,...override}),false);
- const remote={projectId:'kyrub-b8d0e'} as typeof db;
+ const remote={projectId:'kyrub-b8d0e'} as unknown as typeof db;
  assert.equal(profileCompletionPilotEnabled(remote,env),false);
  await assert.rejects(grantIsolatedProfileCompletion(remote,'u1',async()=>{throw Error('MUST_NOT_READ');}),/PROFILE_COMPLETION_RELEASE_UNAVAILABLE/);
 });
