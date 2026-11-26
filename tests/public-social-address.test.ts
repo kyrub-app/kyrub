@@ -100,7 +100,7 @@ test('both social discovery consumers use an opt-in query and minimized projecti
  assert.match(directory,/data.isProfileVisible!==true/);
  assert.match(directory,/auth.currentUser!==session/);
  assert.doesNotMatch(directory,/data\.email|data\.whatsapp|\.\.\.data/);
- assert.match(hub,/subscribeSocialDiscoveryDirectory\(directory.setDbUsers\)/);
+ assert.match(hub,/subscribeSocialDiscoveryDirectory\(directory.setDbUsers,setDirectoryPage\)/);
  assert.doesNotMatch(hub,/profileHandle\(profile.email/);
  assert.match(legacy,/subscribeSocialDiscoveryDirectory\(setDbUsers\)/);
  assert.doesNotMatch(legacy,/listenCollection\('users'/);
@@ -156,4 +156,19 @@ test('social directory client and author hydration use protected local transport
  assert.match(hook,/setProfiles\(\(\)=>\(\{\}\)\)/);
  assert.match(server,/KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
  assert.match(server,/socialRouterPromise\?\?=Promise\.all/);
+});
+
+test('social suggestions use a shared session-scoped paged pilot and progressive loading',()=>{
+ const service=readFileSync('src/utils/socialDiscoveryDirectory.ts','utf8');
+ const hub=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(service,/if\(socialDirectoryPilotEnabled\(\)\)return subscribePilotDirectory/);
+ assert.match(service,/readSocialDirectoryPilotPage\(session.user,session.cursor,session.controller.signal\)/);
+ assert.match(service,/session\.entries\.set\(entry.id/);
+ assert.match(service,/session\.cursor=result\.nextCursor/);
+ assert.match(service,/session\.controller\.abort\(\)/);
+ assert.match(service,/generation!==session\.generation/);
+ assert.match(hub,/new IntersectionObserver/);
+ assert.match(hub,/observer\.disconnect\(\)/);
+ assert.match(hub,/Carregar mais sugestões/);
+ assert.match(hub,/directoryPage\.error/);
 });
