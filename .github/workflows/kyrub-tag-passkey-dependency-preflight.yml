@@ -1,0 +1,34 @@
+name: Kyrub Tag passkey dependency preflight
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/kyrub-tag-passkey-dependency-preflight.yml'
+      - 'server/identity/kyrubTagPasskeyPolicy.ts'
+permissions:
+  contents: read
+jobs:
+  resolve-lockfile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Resolve candidate packages without changing repository or running lifecycle scripts
+        run: |
+          mkdir -p /tmp/kyrub-passkey-candidate
+          cp package.json package-lock.json /tmp/kyrub-passkey-candidate/
+          cd /tmp/kyrub-passkey-candidate
+          npm install --package-lock-only --ignore-scripts --save-exact @simplewebauthn/server@14.1.0 @simplewebauthn/browser@14.0.0
+          npm audit --omit=dev --json > audit.json || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kyrub-passkey-candidate-lockfile
+          path: |
+            /tmp/kyrub-passkey-candidate/package.json
+            /tmp/kyrub-passkey-candidate/package-lock.json
+            /tmp/kyrub-passkey-candidate/audit.json
+          retention-days: 7
