@@ -1305,6 +1305,7 @@ test('isolated saved profile award authenticates actor, credits once under concu
  const {reconcileIsolatedProfileCompletionAfterSave}=await import('../server/gamification/profileCompletionAwardPilot.js');
  const {readUserPlatformChallengeCatalog}=await import('../server/gamification/userPlatformChallengeCatalogService.js');
  const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+ const {reserveSocialAddressInDatabase,getOwnedSocialAddressInDatabase,resolveSocialAddressInDatabase}=await import('../server/identity/publicSocialAddressService.js');
  const {PROFILE_COMPLETION_CHALLENGE}=await import('../shared/profileCompletionChallenge.js');
  const person=await googleSignIn('profile-completion-journey');
  const uid=person.localId,challenge=PROFILE_COMPLETION_CHALLENGE.id;
@@ -1330,12 +1331,18 @@ test('isolated saved profile award authenticates actor, credits once under concu
   assert.equal((await balance(uid).get()).get('availableKCoins'),100);
   await assert.rejects(run(),/NOT_ELIGIBLE/);
   const reservation={kind:'profile',identifier,targetId:uid};
-  // Explicit server-owned synthetic reservation fixture; not a browser reservation test.
+  // Deliberately corrupt indices to prove rejection, then remove them and reserve via the canonical transaction.
   await reverse.set(reservation);
   await assert.rejects(run(),/NOT_ELIGIBLE/);
   await forward.set({...reservation,targetId:'other'});
   await assert.rejects(run(),/NOT_ELIGIBLE/);
-  await forward.set(reservation);
+  await forward.delete();
+  await reverse.delete();
+  assert.deepEqual(await reserveSocialAddressInDatabase(db,uid,'profile',identifier),{kind:'profile',identifier});
+  assert.deepEqual(await reserveSocialAddressInDatabase(db,uid,'profile',identifier),{kind:'profile',identifier});
+  await assert.rejects(reserveSocialAddressInDatabase(db,uid,'profile','another-identifier'),/PUBLIC_ADDRESS_CONFLICT/);
+  assert.deepEqual(await getOwnedSocialAddressInDatabase(db,uid,'profile'),{identifier,eligible:true,publiclyVisible:false});
+  assert.equal(await resolveSocialAddressInDatabase(db,'profile',identifier),null);
   const results=await Promise.all([run(),run()]);
   assert.equal(results.filter(r=>!r.replay).length,1);
   assert.equal(results.filter(r=>r.replay).length,1);
@@ -1359,4 +1366,24 @@ test('isolated saved profile award authenticates actor, credits once under concu
   if(savedDefinition.exists)await definition.set(savedDefinition.data()!);else await definition.delete();
   if(prior===undefined)delete process.env.KYRUB_PROFILE_COMPLETION_PILOT;else process.env.KYRUB_PROFILE_COMPLETION_PILOT=prior;
  }
+});
+
+test('canonical private identifier reservation has exactly one owner under competing transactions',async()=>{
+ const {reserveSocialAddressInDatabase,getOwnedSocialAddressInDatabase,resolveSocialAddressInDatabase}=await import('../server/identity/publicSocialAddressService.js');
+ const first='profile-reserve-actor-one',second='profile-reserve-actor-two',identifier='profile-reserve-race';
+ const accounts=[first,second].map(uid=>db.doc('users/'+uid));
+ const mappings=[db.doc('public_social_addresses/profile:'+identifier),...([first,second].map(uid=>db.doc('public_social_address_targets/profile:'+uid)))];
+ try{
+  await Promise.all(accounts.map((r,i)=>r.set({name:'Pessoa '+i,isProfileVisible:false})));
+  const results=await Promise.allSettled([first,second].map(uid=>reserveSocialAddressInDatabase(db,uid,'profile',identifier)));
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  const loser=results.find(r=>r.status==='rejected');
+  assert.ok(loser&&loser.status==='rejected'&&/PUBLIC_ADDRESS_CONFLICT/.test(String(loser.reason)));
+  const winner=(await mappings[0].get()).get('targetId');
+  assert.ok(winner===first||winner===second);
+  const other=winner===first?second:first;
+  assert.deepEqual(await getOwnedSocialAddressInDatabase(db,winner,'profile'),{identifier,eligible:true,publiclyVisible:false});
+  assert.deepEqual(await getOwnedSocialAddressInDatabase(db,other,'profile'),{identifier:null,eligible:true,publiclyVisible:false});
+  assert.equal(await resolveSocialAddressInDatabase(db,'profile',identifier),null);
+ }finally{await Promise.all([...accounts,...mappings].map(r=>r.delete()));}
 });
