@@ -102,3 +102,13 @@ test('production candidate preserves isolated legacy path and constrains every m
  const isolation=readFileSync('server/identity/kyrubTagPilotIsolation.ts','utf8');
  assert.match(isolation,/projectId===KYRUB_PRODUCTION_PROJECT_ID\|\|!projectId/);
 });
+
+test('Pix is optional, consent-gated and enabled only through authenticated edit',()=>{
+ const card={name:'Pessoa teste',occupation:'',about:''};
+ const pix={keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000',recipientName:'Fulano de Tal',recipientCity:'BRASILIA',publicConsent:true};
+ assert.throws(()=>normalizePasskeyMutation('register',{...card,pix}));
+ assert.throws(()=>normalizePasskeyMutation('edit',{...card,pix:{...pix,publicConsent:false}}));
+ assert.deepEqual(normalizePasskeyMutation('edit',{...card,pix})?.pix,pix);
+ assert.equal(normalizePasskeyMutation('edit',{...card,pix:null})?.pix,null);
+ assert.equal(normalizePasskeyMutation('edit',card)?.pix,undefined);
+});
