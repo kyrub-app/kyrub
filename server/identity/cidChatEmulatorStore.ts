@@ -7,9 +7,15 @@ import {createHash,timingSafeEqual} from 'node:crypto';
 import {assertCidSosEmulator,CID_EMULATOR_PROJECT} from './cidSosEmulatorStore.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {createCidOccurrenceChat,issueCidChatInvite,redeemCidChatInvite,openCidChatSession,authorizeCidChatSession,prepareCidChatMessage,closeCidChat,projectCidChat,type CidChat,type ChatInvite,type ChatSession,type ChatMessage} from './cidOccurrenceChatAccess.js';
+import {isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyChallenge,type TagPasskeyChallenge} from './kyrubTagPasskeyPolicy.js';
+import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
+import {assertSamePasskeyCredential} from './kyrubTagPasskeyState.js';
+import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import type {CidSosOccurrence} from './cidSosAlertPolicy.js';
 
 const APP='cid-chat-local-emulator';
+export const CID_CHAT_EMULATOR_ORIGIN='https://kyrub-cid-emulator.vercel.app';
+type OwnerChallenge=TagPasskeyChallenge&{occurrenceId:string;credentialVersion:string;attempts:number};
 const deny=():never=>{throw Error('CID_CHAT_FORBIDDEN');};
 const safeId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
 const secretId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v);
@@ -26,6 +32,17 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
  const occurrence=tag.collection('occurrences').doc(occurrenceId);
  const root=occurrence.collection('chat').doc('state');
  const proofs=root.collection('fixtureProofs'),invites=root.collection('invites'),sessions=root.collection('sessions'),messages=root.collection('messages');
+ const ownerChallenges=root.collection('ownerChallenges');
+ const liveTag=db.collection('kyrub_official_tags').doc(tagId),liveCredential=db.collection('kyrub_tag_passkey_credentials').doc(tagId);
+ const quota=db.collection('cid_sos_emulator_owner_quotas').doc(tagId);
+ async function ownerCredential(tx:Transaction,chat:CidChat){
+  const [t,c]=await Promise.all([tx.get(liveTag),tx.get(liveCredential)]);
+  const stored=c.get('credential') as StoredTagPasskey|undefined;
+  if(t.get('ownerId')!==chat.ownerId||t.get('ownerAuthMode')!=='passkey'||t.get('enabled')!==true||t.get('blocked')===true||c.get('ownerId')!==chat.ownerId||!stored||typeof stored.id!=='string'||!c.updateTime)return deny();
+  const index=await tx.get(db.collection('kyrub_tag_passkey_credential_index').doc(digest(stored.id)));
+  if(index.get('tagId')!==tagId||index.get('ownerId')!==chat.ownerId||index.get('revokedAt')!=null)return deny();
+  return {stored,version:c.updateTime.seconds+':'+c.updateTime.nanoseconds};
+ }
  function ref(collection:FirebaseFirestore.CollectionReference,id:unknown){
   if(!safeId(id))return deny();return collection.doc(id);
  }
@@ -44,6 +61,11 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
   if(!credential||!secretId(credential.id)||!secretId(credential.secret))return deny();
   const reference=sessions.doc(credential.id),s=await tx.get(reference),session=s.data() as ChatSession|undefined;
   if(!session||session.id!==credential.id||session.chatId!==occurrenceId)return deny();
+  const ownerKey=s.get('ownerCredentialId');
+  if(ownerKey!==undefined){
+   const chat=await readChat(tx),current=await ownerCredential(tx,chat);
+   if(session.memberId!==chat.ownerId||current.stored.id!==ownerKey)return deny();
+  }
   return {reference,session};
  }
  function consume(tx:Transaction,reference:DocumentReference,now:number){tx.update(reference,{usedAt:now});}
@@ -68,6 +90,50 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
     if(p.proof.memberId!==chat.ownerId)return deny();
     const opened=openCidChatSession(chat,p.proof.memberId,'owner-passkey',now);
     tx.create(sessions.doc(opened.record.id),opened.record);consume(tx,p.reference,now);
+    return {id:opened.record.id,secret:opened.secret};
+   });
+  },
+  // Dedicated challenge namespace binds the signed ceremony to exactly this occurrence.
+  // The existing production passkey lifecycle and public API are unchanged.
+  async beginOwnerPasskey(origin:string,now:number){
+   checkNow(now);
+   const scope=isolatedTagPasskeyScope(CID_CHAT_EMULATOR_ORIGIN,origin);
+   const issued=await db.runTransaction(async tx=>{
+    checkNow(now);
+    const chat=await readChat(tx),current=await ownerCredential(tx,chat),q=await tx.get(quota);
+    const bucket=Math.floor(now/60000),count=q.get('bucket')===bucket?q.get('count'):0;
+    if(!Number.isSafeInteger(count)||count<0||count>=6)return deny();
+    const record:OwnerChallenge={...issueTagPasskeyChallenge({tagId,purpose:'identify-owner',ownerId:chat.ownerId,credentialId:current.stored.id,scope},now),occurrenceId,credentialVersion:current.version,attempts:0};
+    tx.set(quota,{bucket,count:count+1});
+    tx.create(ownerChallenges.doc(record.id),record);
+    return {record,stored:current.stored};
+   });
+   return {challengeId:issued.record.id,options:await tagAuthenticationOptions(issued.record,issued.stored,now)};
+  },
+  async finishOwnerPasskey(origin:string,challengeId:string,response:AuthenticationResponseJSON,now:number){
+   checkNow(now);if(!secretId(challengeId))return deny();
+   const scope=isolatedTagPasskeyScope(CID_CHAT_EMULATOR_ORIGIN,origin),reference=ownerChallenges.doc(challengeId);
+   const initial=await db.runTransaction(async tx=>{
+    checkNow(now);
+    const chat=await readChat(tx),current=await ownerCredential(tx,chat),s=await tx.get(reference);
+    const record=s.data() as OwnerChallenge|undefined;
+    if(!record||record.id!==challengeId||record.occurrenceId!==occurrenceId||record.credentialVersion!==current.version||!Number.isSafeInteger(record.attempts)||record.attempts<0||record.attempts>=3)return deny();
+    assertUnusedTagPasskeyChallenge(record,{tagId,purpose:'identify-owner',ownerId:chat.ownerId,credentialId:current.stored.id,scope},now);
+    tx.update(reference,{attempts:record.attempts+1});
+    return {record,stored:current.stored};
+   });
+   const next=await verifyTagAuthentication(initial.record,initial.stored,response,now);
+   return db.runTransaction(async tx=>{
+    checkNow(now);
+    const chat=await readChat(tx),current=await ownerCredential(tx,chat),s=await tx.get(reference);
+    const record=s.data() as OwnerChallenge|undefined;
+    if(!record||record.id!==challengeId||record.occurrenceId!==occurrenceId||record.challenge!==initial.record.challenge||record.credentialVersion!==current.version||record.attempts!==initial.record.attempts+1)return deny();
+    assertUnusedTagPasskeyChallenge(record,{tagId,purpose:'identify-owner',ownerId:chat.ownerId,credentialId:current.stored.id,scope},now);
+    assertSamePasskeyCredential(initial.stored,current.stored);
+    const opened=openCidChatSession(chat,chat.ownerId,'owner-passkey',now);
+    tx.update(liveCredential,{credential:next,lastVerifiedAt:new Date(now).toISOString()});
+    tx.update(reference,{usedAt:now});
+    tx.create(sessions.doc(opened.record.id),{...opened.record,ownerCredentialId:next.id});
     return {id:opened.record.id,secret:opened.secret};
    });
   },
