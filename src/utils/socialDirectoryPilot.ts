@@ -7,7 +7,7 @@ export function socialDirectoryPilotEnabled(){
  typeof window!=='undefined'&&window.location.hostname==='127.0.0.1'&&window.location.protocol==='http:'&&
  auth.app.options.projectId==='demo-kyrub-welcome';
 }
-async function request(user:User,operation:'page'|'authors',body:unknown,signal?:AbortSignal){
+async function request(user:User,operation:'page'|'authors'|'collaborators',body:unknown,signal?:AbortSignal){
  if(!socialDirectoryPilotEnabled()||auth.currentUser!==user)throw Error('DIRECTORY_UNAVAILABLE');
  const token=await user.getIdToken();
  if(auth.currentUser!==user||signal?.aborted)throw Error('DIRECTORY_SESSION_CHANGED');
@@ -43,4 +43,16 @@ export async function readAuthorIdentitiesPilot(user:User,ids:string[],signal?:A
   if(!validId(data.id)||!requested.has(data.id)||typeof data.name!=='string'||typeof data.avatar!=='string')throw Error('DIRECTORY_RESPONSE_INVALID');
   return {id:data.id,name:data.name,avatar:data.avatar};
  }) as {id:string;name:string;avatar:string}[];
+}
+
+export async function searchNoteCollaboratorsPilot(user:User,term:string,signal?:AbortSignal){
+ const payload=await request(user,'collaborators',{term},signal);
+ if(payload.entries.length>10)throw Error('DIRECTORY_RESPONSE_INVALID');
+ return payload.entries.map((entry:unknown)=>{
+  if(!entry||typeof entry!=='object')throw Error('DIRECTORY_RESPONSE_INVALID');
+  const data=entry as Record<string,unknown>;
+  if(!validId(data.id)||data.id===user.uid||typeof data.name!=='string'||typeof data.photoUrl!=='string'||data.isProfileVisible!==true)
+   throw Error('DIRECTORY_RESPONSE_INVALID');
+  return {id:data.id,name:data.name,avatar:data.photoUrl,role:'Kairubido',email:''};
+ });
 }
