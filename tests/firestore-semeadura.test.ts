@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import {
   readPersonalSemeaduraJourney,
@@ -303,4 +303,27 @@ test('personal identifier indices and profile challenge rewards reject direct cl
  assert.deepEqual((await db.doc(reverse).get()).data(),record);
  assert.equal((await db.doc(receipt).get()).exists,false);
  assert.equal((await db.doc(award).get()).exists,false);
+});
+
+test('reserved personal presentation is private to owner; public discovery requires explicit visibility',async()=>{
+ const owner='profile-privacy-owner',path='users/'+owner+'/public_profile/main';
+ await db.doc('users/'+owner).set({uid:owner,name:'Perfil reservado',isProfileVisible:false});
+ await db.doc(path).set({userId:owner,name:'Perfil reservado',bio:'Apresentação privada',photoUrl:''});
+ const own=environment.authenticatedContext(owner).firestore();
+ const other=environment.authenticatedContext('profile-privacy-other').firestore();
+ const guest=environment.unauthenticatedContext().firestore();
+ await assertSucceeds(getDoc(doc(own,path)));
+ await assertFails(getDoc(doc(other,path)));
+ await assertFails(getDoc(doc(guest,path)));
+ await db.doc('users/'+owner).update({isProfileVisible:true});
+ await assertSucceeds(getDoc(doc(other,path)));
+ await assertFails(getDoc(doc(guest,path)));
+ await db.doc('users/'+owner).update({isProfileVisible:false});
+ await assertFails(getDoc(doc(other,path)));
+ await assertSucceeds(getDoc(doc(own,path)));
+ await db.doc('users/'+owner).set({uid:owner,name:'Perfil sem preferência'});
+ await assertFails(getDoc(doc(other,path)));
+ await assertSucceeds(getDoc(doc(own,path)));
+ await db.doc('users/'+owner).delete();
+ await assertFails(getDoc(doc(other,path)));
 });
