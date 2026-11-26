@@ -1,4 +1,5 @@
 import type {AuthenticationResponseJSON,PublicKeyCredentialRequestOptionsJSON} from '@simplewebauthn/browser';
+import type {CidComplaintInput,CidComplaintReceipt} from '../../shared/cidOccurrenceComplaint';
 import type {CidSosResolution} from '../../shared/cidSosResolution';
 import type {CidSosRequest,CidSosSharedLocation} from '../../shared/cidSosRequest';
 import type {CidChatView} from '../components/KyrubCidOccurrenceChat';
@@ -29,6 +30,7 @@ export function createCidSosHomologationHttpClient(tagId:string){
   return {read:async()=>{const v=await post<CidChatView>(id,'read',{});if(v.id!==id||v.role!==role)return deny();return v;},
    send:async input=>{await post(id,'send',input);},
    revoke:async()=>{await post(id,'revoke',{});},
+   denounceOccurrence:(input:CidComplaintInput)=>post<CidComplaintReceipt>(id,'denounce',input),
    ...(role==='owner'?{exportOccurrence:async(format:'text'|'structured')=>{
     const result=await post<{reportId:string;format:string;content:string;simulated:true}>(id,'export',{format});
     if(result.simulated!==true||result.format!==format||typeof result.content!=='string'||!/^[a-f0-9-]{36}$/.test(result.reportId))return deny();
