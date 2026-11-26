@@ -28,3 +28,22 @@ export async function readVisibleSocialDirectoryPage(db:Firestore,actorUid:strin
   return entry?[entry]:[];
  }),nextCursor:snapshot.size>PAGE_SIZE?examined[examined.length-1].id:null};
 }
+
+/** Bounded identity hydration for existing post presentation. Private or
+ * inconsistent profiles are not returned; callers retain saved attribution.
+ * An arbitrary UID is not proof of permission to read a reserved profile. */
+export async function readVisibleAuthorIdentities(db:Firestore,actorUid:string,authorIds:unknown){
+ if(!isDocumentId(actorUid)||!Array.isArray(authorIds)||authorIds.length>40||
+    authorIds.some(id=>!isDocumentId(id)))throw Error('DIRECTORY_INPUT_INVALID');
+ const ids=[...new Set(authorIds as string[])];
+ if(!ids.length)return [];
+ const snapshots=await db.getAll(...ids.map(uid=>db.doc('users/'+uid)),{
+  fieldMask:['uid','name','photoUrl','isProfileVisible']
+ });
+ return snapshots.flatMap(doc=>{
+  const data=doc.data();
+  if(!data)return [];
+  const entry=projectVisibleDirectoryEntry(doc.id,data);
+  return entry?[{id:entry.id,name:entry.name,avatar:entry.photoUrl}]:[];
+ });
+}
