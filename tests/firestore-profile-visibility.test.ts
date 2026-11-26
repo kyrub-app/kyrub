@@ -138,6 +138,47 @@ test('isolated root privacy candidate denies direct cross-account reads and pres
     await assertSucceeds(getDoc(doc(other, PATH + '/tasks/shared-note')));
     await assertFails(getDoc(doc(other, PATH + '/tasks/private-note')));
     await assertSucceeds(getDoc(doc(owner, PATH + '/tasks/private-note')));
+
+    // An invitation is scoped to its two participants, independently of
+    // account visibility and without requiring any cross-account root read.
+    const invitationId = USER_ID + '__shared-note__visibility-visitor';
+    const invitationPath = 'note_invitations/' + invitationId;
+    const stranger = isolated.authenticatedContext('visibility-stranger').firestore();
+    await assertSucceeds(setDoc(doc(owner, invitationPath), {
+      ownerId: USER_ID,
+      ownerName: 'Perfil de Teste',
+      ownerEmail: '',
+      recipientId: 'visibility-visitor',
+      recipientName: 'Kairubido',
+      recipientEmail: '',
+      recipientAvatar: '',
+      noteId: 'shared-note',
+      sourcePath: PATH + '/tasks/shared-note',
+      noteUpdatedAtIso: '2026-11-26T00:00:00.000Z',
+      status: 'pending',
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    }));
+    const invitations = await assertSucceeds(getDocs(query(
+      collection(other, 'note_invitations'), where('recipientId', '==', 'visibility-visitor')
+    )));
+    assert.equal(invitations.size, 1);
+    await assertFails(getDoc(doc(stranger, invitationPath)));
+    await assertFails(updateDoc(doc(stranger, invitationPath), {
+      status: 'accepted', updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(doc(other, invitationPath), {
+      status: 'accepted', respondedAtIso: '2026-11-26T00:01:00.000Z',
+      updatedAt: serverTimestamp(),
+    }));
+    assert.equal((await assertSucceeds(getDoc(doc(owner, invitationPath)))).get('status'), 'accepted');
+    await assertSucceeds(updateDoc(doc(owner, PATH + '/tasks/shared-note'), { sharedWith: [] }));
+    await assertSucceeds(updateDoc(doc(owner, invitationPath), {
+      status: 'revoked', updatedAt: serverTimestamp(),
+    }));
+    await assertFails(getDoc(doc(other, PATH + '/tasks/shared-note')));
+    await assertFails(getDoc(doc(other, PATH)));
+    assert.equal((await assertSucceeds(getDoc(doc(other, invitationPath)))).get('status'), 'revoked');
   } finally {
     // This test shares the emulator project with other serial rule suites.
     // Restore the unmodified baseline even when a candidate assertion fails.
