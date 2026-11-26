@@ -108,5 +108,5 @@ test('owner identification is scoped to active passkey stock and carries no pres
  assert.throws(()=>assertPasskeyTagState(virgin,'identify-owner'));
  assert.throws(()=>assertPasskeyTagState({...owned,blocked:true},'identify-owner'));
  assert.equal(normalizePasskeyMutation('identify-owner',undefined),null);
- assert.throws(()=>normalizePasskeyMutation('identify-owner',card));
+ assert.throws(()=>normalizePasskeyMutation('identify-owner',{name:'Ana',occupation:'Autônoma',about:'Olá'}));
 });
