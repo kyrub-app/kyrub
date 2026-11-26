@@ -22,5 +22,10 @@ test('private directory reuses existing multiplexer and keeps independent server
   assert.ok(source.includes('auth.currentUser!==user'));
  }
  const staff=readFileSync('src/utils/storeStaffDirectoryPilot.ts','utf8');
- assert.ok(!staff.includes('privateDirectoryProductionEnabled'));
+ assert.ok(staff.includes("privateDirectoryProductionEnabled('staff')"));
+ assert.ok(staff.includes("privateDirectoryRequest('staff'"));
+ assert.ok(client.includes('VITE_KYRUB_PRIVATE_DIRECTORY_STAFF_ENABLED'));
+ const transport=readFileSync('server/identity/privateDirectoryServerlessTransport.ts','utf8');
+ assert.ok(transport.includes("env.KYRUB_PRIVATE_DIRECTORY_STAFF_ENABLED==='true'"));
+ assert.ok(transport.includes("if(scope==='staff'&&!staffDirectoryReleaseEnabled())"));
 });

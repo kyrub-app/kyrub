@@ -3,7 +3,7 @@ import {evaluateKyrubMfa} from '../../shared/kyrubMfaPolicy.js';
 import {isDocumentId} from './publicSocialAddressPolicy.js';
 import {consumeDirectoryQuota} from './directoryQuotaService.js';
 import {readVisibleSocialDirectoryPage,readVisibleAuthorIdentities,searchVisibleNoteCollaborators} from './socialDiscoveryDirectoryService.js';
-import {searchStoreStaffDirectory} from './storeStaffDirectoryService.js';
+import {searchStoreStaffDirectory,createStoreStaffInvitation} from './storeStaffDirectoryService.js';
 import {lookupAdminDirectoryIdentity,countAdminDirectoryUsers} from './adminDirectoryIdentityService.js';
 
 const PROJECT='kyrub-b8d0e';
@@ -14,13 +14,17 @@ type Response={setHeader(name:string,value:string):unknown;status(code:number):{
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const exact=(v:Record<string,unknown>,keys:string[])=>Object.keys(v).length===keys.length&&keys.every(k=>Object.hasOwn(v,k));
 /** Independent release switch. Never infer activation from NODE_ENV or client flags.
- * This candidate only includes read operations. Invitation writes require separate
- * age/authority verification inside their transaction before migration.
+ * Staff operations require a separate explicit release switch. Invitation writes
+ * revalidate age and authority inside the transaction.
  */
 export function directoryReleaseEnabled(env:NodeJS.ProcessEnv=process.env){
  return env.KYRUB_PRIVATE_DIRECTORY_RELEASE_ENABLED==='true'&&env.VERCEL==='1'&&
   env.VERCEL_ENV==='production'&&env.NODE_ENV==='production'&&
   !env.FIRESTORE_EMULATOR_HOST&&!env.FIREBASE_AUTH_EMULATOR_HOST&&!env.GOOGLE_APPLICATION_CREDENTIALS;
+}
+
+export function staffDirectoryReleaseEnabled(env:NodeJS.ProcessEnv=process.env){
+ return directoryReleaseEnabled(env)&&env.KYRUB_PRIVATE_DIRECTORY_STAFF_ENABLED==='true';
 }
 
 /** Exact operation and payload allowlist. Never trust caller-supplied identity or role grants. */
@@ -30,7 +34,7 @@ export function parsePrivateDirectoryRequest(body:unknown):DirectoryRequest|null
  const valid=scope==='social'?(operation==='page'?(Object.keys(input).length===0||(exact(input,['after'])&&isDocumentId(input.after))):
   operation==='authors'?exact(input,['authorIds'])&&Array.isArray(input.authorIds)&&input.authorIds.length<=40&&input.authorIds.every(isDocumentId):
   operation==='collaborators'&&exact(input,['term'])&&typeof input.term==='string'&&input.term.trim().length>=3&&input.term.length<=254):
-  scope==='staff'?operation==='search'&&exact(input,['storeId','term','role'])&&isDocumentId(input.storeId)&&typeof input.term==='string'&&input.term.trim().length>=3&&input.term.length<=254&&typeof input.role==='string'&&['manager','cashier','seller','production'].includes(input.role):
+  scope==='staff'?((operation==='search'&&exact(input,['storeId','term','role']))||(operation==='invite'&&exact(input,['storeId','term','role','targetUid'])&&isDocumentId(input.targetUid)))&&isDocumentId(input.storeId)&&typeof input.term==='string'&&input.term.trim().length>=3&&input.term.length<=254&&typeof input.role==='string'&&['manager','cashier','seller','production'].includes(input.role):
   scope==='admin'&&(operation==='count'?Object.keys(input).length===0:operation==='identity'&&exact(input,['term'])&&typeof input.term==='string'&&input.term.trim().length>0&&input.term.length<=254);
  return valid?{scope:scope as DirectoryScope,operation:operation as string,input}:null;
 }
@@ -43,6 +47,7 @@ export async function handlePrivateDirectoryRequest(req:Request,res:Response){
  const parsed=parsePrivateDirectoryRequest(req.body);
  if(!parsed){res.status(400).json({error:'DIRECTORY_INPUT_INVALID'});return;}
  const {scope,operation,input}=parsed;
+ if(scope==='staff'&&!staffDirectoryReleaseEnabled()){res.status(404).json({error:'DIRECTORY_DISABLED'});return;}
  try{
   if(getFirebaseAdminProjectId()!==PROJECT||(adminDb as typeof adminDb&{projectId?:string}).projectId!==PROJECT||adminAuth.app.options.projectId!==PROJECT)throw Error('PROJECT_MISMATCH');
  }catch{res.status(503).json({error:'DIRECTORY_UNAVAILABLE'});return;}
@@ -73,6 +78,10 @@ export async function handlePrivateDirectoryRequest(req:Request,res:Response){
    res.status(200).json({entries:await searchVisibleNoteCollaborators(adminDb,adminAuth,uid,input.term)});return;
   }
   if(scope==='staff'){
+   if(operation==='invite'){
+    const result=await createStoreStaffInvitation(adminDb,adminAuth,uid,input.storeId as string,input.targetUid as string,input.term as string,input.role as string);
+    res.status(201).json(result);return;
+   }
    res.status(200).json({entries:await searchStoreStaffDirectory(adminDb,adminAuth,uid,input.storeId as string,input.term as string,input.role as string)});return;
   }
   if(operation==='count'){res.status(200).json({count:await countAdminDirectoryUsers(adminDb,uid)});return;}
@@ -80,7 +89,8 @@ export async function handlePrivateDirectoryRequest(req:Request,res:Response){
  }catch(error){
   const code=error instanceof Error?error.message:'';
   if(/^(DIRECTORY|STAFF_DIRECTORY|ADMIN_DIRECTORY)_INVALID$/.test(code)){res.status(400).json({error:'DIRECTORY_INPUT_INVALID'});return;}
-  if(/^(STAFF_DIRECTORY|ADMIN_DIRECTORY)_FORBIDDEN$/.test(code)){res.status(403).json({error:'DIRECTORY_FORBIDDEN'});return;}
+  if(code==='STAFF_INVITATION_EXISTS'){res.status(409).json({error:code});return;}
+  if(code==='STAFF_DIRECTORY_AGE_REQUIRED'||/^(STAFF_DIRECTORY|ADMIN_DIRECTORY)_FORBIDDEN$/.test(code)){res.status(403).json({error:'DIRECTORY_FORBIDDEN'});return;}
   res.status(503).json({error:'DIRECTORY_UNAVAILABLE'});
  }
 }
