@@ -24,9 +24,9 @@ function member(chat:CidChat,id:string):Member{
  if(!found)return deny();return found;
 }
 export function createCidOccurrenceChat(occurrence:CidSosOccurrence,verifiedEmitterId:string,now:number):{chat:CidChat;greeting:ChatMessage}{
- if(!occurrence||!validId(occurrence.id)||!isTagId(occurrence.tagId)||!validId(occurrence.ownerId)||!validId(verifiedEmitterId)||verifiedEmitterId===occurrence.ownerId||!validTime(now)||now<occurrence.createdAt||occurrence.status!=='open')return deny();
+ if(!occurrence||!validId(occurrence.id)||!isTagId(occurrence.tagId)||!validId(occurrence.ownerId)||!validId(verifiedEmitterId)||verifiedEmitterId===occurrence.ownerId||verifiedEmitterId==='system'||occurrence.ownerId==='system'||!validTime(now)||now<occurrence.createdAt||occurrence.status!=='open')return deny();
  const contacts=[...new Set(occurrence.recipients.filter(r=>r.role==='contact').map(r=>r.participantId))];
- if(contacts.length<1||contacts.length>3||contacts.some(id=>!validId(id)||id===verifiedEmitterId||id===occurrence.ownerId))return deny();
+ if(contacts.length<1||contacts.length>3||contacts.some(id=>!validId(id)||id==='system'||id===verifiedEmitterId||id===occurrence.ownerId))return deny();
  const chat:CidChat={id:occurrence.id,tagId:occurrence.tagId,ownerId:occurrence.ownerId,createdAt:now,members:[{id:occurrence.ownerId,role:'owner'},{id:verifiedEmitterId,role:'emitter'},...contacts.map(id=>({id,role:'contact' as const}))]};
  return {chat,greeting:{id:chat.id+'-greeting',chatId:chat.id,authorId:'system',body:CID_SOS_CHAT_GREETING,createdAt:now,kind:'system'}};
 }
@@ -71,7 +71,7 @@ export function prepareCidChatMessage(chat:CidChat,session:ChatSession,secret:un
  const value=input as Record<string,unknown>;
  if(Object.keys(value).some(k=>k!=='id'&&k!=='body')||!validId(value.id)||typeof value.body!=='string'||value.body.length>4000)return deny();
  const body=value.body.normalize('NFC').trim();
- if(!body||body.length>2000||/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(body))return deny();
+ if(value.id===chat.id+'-greeting'||value.id===chat.id+'-resolution'||!body||body.length>2000||/[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(body))return deny();
  return {id:value.id,chatId:chat.id,authorId:p.id,body,createdAt:now,kind:'message'};
 }
 export function closeCidChat(chat:CidChat,session:ChatSession,secret:unknown,now:number):CidChat{
