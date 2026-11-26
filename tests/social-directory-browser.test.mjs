@@ -8,6 +8,7 @@ import {createServer as createViteServer} from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import {chromium} from 'playwright';
 import {createSocialDirectoryEmulatorRouter} from '../server/identity/socialDirectoryEmulatorRouter.ts';
+import {consumeDirectoryQuota} from '../server/identity/directoryQuotaService.ts';
 
 const projectId='demo-kyrub-welcome';
 assert.equal(process.env.GCLOUD_PROJECT,projectId);
@@ -125,5 +126,39 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   if(server)await new Promise(resolve=>server.close(resolve));
   if(vite)await vite.close();
   await deleteApp(app);
+ }
+});
+
+
+test('transactional directory quota shares capacity across independent SDK instances',{timeout:120000},async()=>{
+ const first=initializeApp({projectId},'directory-quota-first');
+ const second=initializeApp({projectId},'directory-quota-second');
+ try{
+  const a=getFirestore(first),b=getFirestore(second);
+  const uid='quota-fixture-actor',now=1_800_000_000_000;
+  // Simulate two server instances racing for the final available slots.
+  for(let i=0;i<10;i++)assert.deepEqual(await consumeDirectoryQuota(a,uid,'social',now),{allowed:true});
+  const concurrent=await Promise.all([
+   consumeDirectoryQuota(a,uid,'social',now),
+   consumeDirectoryQuota(b,uid,'social',now),
+   consumeDirectoryQuota(a,uid,'social',now),
+   consumeDirectoryQuota(b,uid,'social',now),
+  ]);
+  assert.equal(concurrent.filter(x=>x.allowed).length,2);
+  assert.equal(concurrent.filter(x=>!x.allowed).length,2);
+  assert.deepEqual(await consumeDirectoryQuota(b,uid,'social',now+59_000),{allowed:false,retryAfterSeconds:1});
+  assert.equal((await consumeDirectoryQuota(b,uid,'social',now-1000)).allowed,false);
+  assert.deepEqual(await consumeDirectoryQuota(b,uid,'staff',now),{allowed:true});
+  assert.deepEqual(await consumeDirectoryQuota(a,'quota-fixture-other','social',now),{allowed:true});
+  assert.deepEqual(await consumeDirectoryQuota(b,uid,'social',now+60_000),{allowed:true});
+  const records=await a.collection('directory_quota_private').get();
+  assert.equal(records.size,3);
+  for(const record of records.docs){
+   assert.match(record.id,/^[a-f0-9]{64}$/);
+   assert.deepEqual(Object.keys(record.data()).sort(),['count','scope','startedAtMs','version']);
+  }
+  await assert.rejects(()=>consumeDirectoryQuota(a,'invalid/actor','social',now),/DIRECTORY_QUOTA_INVALID/);
+ }finally{
+  await deleteApp(first);await deleteApp(second);
  }
 });
