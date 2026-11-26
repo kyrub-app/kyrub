@@ -167,7 +167,11 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
    if(!stored||current!.ownerId!==ownerId||currentIndex.get('tagId')!==tagId||currentIndex.get('ownerId')!==ownerId||currentIndex.get('revokedAt')!=null)throw Error('TAG_FORBIDDEN');
    assertSamePasskeyCredential(stored,readCredential(currentCredential.data(),ownerId));
    tx.update(credentialRef,{credential:nextCredential,lastVerifiedAt:stamp});
-   if(record.purpose==='edit'&&presentation)tx.update(tagRef,{presentation,targets:bound,enabled:true,updatedAt:stamp});
+   if(record.purpose==='edit'&&presentation){
+    const previous=current!.presentation?.pix;
+    const nextPresentation=presentation.pix===undefined&&previous!==undefined?{...presentation,pix:previous}:presentation;
+    tx.update(tagRef,{presentation:nextPresentation,targets:bound,enabled:true,updatedAt:stamp});
+   }
    else if(record.purpose==='block')tx.update(tagRef,{blocked:true,enabled:false,blockedAt:stamp,updatedAt:stamp});
    else if(record.purpose==='unblock')tx.update(tagRef,{blocked:false,enabled:true,blockedAt:null,updatedAt:stamp});
    else if(record.purpose==='link-account'&&accountActor)tx.update(tagRef,{linkedAccountId:accountActor,linkedAccountAt:current!.linkedAccountAt??stamp,updatedAt:stamp});
