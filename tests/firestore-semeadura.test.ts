@@ -351,3 +351,25 @@ test('server directory pages only visible canonical identities without leaking p
  assert.ok(!refreshed.entries.some(e=>e.id==='directory-01'));
  await assert.rejects(readVisibleSocialDirectoryPage(db,'directory-00','../private'),/DIRECTORY_INPUT_INVALID/);
 });
+
+test('staff lookup is scoped to canonical store authority and exact contact without exposing private fields',async()=>{
+ const {searchStoreStaffDirectory}=await import('../server/identity/storeStaffDirectoryService.js');
+ const store=db.doc('stores/staff-directory');
+ await store.set({id:'staff-directory',ownerId:'staff-owner'});
+ const batch=db.batch();
+ for(const [uid,role,status] of [['staff-manager','manager','active'],['staff-suspended','manager','suspended'],['staff-seller','seller','active']]){
+  batch.set(store.collection('members').doc(uid),{storeId:'staff-directory',userId:uid,role,status});
+ }
+ batch.set(db.doc('users/staff-private'),{uid:'staff-private',name:'Nome privado',email:'private@example.invalid',photoUrl:'https://example.invalid/private',isProfileVisible:false});
+ batch.set(db.doc('users/staff-public'),{uid:'staff-public',name:'Nome visível',email:'visible@example.invalid',photoUrl:'https://example.invalid/public',isProfileVisible:true});
+ await batch.commit();
+ const lookup=(actor:string,term:string,role='seller')=>searchStoreStaffDirectory(db,actor,'staff-directory',term,role);
+ for(const actor of ['staff-outsider','staff-suspended','staff-seller'])await assert.rejects(lookup(actor,'private@example.invalid'),/STAFF_DIRECTORY_FORBIDDEN/);
+ await assert.rejects(lookup('staff-manager','private@example.invalid','manager'),/STAFF_DIRECTORY_FORBIDDEN/);
+ assert.deepEqual(await lookup('staff-owner','PRIVATE@example.invalid','manager'),[{uid:'staff-private',name:'Conta Kyrub',photoUrl:''}]);
+ assert.deepEqual(await lookup('staff-manager','Nome privado'),[]);
+ assert.deepEqual(await lookup('staff-manager','Nome visível'),[{uid:'staff-public',name:'Nome visível',photoUrl:'https://example.invalid/public'}]);
+ await assert.rejects(lookup('staff-owner','private@'),/STAFF_DIRECTORY_INVALID/);
+ await store.collection('members').doc('staff-private').set({storeId:'staff-directory',userId:'staff-private',role:'seller',status:'invited'});
+ assert.deepEqual(await lookup('staff-owner','private@example.invalid'),[]);
+});
