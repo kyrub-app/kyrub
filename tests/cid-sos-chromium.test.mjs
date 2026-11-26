@@ -117,6 +117,18 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   await owner.page.getByText('Ocorrência encerrada.',{exact:false}).waitFor();
   await p.getByRole('button',{name:'Atualizar conversa'}).click();
   await p.getByText('Ocorrência encerrada.',{exact:false}).waitFor();
+  await owner.page.getByRole('button',{name:'Opções da ocorrência'}).click();
+  const downloaded=owner.page.waitForEvent('download');
+  await owner.page.getByRole('button',{name:'Baixar conversa',exact:true}).click();
+  const file=await downloaded;assert.ok(file.suggestedFilename().endsWith('.txt'));assert.match(readFileSync(await file.path(),'utf8'),/Estou acompanhando/);
+  await owner.page.getByRole('button',{name:'Opções da ocorrência'}).click();
+  await owner.page.getByRole('button',{name:'Preservar evidências',exact:true}).click();
+  await owner.page.getByLabel('Motivo da preservação').fill('Preservar conversa de teste');
+  await owner.page.getByRole('button',{name:'Solicitar preservação'}).click();
+  await owner.page.getByText('registrada para análise.',{exact:false}).waitFor();
+  const chatState=records.docs[0].ref.collection('chat').doc('state');
+  assert.equal((await chatState.collection('issuedReports').get()).size,1);
+  assert.equal((await chatState.collection('private').doc('preservation-request').get()).get('request.status'),'pending-review');
   await contact.page.getByRole('button',{name:'Voltar'}).click();
   await contact.page.getByRole('region',{name:'Chat da ocorrência'}).waitFor({state:'hidden'});
   await contact.page.waitForFunction(async path=>(await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Cid-Homologation':'1'},body:'{}'})).status===403,api+'read');
