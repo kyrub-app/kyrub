@@ -1,3 +1,4 @@
+import type { Auth } from 'firebase-admin/auth';
 import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { evaluateStoredCapabilityAgeAccess } from '../../shared/ageEligibility.js';
 import { evaluateProfileCompletion, PROFILE_COMPLETION_CHALLENGE } from '../../shared/profileCompletionChallenge.js';
@@ -106,4 +107,21 @@ export async function grantIsolatedProfileCompletion(db:Firestore,uid:string){
   tx.create(receiptRef,{userId:uid,challengeId:CHALLENGE,pitangas:100,xp:0,idempotencyKey:key,occurredAt});
   return {replay:false,pitangas:100,xp:0,balance:available+100};
  });
+}
+
+/** Isolated post-save entry point. The caller supplies only an authenticated
+ * session, never a UID, amount, or evidence. No public HTTP route is mounted. */
+export async function reconcileIsolatedProfileCompletionAfterSave(db:Firestore,auth:Auth,token:string){
+ if(!profileCompletionPilotEnabled(db)||auth.app.options.projectId!==PROJECT)
+  throw Error('PROFILE_COMPLETION_RELEASE_UNAVAILABLE');
+ let uid:string;
+ try{
+  if(typeof token!=='string'||!token.trim())throw Error('AUTH_REQUIRED');
+  const identity=await auth.verifyIdToken(token,true);
+  if(identity.aud!==PROJECT||!validUid(identity.uid))throw Error('AUTH_INVALID');
+  const account=await auth.getUser(identity.uid);
+  if(account.uid!==identity.uid||account.disabled)throw Error('AUTH_INVALID');
+  uid=identity.uid;
+ }catch{throw Error('PROFILE_COMPLETION_AUTH_INVALID');}
+ return grantIsolatedProfileCompletion(db,uid);
 }
