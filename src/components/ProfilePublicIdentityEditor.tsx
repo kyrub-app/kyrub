@@ -1,4 +1,5 @@
 import { PublicSocialAddressEditor } from './PublicSocialAddressEditor';
+import { reconcileProfileCompletionPilot } from '../utils/profileCompletionPilot';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Camera, Check, LoaderCircle, RotateCcw, Save, UserRound } from 'lucide-react';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -86,6 +87,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
       setDraft(current => ({ ...current, name, bio }));
       broadcastProfileUpdate(user, name, draft.photoUrl);
       setMessage('Foto, nome e biografia sincronizados.');
+      void reconcileProfileCompletionPilot(user);
     } catch (error) {
       console.error('Não foi possível salvar o perfil público:', error);
       setMessage('Falha ao sincronizar. Tente salvar novamente.');
@@ -182,7 +184,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
           </button>
         </div>
       </div>
-      <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} />
+      <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} onReserved={()=>void reconcileProfileCompletionPilot(user)} />
       <form className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4" onSubmit={event => void savePublicProfile(event)}>
         <label className="block text-sm font-semibold text-slate-200">
           Nome de exibição
