@@ -38,7 +38,7 @@ export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,c
   {label:'Informações adicionais',value:saved?.about,example:'Conte um pouco mais sobre você',Icon:Info}
  ];
  return <section data-testid="kyrub-card-demo" className="space-y-4 rounded-2xl border border-[#34443B] bg-[#121A17] p-4 text-[#F5F5F3]">
-  <header className="flex justify-end"><a href="/?app=1" className="inline-flex min-h-11 items-center rounded-xl border border-[#F47825] px-3 text-sm font-bold text-[#F47825]">Kairub-se!</a></header>
+  <header className="flex justify-end"><a href="/" className="inline-flex min-h-11 items-center rounded-xl border border-[#F47825] px-3 text-sm font-bold text-[#F47825]">Kairub-se!</a></header>
   <div className="space-y-2 text-center">
    <img src="/kyrub-logo.svg" alt="Kyrub" className="mx-auto h-24 w-24 object-contain"/>
    <p className="text-sm text-slate-300">{saved?'Prévia privada · não publicada':'Cartão demonstrativo'}</p>

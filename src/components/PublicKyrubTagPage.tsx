@@ -143,14 +143,14 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   {ownerRecord?.distribution==='promotional'?
    <PromotionalKyrubTagEditor initial={ownerRecord} oneTimeRecoveryCode={recoveryCode} initialDraft={!ownerRecord.enabled?currentPresentation():undefined}/>:
    <OfficialKyrubTagPanel key={user.uid+identifier} userId={user.uid} initialTagId={identifier}/>}
-  <a href="/?app=1" className="block p-3 text-center text-sm text-slate-300 underline">Kairub-se!</a>
+  <a href="/" className="block p-3 text-center text-sm text-slate-300 underline">Kairub-se!</a>
  </div></main>;
 
  const promotional=data?.status==='unclaimed'&&(data.activation==='email'||data.activation==='setup');
  return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-4 py-6">
   <header className="flex items-center justify-between gap-2">
    <a href="/" className="font-black text-[#F47825]">KYRUB TAG</a>
-   <a href="/?app=1" className="text-sm text-slate-300 underline">Kairub-se!</a>
+   <a href="/" className="text-sm text-slate-300 underline">Kairub-se!</a>
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
@@ -229,6 +229,6 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <button type="button" className="block text-sm underline text-slate-300" disabled={busy} onClick={()=>void signOut(auth)}>Verificar outro e-mail</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
   </section>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
-  <a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>
+  <a href="/" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>
  </div></main>;
 }

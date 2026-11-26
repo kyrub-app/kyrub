@@ -43,3 +43,19 @@ test('publication reuses verified ownership and bound public destinations withou
  assert.match(page,/presentation:currentPresentation\(\)/);
  assert.match(page,/data.links.map/);
 });
+
+test('Kairub-se opens the normal Renda landing without mandatory login or automatic return to tag',()=>{
+ const demo=readFileSync('src/components/KyrubCardDemonstration.tsx','utf8');
+ const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const actions=readFileSync('src/components/KyrubTagPasskeyActions.tsx','utf8');
+ const guest=readFileSync('src/components/KyrubGuestWorkspace.tsx','utf8');
+ for(const source of [demo,page,actions]){
+  assert.match(source,/<a[^>]*href="\/"[^>]*>Kairub-se!<\/a>/);
+  assert.doesNotMatch(source,/<a[^>]*href="\/\?(?:app=1|entry=welcome|tagActivation)[^"]*"[^>]*>Kairub-se!/);
+ }
+ assert.doesNotMatch(actions,/tagActivation|entry=welcome/);
+ assert.match(guest,/useState<GuestTab>\('renda'\)/);
+ assert.match(guest,/id="kyrub-guest-signin"/);
+ // The pre-existing reserved-unit flow remains independent.
+ assert.match(page,/const loginPath='\/\?tagActivation='\+encodeURIComponent\(identifier\)/);
+});
