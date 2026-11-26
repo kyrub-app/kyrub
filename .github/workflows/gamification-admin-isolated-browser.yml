@@ -13,6 +13,10 @@ on:
       - 'tests/profile-completion-browser.test.mjs'
       - 'tests/staff-directory-browser.test.mjs'
       - 'tests/social-directory-browser.test.mjs'
+      - 'tests/admin-directory-browser.test.mjs'
+      - 'server/identity/adminDirectory*.ts'
+      - 'src/utils/adminDirectory*.ts'
+      - 'src/components/admin/AdminDirectoryWorkspace.tsx'
       - 'tests/fixtures/social-directory-browser.tsx'
       - 'server/identity/social*Directory*.ts'
       - 'src/utils/social*Directory*.ts'
@@ -62,6 +66,8 @@ jobs:
       VITE_KYRUB_STAFF_DIRECTORY_PILOT: 'true'
       KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
       VITE_KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+      KYRUB_ADMIN_DIRECTORY_PILOT: 'true'
+      VITE_KYRUB_ADMIN_DIRECTORY_PILOT: 'true'
       VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR: 'true'
       VITE_GAMIFICATION_SUPERVISION_PROTOTYPE: 'true'
       VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT: 'true'
@@ -111,6 +117,12 @@ jobs:
           --config firebase.welcome.json --project demo-kyrub-welcome
           --only auth,firestore,functions
           "node --test --import tsx tests/social-directory-browser.test.mjs"
+      - name: Verify protected administrative directory and audit in fresh isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/admin-directory-browser.test.mjs"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
