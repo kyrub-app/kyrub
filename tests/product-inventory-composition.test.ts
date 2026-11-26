@@ -138,7 +138,7 @@ describe('product inventory and composition', () => {
   test('inventory fields remain editable after a sync error without silent loss', () => {
     assert.match(modalSource, /Os campos continuam editáveis/);
     assert.match(modalSource, /Tentar novamente/);
-    assert.match(modalSource, /inventoryDirty && inventoryLoadError/);
+    assert.match(modalSource, /inventoryDirty && \(!inventoryLoaded \|\| inventoryLoadError\)/);
     assert.match(modalSource, /disabled=\{isSaving \|\| !inventoryLoaded\}/);
     assert.doesNotMatch(
       modalSource,
