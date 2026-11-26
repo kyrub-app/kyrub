@@ -3,6 +3,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Search, UserRound, Users } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
+import {socialDirectoryPilotEnabled,searchNoteCollaboratorsPilot} from '../../utils/socialDirectoryPilot';
 import {
   decodeNoteCollaborator,
   encodeNoteCollaborator,
@@ -76,8 +77,13 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [directoryError, setDirectoryError] = useState('');
 
+  const pilot=socialDirectoryPilotEnabled();
+  const [pilotResultTerm,setPilotResultTerm]=useState('');
+  const [pilotUser,setPilotUser]=useState(()=>auth.currentUser);
+  useEffect(()=>onAuthStateChanged(auth,next=>{setPilotUser(next);setDirectoryUsers([]);setPilotResultTerm('');}),[]);
+
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || pilot) return;
 
     let unsubscribeDirectory = () => undefined;
     let active = true;
@@ -135,9 +141,30 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
       unsubscribeAuth();
       unsubscribeDirectory();
     };
-  }, [isOpen]);
+  }, [isOpen,pilot]);
+
+  useEffect(()=>{
+    if(!isOpen||!pilot)return;
+    const term=userSearchEmail.trim();
+    setDirectoryUsers([]);setPilotResultTerm('');setDirectoryError('');
+    if(!pilotUser||auth.currentUser!==pilotUser||term.length<3){setIsLoading(false);return;}
+    const controller=new AbortController();
+    setIsLoading(true);
+    const timer=window.setTimeout(()=>{
+      void searchNoteCollaboratorsPilot(pilotUser,term,controller.signal).then(entries=>{
+        if(controller.signal.aborted||auth.currentUser!==pilotUser)return;
+        setDirectoryUsers(entries);setPilotResultTerm(term);
+      }).catch(()=>{
+        if(!controller.signal.aborted&&auth.currentUser===pilotUser)setDirectoryError('Não foi possível consultar o diretório protegido. Tente novamente.');
+      }).finally(()=>{
+        if(!controller.signal.aborted&&auth.currentUser===pilotUser)setIsLoading(false);
+      });
+    },500);
+    return ()=>{window.clearTimeout(timer);controller.abort();};
+  },[isOpen,pilot,pilotUser,userSearchEmail]);
 
   const filteredUsers = useMemo(() => {
+    if(pilot)return pilotUser&&auth.currentUser===pilotUser&&pilotResultTerm===userSearchEmail.trim()?directoryUsers:[];
     const normalizedSearch = userSearchEmail.trim().toLocaleLowerCase('pt-BR');
 
     if (!normalizedSearch) return directoryUsers;
@@ -150,7 +177,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
         searchableName.includes(normalizedSearch)
       );
     });
-  }, [directoryUsers, userSearchEmail]);
+  }, [directoryUsers, userSearchEmail,pilot,pilotUser,pilotResultTerm]);
 
   if (!isOpen) return null;
 
@@ -186,7 +213,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
               htmlFor="note-collaborator-search"
               className="mb-1.5 block text-[10px] font-mono uppercase text-slate-400"
             >
-              Digite o nome ou o e-mail completo do usuário
+              {pilot?'Digite o nome completo ou o e-mail verificado do usuário':'Digite o nome ou o e-mail completo do usuário'}
             </label>
             <div className="relative">
               <input
@@ -226,7 +253,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
               </div>
             ) : filteredUsers.length === 0 ? (
               <div className="py-8 text-center text-xs italic text-slate-500">
-                Nenhum usuário correspondente encontrado.
+                {pilot&&userSearchEmail.trim().length<3?'Informe pelo menos três caracteres.':'Nenhum usuário correspondente encontrado.'}
               </div>
             ) : (
               <div className="space-y-2">
@@ -270,6 +297,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                       <button
                         type="button"
                         onClick={() => {
+                          if(pilot&&(!pilotUser||auth.currentUser!==pilotUser||pilotResultTerm!==userSearchEmail.trim()))return;
                           if (isAlreadyAdded) {
                             setSelectedFriendsForNote(previous =>
                               previous.filter(
@@ -285,7 +313,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                             encodeNoteCollaborator({
                               uid: user.id,
                               name: user.name,
-                              email: user.email,
+                              ...(pilot?{}:{email:user.email}),
                               avatar: user.avatar,
                             }),
                           ]);
