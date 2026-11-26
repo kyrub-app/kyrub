@@ -6,6 +6,7 @@ import {
   type DocumentData,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { planProductCompositionEdit } from './productCompositionMutation';
 
 export const INVENTORY_UNITS = [
   'un',
@@ -303,27 +304,6 @@ export const buildInventoryPurchaseList = (
     })
     .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR'));
 
-const cleanCompositionsAgainstCatalog = (
-  compositions: Record<string, ProductComposition>,
-  catalog: InventoryCatalogItem[]
-): Record<string, ProductComposition> => {
-  const allowedItemIds = new Set(catalog.map(item => item.id));
-  const cleaned: Record<string, ProductComposition> = {};
-
-  for (const [productId, composition] of Object.entries(compositions)) {
-    const parsedComposition = parseProductComposition(composition);
-    const nextComposition = {
-      ...parsedComposition,
-      lines: parsedComposition.lines.filter(line =>
-        allowedItemIds.has(line.inventoryItemId)
-      ),
-    };
-    if (nextComposition.lines.length > 0) cleaned[productId] = nextComposition;
-  }
-
-  return cleaned;
-};
-
 const comparableInventorySettings = (settings: ProductInventorySettings) => ({
   catalog: settings.catalog.map(({ updatedAt: _updatedAt, ...item }) => item),
   compositions: Object.fromEntries(
@@ -347,74 +327,43 @@ export const persistProductInventorySettings = async (
   user: Pick<User, 'uid'>,
   productId: string,
   catalog: InventoryCatalogItem[],
-  composition: ProductComposition
-): Promise<ProductInventorySettings> => {
+  composition: ProductComposition,
+  baseline: { catalog: InventoryCatalogItem[]; composition: ProductComposition }
+): Promise<ProductInventorySettings & { changed: boolean }> => {
   const normalizedProductId = clean(productId);
   if (!validEntityId(normalizedProductId)) {
     throw new Error('O item da vitrine não foi identificado para a composição.');
   }
 
+  // Catalog management is owned by the global inventory workspace, not a product draft.
   const normalizedCatalog = parseInventoryCatalog(catalog);
-  if (normalizedCatalog.length !== catalog.length) {
-    throw new Error('Revise os componentes do estoque antes de salvar.');
+  if (normalizedCatalog.length !== catalog.length ||
+    JSON.stringify(normalizedCatalog) !== JSON.stringify(parseInventoryCatalog(baseline.catalog))) {
+    throw new Error('Altere os itens e saldos na guia Estoque da loja antes de salvar a composição.');
+  }
+  const proposed = parseProductComposition(composition);
+  if (proposed.lines.length !== composition.lines.length) {
+    throw new Error('Revise os componentes da composição antes de salvar.');
   }
 
-  const inventoryReference = doc(
-    db,
-    getProductInventoryDocumentPath(user.uid)
-  );
-  let nextSettings: ProductInventorySettings = {
-    catalog: normalizedCatalog,
-    compositions: {},
-  };
-
-  await runTransaction(db, async transaction => {
-    const snapshot = await transaction.get(inventoryReference);
+  const reference = doc(db, getProductInventoryDocumentPath(user.uid));
+  const updatedAt = new Date().toISOString();
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(reference);
     const current = readProductInventorySettings(snapshot.data());
-    const nextComposition = {
-      ...parseProductComposition(composition),
-      updatedAt: new Date().toISOString(),
-    };
-    const compositions = { ...current.compositions };
-
-    if (nextComposition.lines.length > 0) {
-      compositions[normalizedProductId] = nextComposition;
-    } else {
-      delete compositions[normalizedProductId];
-    }
-
-    nextSettings = {
-      catalog: normalizedCatalog,
-      compositions: cleanCompositionsAgainstCatalog(
-        compositions,
-        normalizedCatalog
-      ),
-    };
-
-    // Product-only edits should not create or rewrite the private inventory
-    // document. This keeps unrelated catalog changes independent from private
-    // inventory permissions and legacy document-shape migrations.
-    if (productInventorySettingsEquivalent(current, nextSettings)) return;
-
-    transaction.set(
-      inventoryReference,
-      {
+    const { settings, changed } = planProductCompositionEdit(
+      current, normalizedProductId, parseProductComposition(baseline.composition), proposed, updatedAt
+    );
+    if (changed) {
+      const data = {
         ownerId: user.uid,
-        // Keep both names synchronized while the order pipeline still accepts
-        // the legacy aliases. This prevents a stale legacy array/object from
-        // shadowing the freshly edited canonical inventory data. Economic cost
-        // basis fields are intentionally preserved by parseInventoryCatalog so
-        // product/composition edits cannot erase valuation history.
-        inventoryCatalog: nextSettings.catalog,
-        catalog: nextSettings.catalog,
-        productCompositions: nextSettings.compositions,
-        compositions: nextSettings.compositions,
+        productCompositions: settings.compositions,
+        compositions: settings.compositions,
         updatedAt: serverTimestamp(),
         ...(snapshot.exists() ? {} : { createdAt: serverTimestamp() }),
-      },
-      { merge: true }
-    );
+      };
+      transaction.set(reference, data, { mergeFields: Object.keys(data) });
+    }
+    return { ...settings, changed };
   });
-
-  return nextSettings;
 };

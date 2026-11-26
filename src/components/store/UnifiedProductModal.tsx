@@ -536,7 +536,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       );
       return;
     }
-    if (inventoryDirty && inventoryLoadError) {
+    if (inventoryDirty && (!inventoryLoaded || inventoryLoadError)) {
       setActiveTab('inventory');
       setFormError(
         'A composição foi mantida neste formulário, mas ainda não pode ser salva. Toque em “Tentar novamente” antes de concluir.'
@@ -605,17 +605,24 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         });
       }
 
-      let privateInventoryPersisted = false;
+      let privateInventoryPersisted: Awaited<ReturnType<typeof persistProductInventorySettings>> | null = null;
       let preparationStationPersisted = false;
       try {
-        if (!inventoryLoadError && inventoryLoaded) {
-          await persistProductInventorySettings(
+        if (inventoryDirty && !inventoryLoadError && inventoryLoaded) {
+          privateInventoryPersisted = await persistProductInventorySettings(
             user,
             nextProduct.id,
             inventoryCatalog,
-            composition
+            composition,
+            { catalog: initialInventoryCatalog, composition: initialComposition }
           );
-          privateInventoryPersisted = true;
+          if (!isService) {
+            const savedComposition = privateInventoryPersisted.compositions[nextProduct.id]
+              ?? EMPTY_PRODUCT_COMPOSITION;
+            nextProduct.stock = calculateProductAvailableStock(
+              privateInventoryPersisted.catalog, savedComposition
+            ) ?? nextProduct.stock;
+          }
         }
         if (stationDirty) {
           await persistProductPreparationStation(
@@ -627,18 +634,25 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         }
         await onSave(nextProduct);
       } catch (saveError) {
-        if (privateInventoryPersisted) {
-          void persistProductInventorySettings(
-            user,
-            nextProduct.id,
-            initialInventoryCatalog,
-            initialComposition
-          ).catch(rollbackError => {
+        let compositionRollbackFailed = false;
+        if (privateInventoryPersisted?.changed) {
+          try {
+            const savedComposition = privateInventoryPersisted.compositions[nextProduct.id]
+              ?? EMPTY_PRODUCT_COMPOSITION;
+            await persistProductInventorySettings(
+              user,
+              nextProduct.id,
+              privateInventoryPersisted.catalog,
+              initialComposition,
+              { catalog: privateInventoryPersisted.catalog, composition: savedComposition }
+            );
+          } catch (rollbackError) {
+            compositionRollbackFailed = true;
             console.error(
               'Não foi possível reverter a composição após a falha do item.',
               rollbackError
             );
-          });
+          }
         }
         if (preparationStationPersisted) {
           const rollback = mode === 'create'
@@ -654,6 +668,9 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
               rollbackError
             );
           });
+        }
+        if (compositionRollbackFailed) {
+          throw new Error('Falha ao salvar o produto. A reversão da composição não foi confirmada; reabra o item e confira os componentes antes de tentar novamente.');
         }
         throw saveError;
       }
