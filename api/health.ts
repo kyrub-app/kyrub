@@ -161,11 +161,13 @@ export default async function handler(
         if(decoded.email_verified!==true||identity.disabled||!identity.emailVerified||!identity.email)throw Error('TAG_FORBIDDEN');
         accountActor=decoded.uid;
       }
-      if(input.action==='begin'&&isPasskeyMutation(input.purpose)&&Object.keys(input).every(k=>['action','purpose','presentation','recoveryCode'].includes(k))){
-        response.status(200).json(await service.beginTagPasskeyMutation(origin,id,input.purpose,input.presentation,input.recoveryCode,accountActor));return;
+      if(!authHeader&&input.action==='email-confirm'&&Object.keys(input).length===2){response.status(200).json(await service.confirmTagRecoveryEmail(origin,id,input.code));return;}
+      if(!authHeader&&input.action==='email-request'&&Object.keys(input).length===2){response.status(200).json(await service.requestTagEmailRecovery(origin,id,input.email));return;}
+      if(input.action==='begin'&&isPasskeyMutation(input.purpose)&&Object.keys(input).every(k=>['action','purpose','presentation','recoveryCode','recoveryEmail'].includes(k))){
+        response.status(200).json(await service.beginTagPasskeyMutation(origin,id,input.purpose,input.presentation,input.recoveryCode,accountActor,input.recoveryEmail));return;
       }
-      if(input.action==='finish'&&typeof input.challengeId==='string'&&input.response&&typeof input.response==='object'&&!Array.isArray(input.response)&&Object.keys(input).every(k=>['action','challengeId','response','recoveryCode'].includes(k))){
-        response.status(200).json(await service.finishTagPasskeyMutation(origin,id,input.challengeId,input.response as Parameters<typeof service.finishTagPasskeyMutation>[3],input.recoveryCode,accountActor));return;
+      if(input.action==='finish'&&typeof input.challengeId==='string'&&input.response&&typeof input.response==='object'&&!Array.isArray(input.response)&&Object.keys(input).every(k=>['action','challengeId','response','recoveryCode','recoveryEmail'].includes(k))){
+        response.status(200).json(await service.finishTagPasskeyMutation(origin,id,input.challengeId,input.response as Parameters<typeof service.finishTagPasskeyMutation>[3],input.recoveryCode,accountActor,input.recoveryEmail));return;
       }
       response.status(400).json({error:'TAG_INVALID'});
     }catch(error){
@@ -173,6 +175,7 @@ export default async function handler(
       // Never expose library errors, key material, request contents or owner IDs.
       if(code==='TAG_PASSKEY_RATE_LIMIT'){response.setHeader('Retry-After','60');response.status(429).json({error:code});}
       else if(['TAG_INVALID','TAG_PRESENTATION_INVALID'].includes(code))response.status(400).json({error:'TAG_INVALID'});
+      else if(code==='TAG_EMAIL_UNAVAILABLE')response.status(503).json({error:code});
       else if(['TAG_CHANGED','CARD_TARGET_UNAVAILABLE','TAG_ACCOUNT_REQUIRED'].includes(code))response.status(409).json({error:code});
       else response.status(403).json({error:'TAG_PASSKEY_FORBIDDEN'});
     }

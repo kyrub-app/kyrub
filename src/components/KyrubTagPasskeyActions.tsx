@@ -2,14 +2,15 @@ import {useEffect,useRef,useState} from 'react';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../utils/firebase';
 import {Fingerprint} from 'lucide-react';
-import {runKyrubTagPasskey,supportsKyrubTagPasskey,type TagPasskeyAction} from '../utils/kyrubTagPasskeyClient';
+import {runKyrubTagPasskey,supportsKyrubTagPasskey,tagRecoveryEmailAction,type TagPasskeyAction} from '../utils/kyrubTagPasskeyClient';
 import {buildPublicDestinationUrl,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
 import type {PromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 
 const button='min-h-11 rounded-xl border border-[#34443B] p-3 text-sm font-semibold disabled:opacity-50';
 const orange=button+' bg-[#F47825] text-[#121A17] w-full';
-export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links=[]}:{tagId:string;mode:'register'|'active'|'blocked';origin?:string;getDraft?:()=>PromotionalTagPresentation;initial?:PromotionalTagPresentation;links?:{url:string}[]}){
+export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links=[],emailRecoveryAvailable=false}:{tagId:string;mode:'register'|'active'|'blocked';origin?:string;getDraft?:()=>PromotionalTagPresentation;initial?:PromotionalTagPresentation;links?:{url:string}[];emailRecoveryAvailable?:boolean}){
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[recovery,setRecovery]=useState(''),[editing,setEditing]=useState(false);
+ const [emailMode,setEmailMode]=useState<'bind'|'recover'|null>(null),[email,setEmail]=useState(''),[emailCode,setEmailCode]=useState(''),[emailSent,setEmailSent]=useState(false);
  const [recovering,setRecovering]=useState(false),[secret,setSecret]=useState('');
  const [draft,setDraft]=useState(initial??{name:'',occupation:'',about:''});
  const [destinations,setDestinations]=useState(()=>Object.fromEntries(links.flatMap(l=>{const p=parsePublicDestinationUrl(l.url);return p&&p.kind!=='card'?[[p.kind,p.identifier]]:[];})) as Partial<Record<'profile'|'store'|'community',string>>);
@@ -19,7 +20,7 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
  const lock=useRef(false);
  const available=!!origin&&origin===window.location.origin&&supportsKyrubTagPasskey();
  function refresh(){window.location.reload();}
- async function execute(purpose:TagPasskeyAction,presentation?:PromotionalTagPresentation,recoverySecret?:string){
+ async function execute(purpose:TagPasskeyAction,presentation?:PromotionalTagPresentation,recoverySecret?:string,recoveryEmail?:string){
   if(lock.current||!available)return;
   if((purpose==='register'||purpose==='edit')&&!presentation?.name.trim()){setNotice('Preencha seu nome de apresentação antes de publicar.');return;}
   lock.current=true;setBusy(true);setNotice('');
@@ -29,9 +30,11 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
    if(linking&&(!current?.emailVerified||current.uid!==account?.uid))throw Error('TAG_ACCOUNT_REQUIRED');
    const token=linking?await current!.getIdToken(true):undefined;
    if(linking&&auth.currentUser?.uid!==current!.uid)throw Error('TAG_ACCOUNT_REQUIRED');
-   const result=await runKyrubTagPasskey(tagId,purpose,presentation,recoverySecret,token);
+   const result=await runKyrubTagPasskey(tagId,purpose,presentation,recoverySecret,token,recoveryEmail);
    if(linking){setLinked(true);setNotice('Tag vinculada à conta confirmada. A edição continua protegida pela chave de acesso.');return;}
-   if(purpose==='recover'){setSecret('');setRecovering(false);}
+   if(purpose==='set-recovery-email'){setEmailSent(true);setNotice('Confira seu e-mail e informe o código temporário.');return;}
+   if(purpose==='remove-recovery-email'){setEmailMode(null);setNotice('E-mail de recuperação removido.');return;}
+   if(purpose==='recover'||purpose==='recover-email'){setSecret('');setEmailCode('');setRecovering(false);setEmailMode(null);}
    if(purpose==='register'){try{sessionStorage.removeItem('kyrub.tag.draft.'+tagId);sessionStorage.removeItem('kyrub.card.demo.tag.'+tagId);}catch{}}
    if(result.recoveryCode){setRecovery(result.recoveryCode);setNotice('Operação concluída. Guarde o código de recuperação em local seguro.');}
    else refresh();
@@ -39,9 +42,14 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
    setNotice(code==='TAG_PASSKEY_RATE_LIMIT'?'Muitas tentativas. Aguarde um minuto.':code==='CARD_TARGET_UNAVAILABLE'?'Um dos destinos não está disponível. Confira os links.':code==='TAG_ACCOUNT_REQUIRED'?'Entre em uma conta Kyrub com e-mail verificado e conclua o cadastro inicial.':code==='TAG_CHANGED'?'A unidade foi alterada. Atualize a página e tente novamente.':purpose==='recover'?'Não foi possível recuperar. Confira o código secreto e tente novamente.':'Não foi possível confirmar a operação. Use a chave de acesso autorizada e tente novamente.');
   }finally{setBusy(false);lock.current=false;}
  }
+ async function emailAction(action:'email-request'|'email-confirm'){
+  if(lock.current||!available)return;lock.current=true;setBusy(true);setNotice('');
+  try{await tagRecoveryEmailAction(tagId,action,action==='email-request'?email.trim():emailCode.trim());if(action==='email-request'){setEmailSent(true);setNotice('Se este for o e-mail verificado da unidade, enviaremos um código.');}else{setEmailMode(null);setEmailCode('');setEmail('');setNotice('E-mail de recuperação confirmado.');}}
+  catch(e){setNotice(e instanceof Error&&e.message==='TAG_PASSKEY_RATE_LIMIT'?'Limite de solicitações atingido. Tente novamente mais tarde.':'Não foi possível concluir. Confira os dados e tente novamente.');}finally{setBusy(false);lock.current=false;}
+ }
  if(recovery)return <section className="space-y-3 rounded-xl border border-amber-500/60 p-3" role="status">
   <strong>Guarde seu código de recuperação</strong>
-  <p className="text-sm text-slate-300">Exibido apenas agora. Não compartilhe nem grave na NFC. Ele permite substituir uma chave de acesso perdida. Quem tiver este código poderá recuperar o gerenciamento.</p>
+  <p className="text-sm text-slate-300">Exibido apenas agora. Não compartilhe nem grave na NFC. Guarde preferencialmente em um gerenciador de senhas, não nas notas ou na galeria. Ele permite substituir uma chave de acesso perdida. Quem tiver este código poderá recuperar o gerenciamento.</p>
   <code className="block select-all break-all rounded-lg bg-[#1D2924] p-3 text-sm">{recovery}</code>
   <button type="button" className={button} onClick={()=>void navigator.clipboard.writeText(recovery).then(()=>setNotice('Código copiado.')).catch(()=>setNotice('Selecione e copie manualmente.'))}>Copiar código</button>
   <button type="button" className={orange} onClick={refresh}>Já guardei · Continuar</button>
@@ -63,6 +71,16 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
    </form>}
    <button type="button" disabled={busy} className={button+' w-full'} onClick={()=>{if(window.confirm(mode==='blocked'?'Republicar seu cartão?':'Bloquear a publicação deste cartão?'))void execute(mode==='blocked'?'unblock':'block');}}>{mode==='blocked'?'Desbloquear minha tag':'Bloquear tag perdida'}</button>
    <button type="button" disabled={busy} className={button+' w-full'} onClick={()=>{if(window.confirm('Gerar novo código e invalidar o anterior?'))void execute('rotate-recovery');}}>Gerar novo código de recuperação</button>
+   {emailRecoveryAvailable&&<section className="space-y-2 border-t border-[#34443B] pt-3"><h3 className="font-semibold">E-mail de recuperação (opcional)</h3><p className="text-sm text-slate-300">Proteção adicional sem cadastro no Kyrub. O endereço não será publicado.</p>
+    <button type="button" className={button+' w-full'} disabled={busy} onClick={()=>{setEmailMode('bind');setEmailSent(false);setEmail('');setEmailCode('');}}>Cadastrar ou alterar e-mail</button>
+    <button type="button" className={button+' w-full'} disabled={busy} onClick={()=>{if(window.confirm('Remover o e-mail de recuperação?'))void execute('remove-recovery-email');}}>Remover e-mail de recuperação</button>
+    <button type="button" className={button+' w-full'} disabled={busy} onClick={()=>{setEmailMode('recover');setEmailSent(false);setEmail('');setEmailCode('');}}>Perdi a chave e o código · Recuperar por e-mail</button>
+    {emailMode&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(!emailSent){if(emailMode==='bind')void execute('set-recovery-email',undefined,undefined,email.trim());else void emailAction('email-request');}else if(emailMode==='bind')void emailAction('email-confirm');else if(window.confirm('Substituir a chave antiga e bloquear o cartão até desbloqueá-lo?'))void execute('recover-email',undefined,emailCode.trim());}}>
+      {!emailSent?<label className="block text-sm">E-mail<input required type="email" autoComplete="email" maxLength={254} value={email} disabled={busy} onChange={e=>setEmail(e.target.value)} className="mt-1 w-full rounded-lg bg-[#1D2924] p-3"/></label>:<label className="block text-sm">Código temporário recebido por e-mail<input required type="password" autoComplete="off" spellCheck={false} maxLength={43} value={emailCode} disabled={busy} onChange={e=>setEmailCode(e.target.value)} className="mt-1 w-full rounded-lg bg-[#1D2924] p-3"/></label>}
+      <button type="submit" disabled={busy||(emailSent&&!/^[A-Za-z0-9_-]{43}$/.test(emailCode.trim()))} className={orange}>{!emailSent?(emailMode==='bind'?'Confirmar chave e enviar código':'Solicitar código temporário'):(emailMode==='bind'?'Confirmar e-mail':'Recuperar com nova chave de acesso')}</button>
+      <button type="button" className={button} disabled={busy} onClick={()=>{setEmailMode(null);setEmailCode('');setEmail('');}}>Cancelar</button>
+    </form>}
+   </section>}
    <section className="space-y-2 border-t border-[#34443B] pt-3"><h3 className="font-semibold">Minha Central Pessoal</h3>
     <p className="text-sm text-slate-300">Vincule voluntariamente esta tag a uma conta Kyrub. O cartão, seu endereço e sua chave de acesso permanecem os mesmos.</p>
     {account?.emailVerified?<><p className="text-sm break-all">Conta: {account.email}</p><button type="button" className={button+' w-full'} disabled={busy||linked} onClick={()=>{if(window.confirm('Vincular esta tag à conta '+account.email+'? O vínculo é definitivo nesta versão.'))void execute('link-account');}}>{linked?'Vínculo confirmado':'Vincular à minha conta com chave de acesso'}</button></>:<div className="space-y-2"><a className="block text-center underline text-sm" href="/">Kairub-se!</a><p className="text-xs text-slate-300">Explore a página inicial do Kyrub. Se decidir criar uma conta, volte a este cartão após o cadastro para confirmar o vínculo com sua chave de acesso.</p></div>}

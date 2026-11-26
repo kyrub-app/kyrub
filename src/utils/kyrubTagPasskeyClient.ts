@@ -12,8 +12,8 @@ export async function confirmKyrubTagPasskey(optionsJSON:AuthenticationOptions){
  return startAuthentication({optionsJSON});
 }
 
-export type TagPasskeyAction='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account';
-export async function runKyrubTagPasskey(tagId:string,purpose:TagPasskeyAction,presentation?:unknown,recoveryCode?:string,accountToken?:string){
+export type TagPasskeyAction='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account'|'set-recovery-email'|'remove-recovery-email'|'recover-email';
+export async function runKyrubTagPasskey(tagId:string,purpose:TagPasskeyAction,presentation?:unknown,recoveryCode?:string,accountToken?:string,recoveryEmail?:string){
  if(!/^[a-f0-9]{32}$/.test(tagId)||!supportsKyrubTagPasskey())throw Error('TAG_PASSKEY_UNSUPPORTED');
  const url='/api/health?transport=kyrub-tag-passkey&id='+encodeURIComponent(tagId);
  async function call(body:Record<string,unknown>){
@@ -22,10 +22,16 @@ export async function runKyrubTagPasskey(tagId:string,purpose:TagPasskeyAction,p
   if(!res.ok)throw Error(typeof value?.error==='string'?value.error:'TAG_PASSKEY_FORBIDDEN');
   return value;
  }
- const begin=await call({action:'begin',purpose,...(presentation===undefined?{}:{presentation}),...(recoveryCode===undefined?{}:{recoveryCode})});
+ const begin=await call({action:'begin',purpose,...(presentation===undefined?{}:{presentation}),...(recoveryCode===undefined?{}:{recoveryCode}),...(recoveryEmail===undefined?{}:{recoveryEmail})});
  if(!/^[A-Za-z0-9_-]{43}$/.test(begin.challengeId)||!begin.options)throw Error('TAG_PASSKEY_FORBIDDEN');
- const response=purpose==='register'||purpose==='recover'?await createKyrubTagPasskey(begin.options):await confirmKyrubTagPasskey(begin.options);
- const result=await call({action:'finish',challengeId:begin.challengeId,response,...(recoveryCode===undefined?{}:{recoveryCode})});
+ const response=purpose==='register'||purpose==='recover'||purpose==='recover-email'?await createKyrubTagPasskey(begin.options):await confirmKyrubTagPasskey(begin.options);
+ const result=await call({action:'finish',challengeId:begin.challengeId,response,...(recoveryCode===undefined?{}:{recoveryCode}),...(recoveryEmail===undefined?{}:{recoveryEmail})});
  if(result.tagId!==tagId||result.purpose!==purpose||!(result.recoveryCode===null||/^[A-Za-z0-9_-]{43}$/.test(result.recoveryCode)))throw Error('TAG_PASSKEY_FORBIDDEN');
  return {recoveryCode:result.recoveryCode as string|null};
+}
+
+export async function tagRecoveryEmailAction(tagId:string,action:'email-request'|'email-confirm',value:string){
+ if(!/^[a-f0-9]{32}$/.test(tagId))throw Error('TAG_INVALID');
+ const res=await fetch('/api/health?transport=kyrub-tag-passkey&id='+tagId,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(action==='email-request'?{action,email:value}:{action,code:value})});
+ const data=await res.json();if(!res.ok)throw Error(data.error??'TAG_FORBIDDEN');return data;
 }
