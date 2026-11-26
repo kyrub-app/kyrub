@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
 import type { AuthorDisplayIdentity } from '../utils/authorDisplayIdentity';
+import {socialDirectoryPilotEnabled,readAuthorIdentitiesPilot} from '../utils/socialDirectoryPilot';
 
 export type LiveAuthorIdentity = AuthorDisplayIdentity;
 
@@ -39,6 +40,34 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
       const retained = Object.fromEntries(Object.entries(current).filter(([uid]) => permitted.has(uid)));
       return Object.keys(current).length === Object.keys(retained).length ? current : retained;
     });
+    if(socialDirectoryPilotEnabled()){
+      const controller=new AbortController();
+      let pending=false;
+      const refresh=async()=>{
+        if(pending||!active||auth.currentUser!==session||document.hidden)return;
+        pending=true;
+        try{
+          const next:Record<string,LiveAuthorIdentity>={};
+          for(let offset=0;offset<ids.length;offset+=40){
+            const entries=await readAuthorIdentitiesPilot(session,ids.slice(offset,offset+40),controller.signal);
+            if(!active||auth.currentUser!==session)return;
+            for(const entry of entries)next[entry.id]={name:entry.name,avatar:entry.avatar};
+          }
+          setProfiles(()=>next);
+        }catch{
+          // Never bypass protected transport with a raw account read.
+          setProfiles(()=>({}));
+        }finally{pending=false;}
+      };
+      void refresh();
+      const timer=window.setInterval(()=>void refresh(),60_000);
+      const onVisible=()=>{if(!document.hidden)void refresh();};
+      document.addEventListener('visibilitychange',onVisible);
+      return ()=>{
+        active=false;controller.abort();window.clearInterval(timer);
+        document.removeEventListener('visibilitychange',onVisible);
+      };
+    }
     const stops = ids.map(uid => onSnapshot(
       doc(db, 'users', uid),
       snapshot => {
