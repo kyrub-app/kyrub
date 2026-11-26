@@ -14,12 +14,12 @@ export function KyrubCidSosRecipientConsent({entry,privacyUrl,simulation=false}:
 }
 function Panel({entry,privacyUrl,simulation}:Props){
  const [consent,setConsent]=useState(false),[busy,setBusy]=useState(false),[status,setStatus]=useState<'initial'|'confirmed'|'revoked'|'declined'>('initial'),[error,setError]=useState('');
- const [withdraw,setWithdraw]=useState(false),[saved,setSaved]=useState(false);
+ const [withdraw,setWithdraw]=useState(false),[saved,setSaved]=useState(false),[showCode,setShowCode]=useState(false);
  const revocation=useRef<RevocationHandle|null>(null),locked=useRef(false);
  async function run(work:()=>Promise<void>){
   if(locked.current)return;
   locked.current=true;setBusy(true);setError('');
-  try{await work();}catch{setError('Não foi possível concluir. A autorização não foi alterada por esta tela. Confira a validade da solicitação e tente novamente.');}
+  try{await work();}catch{setError('Não foi possível concluir. Não foi possível confirmar o resultado. Confira a validade da solicitação antes de tentar novamente.');}
   finally{locked.current=false;setBusy(false);}
  }
  async function accept(){
@@ -36,7 +36,7 @@ function Panel({entry,privacyUrl,simulation}:Props){
    const handle=revocation.current;
    const result=entry.mode==='revoke'?await entry.revoke():handle?await entry.revoke(handle):null;
    if(result?.revoked!==true)throw Error('CID_REVOCATION_UNCONFIRMED');
-   revocation.current=null;setStatus('revoked');setWithdraw(false);setSaved(false);
+   revocation.current=null;setStatus('revoked');setWithdraw(false);setSaved(false);setShowCode(false);
   });
  }
  async function copyRecovery(){
@@ -58,6 +58,8 @@ function Panel({entry,privacyUrl,simulation}:Props){
    <p role="status" className="text-sm">Recebimento autorizado.</p>
    <p className="text-xs">Guarde o código privado de retirada para revogar este consentimento posteriormente. Não compartilhe o código.</p>
    <button type="button" className={field} disabled={busy} onClick={()=>void copyRecovery()}>Copiar código privado de retirada</button>
+   <button type="button" className={field} disabled={busy} onClick={()=>setShowCode(v=>!v)}>{showCode?'Ocultar código privado':'Exibir código privado'}</button>
+   {showCode&&revocation.current&&<input aria-label="Código privado de retirada" className={field+' bg-[#1D2924]'} readOnly value={revocation.current.id+'.'+revocation.current.secret} autoComplete="off"/>}
    {saved&&<p role="status" className="text-xs">Código copiado. Guarde-o em local seguro.</p>}
   </>}
   {(entry.mode==='revoke'&&status==='initial'||status==='confirmed')&&<>
