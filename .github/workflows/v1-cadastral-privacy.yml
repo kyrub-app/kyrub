@@ -4,6 +4,7 @@ on:
     paths:
       - 'server/identity/socialDiscoveryDirectoryService.ts'
       - 'server/identity/directoryQuotaService.ts'
+      - 'server/identity/storeStaffDirectoryService.ts'
       - 'scripts/inventory-user-directory-access.mjs'
       - 'tests/v1-cadastral-privacy-emulator.test.ts'
       - '.github/workflows/v1-cadastral-privacy.yml'
