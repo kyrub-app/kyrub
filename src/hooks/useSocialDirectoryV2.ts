@@ -13,6 +13,8 @@ import {
   where
 } from 'firebase/firestore';
 import { Friend } from '../types';
+import {socialDirectoryPilotEnabled} from '../utils/socialDirectoryPilot';
+import {useLiveAuthorIdentities} from './useLiveAuthorIdentities';
 
 const STORAGE_KEYS = {
   FAVORITE_STORES: 'kyrub_favorite_stores'
@@ -86,6 +88,11 @@ export function useSocialDirectoryV2({
   const [dbUsers,setDbUsers]=useSessionDirectoryState<any>(session);
   const [connectionRequests,setConnectionRequests]=useSessionDirectoryState<any>(session);
   const [connections,setConnections]=useSessionDirectoryState<ConnectionDocument>(session);
+  // Accepted/pending contacts are not necessarily in the current discovery page.
+  // Resolve their current public identity independently; a missing projection
+  // must never restore a saved avatar, role or biography in the protected pilot.
+  const protectedDirectory=socialDirectoryPilotEnabled();
+  const contactIdentities=useLiveAuthorIdentities(protectedDirectory&&session?connections.map(connection=>connection.senderId===session.uid?connection.receiverId:connection.senderId):[]);
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.FAVORITE_STORES);
@@ -183,28 +190,20 @@ export function useSocialDirectoryV2({
         return {
           id: otherUid,
           name:
-            dbUser?.name ||
+            (protectedDirectory?contactIdentities[otherUid]?.name:dbUser?.name) ||
             snapshotName ||
             previousFriend?.name ||
             'Usuário do Kyrub',
-          role: dbUser
+          role: protectedDirectory?'Kairubido':dbUser
             ? getUserRole(dbUser)
             : snapshotRole ||
             previousFriend?.role ||
             'Cliente',
           added: true,
-          avatar:
-            dbUser?.photoUrl ||
-            snapshotAvatar ||
-            previousFriend?.avatar ||
-            '',
-          bio:
-            dbUser?.bio ||
-            snapshotBio ||
-            previousFriend?.bio ||
-            '',
-          isProfileVisible:
-            dbUser?.isProfileVisible === true,
+          avatar: protectedDirectory?(contactIdentities[otherUid]?.avatar||''):
+            dbUser?.photoUrl || snapshotAvatar || previousFriend?.avatar || '',
+          bio: protectedDirectory?'':dbUser?.bio || snapshotBio || previousFriend?.bio || '',
+          isProfileVisible: protectedDirectory?Boolean(contactIdentities[otherUid]?.name):dbUser?.isProfileVisible === true,
           favorited: previousFriend?.favorited ?? false,
           connectionStatus: 'accepted',
           connectionId: connection.id
@@ -227,26 +226,20 @@ export function useSocialDirectoryV2({
           id: connection.senderId,
           connectionId: connection.id,
           name:
-            sender?.name ||
+            (protectedDirectory?contactIdentities[connection.senderId]?.name:sender?.name) ||
             connection.senderName ||
             'Usuário do Kyrub',
-          role: sender
+          role: protectedDirectory?'Kairubido':sender
             ? getUserRole(sender)
             : connection.senderRole || 'Cliente',
-          avatar:
-            sender?.photoUrl ||
-            connection.senderAvatar ||
-            '',
-          bio:
-            sender?.bio ||
-            connection.senderBio ||
-            '',
+          avatar: protectedDirectory?(contactIdentities[connection.senderId]?.avatar||''):sender?.photoUrl || connection.senderAvatar || '',
+          bio: protectedDirectory?'':sender?.bio || connection.senderBio || '',
           connectionStatus: 'pending_received'
         };
       });
 
     setConnectionRequests(incomingRequests);
-  }, [connections, dbUsers, isLoggedIn,session,setFriends,setConnectionRequests]);
+  }, [connections, dbUsers, isLoggedIn,session,setFriends,setConnectionRequests,protectedDirectory,contactIdentities]);
 
   // Connect / Disconnect Friends
   const handleToggleFriend = async (friendId: string) => {
