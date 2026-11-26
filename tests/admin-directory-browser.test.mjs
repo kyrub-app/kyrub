@@ -52,7 +52,8 @@ test('Chromium: real administrative directory resolves Auth email, audits both o
   await page.getByLabel('Email de teste').fill(adminEmail);
   await page.getByLabel('Senha de teste').fill(password);
   await page.getByRole('button',{name:'Entrar na fixture'}).click();
-  await page.getByRole('button',{name:/Plataforma & Tenants/}).click();
+  const panel=page.locator('#admin-platform-directory');
+  await panel.locator('summary').filter({hasText:'Plataforma & Tenants'}).click();
   const section=page.locator('#admin-directory');
   const search=async(term)=>{
    await section.getByLabel('E-mail completo ou UID').fill(term);
@@ -72,13 +73,16 @@ test('Chromium: real administrative directory resolves Auth email, audits both o
   const all=await directoryAudits();assert.equal(all.length,2);assert.equal(all.filter(doc=>doc.get('outcome')==='not_found').length,1);
   assert.deepEqual(requests,[200,200]);
   await grant.update({role:'finance'});
-  await page.getByRole('button',{name:/Plataforma & Tenants/}).waitFor({state:'detached'});
+  await panel.waitFor({state:'detached'});
   assert.equal(await section.count(),0);
   assert.equal((await directoryAudits()).length,2);
   await context.close();
  }catch(error){
   console.error('[admin-directory-browser]',JSON.stringify({diagnostics:diagnostics.slice(-20),requests}));
-  if(page&&!page.isClosed())await page.screenshot({path:'gamification-admin-isolated-directory-failure.png',fullPage:true});
+  if(page&&!page.isClosed()){
+   console.error('[admin-directory-fixture-ui]',(await page.locator('body').innerText()).slice(0,3500));
+   await page.screenshot({path:'gamification-admin-isolated-directory-failure.png',fullPage:true});
+  }
   throw error;
  }finally{
   if(browser)await browser.close();
