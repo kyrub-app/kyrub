@@ -41,3 +41,11 @@ test('internal transaction consumes proof with mutation, legacy paths cannot byp
   assert.match(section,/ownerAuthMode==='passkey'/);
  }
 });
+
+test('pilot API is dark by default, exact origin and no credential response leaks',()=>{
+ const api=readFileSync('api/health.ts','utf8').split("transport === 'kyrub-tag-passkey'")[1].split("transport === 'public-kyrub-tag'")[0];
+ assert.match(api,/VERCEL_ENV!=='preview'/);assert.match(api,/KYRUB_TAG_PASSKEY_PILOT_ENABLED/);assert.match(api,/origin!==allowed/);assert.match(api,/24000/);assert.match(api,/429/);
+ const svc=readFileSync('server/identity/kyrubTagPasskeyLifecycle.ts','utf8');assert.match(svc,/attempts>=3/);assert.match(svc,/count>=12/);
+ const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');assert.match(page,/mode="register"/);assert.match(page,/mode="active"/);assert.match(page,/mode="blocked"/);assert.match(page,/!data\?\.passkeyManaged&&showRecovery/);
+ const controls=readFileSync('src/components/KyrubTagPasskeyActions.tsx','utf8');assert.match(controls,/origin===window.location.origin/);assert.match(controls,/Salvar e publicar com chave de acesso/);assert.match(controls,/runKyrubTagPasskey/);
+});

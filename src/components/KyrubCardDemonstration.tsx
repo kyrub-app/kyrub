@@ -25,7 +25,7 @@ export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,c
   try{if(!saveCardDraft(sessionStorage,clean,draftKey)){setNotice('Não foi possível guardar o rascunho neste navegador.');return;}}
   catch{setNotice('Armazenamento local indisponível.');return;}
   setSaved(clean);setDraft(clean);setEditing(false);onSave?.(clean);
-  setNotice(previewOnly?'Rascunho salvo nesta aba. Nada foi publicado.':'Rascunho salvo. Confirme seu e-mail para publicar neste adesivo.');
+  setNotice(previewOnly?'Rascunho salvo nesta aba. Nada foi publicado.':'Rascunho salvo. Confirme a titularidade para publicar nesta tag.');
  }
  function clear(){
   try{if(!clearCardDraft(sessionStorage,draftKey)){setNotice('Não foi possível apagar o rascunho.');return;}}catch{setNotice('Armazenamento local indisponível.');return;}

@@ -131,6 +131,44 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'kyrub-tag-passkey') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    response.setHeader('X-Content-Type-Options','nosniff');
+    if(process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true'){
+      response.status(404).json({error:'TAG_PASSKEY_DISABLED'});return;
+    }
+    if((request.method??'GET').toUpperCase()!=='POST'){response.setHeader('Allow','POST');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const origin=headerValue(request.headers.origin??request.headers.Origin)??'';
+    const contentType=headerValue(request.headers['content-type']??request.headers['Content-Type'])??'';
+    if(!/^application\/json(?:\s*;.*)?$/i.test(contentType)){response.status(415).json({error:'TAG_INVALID'});return;}
+    const id=queryValue(request.query?.id);
+    try{
+      const {tagPasskeyPilotOrigin}=await import('../server/identity/kyrubTagPilotIsolation.js');
+      const allowed=tagPasskeyPilotOrigin();
+      if(!allowed||origin!==allowed){response.status(403).json({error:'TAG_PASSKEY_ORIGIN'});return;}
+      const body=request.body;
+      if(!body||typeof body!=='object'||Array.isArray(body)||JSON.stringify(body).length>24000){response.status(400).json({error:'TAG_INVALID'});return;}
+      const input=body as Record<string,unknown>;
+      const {isPasskeyMutation}=await import('../server/identity/kyrubTagPasskeyState.js');
+      const service=await import('../server/identity/kyrubTagPasskeyLifecycle.js');
+      if(input.action==='begin'&&isPasskeyMutation(input.purpose)&&Object.keys(input).every(k=>['action','purpose','presentation'].includes(k))){
+        response.status(200).json(await service.beginTagPasskeyMutation(origin,id,input.purpose,input.presentation));return;
+      }
+      if(input.action==='finish'&&typeof input.challengeId==='string'&&input.response&&typeof input.response==='object'&&!Array.isArray(input.response)&&Object.keys(input).length===3){
+        response.status(200).json(await service.finishTagPasskeyMutation(origin,id,input.challengeId,input.response as Parameters<typeof service.finishTagPasskeyMutation>[3]));return;
+      }
+      response.status(400).json({error:'TAG_INVALID'});
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      // Never expose library errors, key material, request contents or owner IDs.
+      if(code==='TAG_PASSKEY_RATE_LIMIT'){response.setHeader('Retry-After','60');response.status(429).json({error:code});}
+      else if(['TAG_INVALID','TAG_PRESENTATION_INVALID'].includes(code))response.status(400).json({error:'TAG_INVALID'});
+      else if(['TAG_CHANGED','CARD_TARGET_UNAVAILABLE'].includes(code))response.status(409).json({error:code});
+      else response.status(403).json({error:'TAG_PASSKEY_FORBIDDEN'});
+    }
+    return;
+  }
+
   if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';

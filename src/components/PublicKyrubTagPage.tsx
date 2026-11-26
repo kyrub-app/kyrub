@@ -5,6 +5,7 @@ import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {KyrubCardDemonstration} from './KyrubCardDemonstration';
+import {KyrubTagPasskeyActions} from './KyrubTagPasskeyActions';
 import {clearCardDraft,loadCardDraft,cardDraftUrls,type CardDraft} from '../utils/cardDemonstrationDraft';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
@@ -12,7 +13,8 @@ import {KYRUB_TAG_MODEL_LABELS,isTagModel,parseTagExternalUrl,type KyrubTagModel
 import {parsePublicDestinationUrl,buildPublicDestinationPath} from '../../shared/publicDestinationRoutes';
 
 type Payload={
- id:string;model:KyrubTagModel;status:'unclaimed'|'active';
+ id:string;model:KyrubTagModel;status:'unclaimed'|'active'|'blocked';
+ passkeyManaged?:boolean;passkeyOrigin?:string;
  activation?:'account'|'code'|'email'|'setup';
  links:{name:string;url:string}[];
  presentation?:PublicPromotionalTagPresentation;
@@ -73,7 +75,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   }).then(async res=>{
    if(!res.ok)throw Error(res.status===404?'Dispositivo indisponível.':'Não foi possível consultar o dispositivo.');
    const value=await res.json() as Payload;
-   if(value.id!==identifier||!isTagModel(value.model)||!Array.isArray(value.links)||!['unclaimed','active'].includes(value.status))
+   if(value.id!==identifier||!isTagModel(value.model)||!Array.isArray(value.links)||!['unclaimed','active','blocked'].includes(value.status))
     throw Error('Dispositivo indisponível.');
    if(!ctrl.signal.aborted)setData(value);
   }).catch(e=>{if(!ctrl.signal.aborted)setError(e instanceof Error?e.message:'Dispositivo indisponível.');});
@@ -176,15 +178,18 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
       </div>)}
      </div>}
     </div>}
-    <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
+    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
    </section>:
+   data?.status==='blocked'&&data.passkeyManaged?<section className="space-y-3"><p role="status">Este cartão está bloqueado. As informações do titular não estão públicas.</p><KyrubTagPasskeyActions tagId={identifier} mode="blocked" origin={data.passkeyOrigin}/></section>:
    promotional?
    <KyrubCardDemonstration key={identifier} draftKey={'kyrub.card.demo.tag.'+identifier}
     onSave={savePresentation}
     onClear={()=>{setDraft({...EMPTY_PROMOTIONAL_PRESENTATION});try{sessionStorage.removeItem('kyrub.tag.draft.'+identifier);}catch{}}}>
     <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
      <h2 className="text-base font-bold">Cadastrar meu cartão</h2>
-     <p className="text-sm text-slate-300">Publique seu cartão nesta unidade, sem criar um perfil completo no Kyrub. A primeira pessoa que confirmar a titularidade por e-mail poderá gerenciá-la. Os dados preenchidos ficarão públicos neste endereço; links serão verificados pelo Kyrub.</p>
+     <p className="text-sm text-slate-300">Publique seu cartão nesta unidade, sem criar um perfil completo no Kyrub. A primeira pessoa que confirmar a titularidade poderá gerenciá-la. Os dados preenchidos ficarão públicos neste endereço; links serão verificados pelo Kyrub.</p>
+     {data.passkeyOrigin&&<KyrubTagPasskeyActions tagId={identifier} mode="register" origin={data.passkeyOrigin} getDraft={currentPresentation}/>}
+     {data.passkeyOrigin&&<p className="text-xs text-slate-300">Alternativa: confirmar por e-mail.</p>}
      {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
       <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>
        <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar vínculo e publicar apresentação da tag'}</button></div>:
@@ -210,13 +215,13 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
      return <a key={l.url} className="block rounded-xl border border-[#34443B] p-4" href={buildPublicDestinationPath(p.kind,p.identifier)??'/'}>{l.name}</a>;
     })}
    </section>}
-  {(showEdit||showRecovery)&&!owner&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+  {!data?.passkeyManaged&&(showEdit||showRecovery)&&!owner&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <h2 className="font-semibold">Acesso protegido do titular</h2>
    <p className="text-sm text-slate-300">Saber o endereço NFC não autoriza editar. Confirme sua identidade pelo e-mail usado na ativação.</p>
    {!user?.emailVerified?<TagEmailLinkIdentity tagId={identifier}/>:<p className="text-sm text-slate-300">Autenticado como {user.email}. Se esta é sua unidade, o painel de edição será aberto.</p>}
   </section>}
-  <button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>
-  {showRecovery&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+  {!data?.passkeyManaged&&<button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>}
+  {!data?.passkeyManaged&&showRecovery&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <p className="text-sm text-slate-300">Use o código secreto de recuperação entregue na primeira ativação. Será necessário verificar o novo e-mail; a tag ficará bloqueada até você revisá-la.</p>
    {user?.emailVerified?<><p className="text-sm text-slate-300">Novo e-mail verificado: {user.email}</p>
     <input type="password" autoComplete="off" spellCheck={false} className="min-h-11 w-full rounded-lg border border-[#34443B] bg-[#1D2924] p-3 font-mono" value={recoveryInput} onChange={e=>setRecoveryInput(e.target.value.trim().toLowerCase())} placeholder="Código de recuperação (48 caracteres)" maxLength={48}/>

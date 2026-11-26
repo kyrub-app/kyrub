@@ -60,3 +60,9 @@ export function stableTagPilotHost(env:NodeJS.ProcessEnv=process.env):string|nul
  if(env.VERCEL_ENV!=='preview'||!host||host===env.VERCEL_URL||!(/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/.test(host)))return null;
  return host;
 }
+
+/** Advertise only the exact fixed preview origin and never a production write capability. */
+export function tagPasskeyPilotOrigin():string|null{
+ if(process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')return null;
+ try{assertTagPilotWriteIsolated();const host=stableTagPilotHost();return host&&/^[a-z0-9-]+\.vercel\.app$/.test(host)?'https://'+host:null;}catch{return null;}
+}

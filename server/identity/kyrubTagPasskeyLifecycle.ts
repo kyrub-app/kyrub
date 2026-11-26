@@ -11,7 +11,7 @@ import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertS
 import type {PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import type {RegistrationResponseJSON,AuthenticationResponseJSON} from '@simplewebauthn/server';
 
-// Internal isolated lifecycle. No HTTP route yet; no Firebase custom token or
+// Isolated lifecycle. No Firebase custom token or
 // ordinary session is an authorization to mutate a passkey-owned tag.
 const tags=()=>adminDb.collection('kyrub_official_tags');
 const credentials=()=>adminDb.collection('kyrub_tag_passkey_credentials');
@@ -21,7 +21,7 @@ const quotas=()=>adminDb.collection('kyrub_tag_passkey_quotas');
 type RecordData=TagPasskeyChallenge&{presentation:PromotionalTagPresentation|null;tagVersion:string;credentialVersion:string|null};
 function scope(origin:string){
  assertTagPilotWriteIsolated();
- if(process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true')throw Error('TAG_PASSKEY_DISABLED');
+ if(process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')throw Error('TAG_PASSKEY_DISABLED');
  const host=stableTagPilotHost();
  if(!host)throw Error('TAG_PASSKEY_ORIGIN');
  return isolatedTagPasskeyScope('https://'+host,origin);
@@ -64,6 +64,18 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
  const rp=scope(origin);
  if(!isTagId(tagId)||!validChallengeId(challengeId))throw Error('TAG_INVALID');
  const tagRef=tags().doc(tagId),challengeRef=challenges().doc(challengeId),credentialRef=credentials().doc(tagId);
+ // Bound invalid proofs before invoking cryptography. A failed assertion never
+ // receives unlimited retries; the quota is shared across all challenges of a unit.
+ await adminDb.runTransaction(async tx=>{
+  const quotaRef=quotas().doc(tagId+'-verify');
+  const [attempt,quota]=await Promise.all([tx.get(challengeRef),tx.get(quotaRef)]);
+  const candidate=attempt.data() as (RecordData&{attempts?:number})|undefined;
+  if(!candidate||candidate.id!==challengeId||candidate.tagId!==tagId||candidate.scope.origin!==rp.origin||candidate.usedAt!==null||Date.now()>=candidate.expiresAt)throw Error('TAG_PASSKEY_CHALLENGE_INVALID');
+  const now=Date.now(),bucket=Math.floor(now/60000),count=quota.get('bucket')===bucket?Number(quota.get('count')):0,attempts=candidate.attempts??0;
+  if(!Number.isSafeInteger(count)||count<0||count>=12||!Number.isSafeInteger(attempts)||attempts<0||attempts>=3)throw Error('TAG_PASSKEY_RATE_LIMIT');
+  tx.update(challengeRef,{attempts:attempts+1});
+  tx.set(quotaRef,{bucket,count:count+1,deleteAfter:Timestamp.fromMillis(now+120000)});
+ });
  const [initial,challenge,credential]=await Promise.all([tagRef.get(),challengeRef.get(),credentialRef.get()]);
  const record=challenge.data() as RecordData|undefined,data=initial.data();
  if(!record||record.id!==challengeId||!isPasskeyMutation(record.purpose))throw Error('TAG_PASSKEY_CHALLENGE_INVALID');
