@@ -2,6 +2,7 @@ import express from 'express';
 import type {Auth} from 'firebase-admin/auth';
 import type {Firestore} from 'firebase-admin/firestore';
 import {isDocumentId} from './publicSocialAddressPolicy.js';
+import {consumeDirectoryQuota} from './directoryQuotaService.js';
 import {lookupAdminDirectoryIdentity} from './adminDirectoryIdentityService.js';
 
 const PROJECT='demo-kyrub-welcome';
@@ -13,10 +14,9 @@ export function adminDirectoryPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv=pr
  !env.VERCEL&&!env.FIREBASE_SERVICE_ACCOUNT_JSON&&!env.GOOGLE_APPLICATION_CREDENTIALS;
 }
 
-/** Test-only transport; production MFA and distributed limits are not attested. */
+/** Test-only transport; production MFA and deployment are not attested. */
 export function createAdminDirectoryEmulatorRouter(db:Firestore,auth:Auth){
  const router=express.Router();
- const usage=new Map<string,{expires:number;count:number}>();
  router.all('/admin-directory-pilot/identity',async(req,res)=>{
   res.set('Cache-Control','private, no-store');
   if(!adminDirectoryPilotEnabled(db)||auth.app.options.projectId!==PROJECT||
@@ -33,13 +33,10 @@ export function createAdminDirectoryEmulatorRouter(db:Firestore,auth:Auth){
    if(actor.disabled||!actor.emailVerified)throw Error('AUTH_INVALID');
    uid=identity.uid;
   }catch{res.sendStatus(401);return;}
-  const now=Date.now();
-  for(const [key,item] of usage)if(item.expires<=now)usage.delete(key);
-  const item=usage.get(uid);
-  if((item&&item.count>=12)||(!item&&usage.size>=5000)){
-   res.set('Retry-After',String(item?Math.max(1,Math.ceil((item.expires-now)/1000)):60)).sendStatus(429);return;
-  }
-  usage.set(uid,{expires:item?.expires??now+60000,count:(item?.count??0)+1});
+  try{
+   const quota=await consumeDirectoryQuota(db,uid,'admin');
+   if(!quota.allowed){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
+  }catch{res.status(503).json({error:'ADMIN_DIRECTORY_UNAVAILABLE'});return;}
   const body=req.body;
   if(Object.keys(req.query).length||!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==1||typeof body.term!=='string'){
    res.status(400).json({error:'ADMIN_DIRECTORY_INVALID'});return;
