@@ -67,6 +67,6 @@ test('card panel puts branding beside its single primary invitation and displays
  assert.match(page,/!promotional&&.*<header/);
  for(const path of ['src/components/KyrubCardDemonstration.tsx','src/components/PromotionalKyrubTagEditor.tsx','src/components/KyrubTagPasskeyActions.tsx']){
   const source=readFileSync(path,'utf8');
-  for(const example of ['kyrub.com/kairubido/seu-perfil','kyrub.com/@sua-loja','kyrub.com/comunidade/sua-comunidade'])assert.ok(source.includes(example));
+  for(const example of ['kyrub.com/seu-perfil','kyrub.com/@sua-loja','kyrub.com/comunidade/sua-comunidade'])assert.ok(source.includes(example));
  }
 });
