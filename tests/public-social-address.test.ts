@@ -59,3 +59,24 @@ test('unified editor reserves a personal identifier without publishing it or der
  assert.match(center,/Identificador ainda não definido/);
  assert.doesNotMatch(center,/getProfileHandle|@\{profileHandle\}/);
 });
+
+test('profile completion is triggered only after persisted profile save or confirmed reservation, not a catalog read',()=>{
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const address=readFileSync('src/components/PublicSocialAddressEditor.tsx','utf8');
+ const pilot=readFileSync('src/utils/profileCompletionPilot.ts','utf8');
+ const router=readFileSync('server/gamification/profileCompletionEmulatorRouter.ts','utf8');
+ const server=readFileSync('server.ts','utf8');
+ const api=readFileSync('api/health.ts','utf8');
+ assert.match(editor,/await updateProfile\(user,[\s\S]*?setMessage\('Foto, nome e biografia sincronizados\.'\);\s*void reconcileProfileCompletionPilot\(user\)/);
+ assert.match(editor,/onReserved=\{\(\)=>void reconcileProfileCompletionPilot\(user\)\}/);
+ assert.match(address,/if\(auth.currentUser===user\)[\s\S]*?onReserved\?\.\(\)/);
+ assert.match(pilot,/import.meta.env\?\.DEV!==true/);
+ assert.match(pilot,/auth.app.options.projectId!=='demo-kyrub-welcome'/);
+ assert.match(pilot,/window.location.hostname!=='127.0.0.1'/);
+ assert.match(pilot,/body:'\{\}'/);
+ assert.match(pilot,/notifyRewardRefresh\(user,'profile_completion'\)/);
+ assert.match(router,/req.method!=='POST'/);
+ assert.match(router,/Object.keys\(req.body\).length/);
+ assert.match(server,/KYRUB_PROFILE_COMPLETION_PILOT==='true'&&process.env.NODE_ENV==='test'/);
+ assert.doesNotMatch(api,/profile-completion-pilot/);
+});
