@@ -31,3 +31,13 @@ test('malformed or foreign responses fail closed, never grant ownership',async()
  await assert.rejects(verifyTagAuthentication(a,credential,{id:'finder',rawId:'finder',response:{}} as Parameters<typeof verifyTagAuthentication>[2],now+1),/TAG_PASSKEY_INVALID/);
  await assert.rejects(verifyTagAuthentication(a,credential,{id:credential.id,rawId:credential.id,response:{userHandle:'other'}} as Parameters<typeof verifyTagAuthentication>[2],now+1),/TAG_PASSKEY_INVALID/);
 });
+
+test('recovery creates a new credential bound to the old owner and excludes the previous key',async()=>{
+ const r=issueTagPasskeyChallenge({tagId,scope,purpose:'recover',ownerId:'owner-123',credentialId:credential.id},now);
+ const options=await tagRegistrationOptions(r,now+1);
+ assert.equal(options.challenge,r.challenge);
+ assert.equal(options.authenticatorSelection?.userVerification,'required');
+ assert.deepEqual(options.excludeCredentials?.map(c=>c.id),[credential.id]);
+ await assert.rejects(tagAuthenticationOptions(r,credential,now+1));
+ await assert.rejects(verifyTagRegistration(r,{} as Parameters<typeof verifyTagRegistration>[1],now+1));
+});

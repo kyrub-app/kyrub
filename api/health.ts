@@ -151,11 +151,11 @@ export default async function handler(
       const input=body as Record<string,unknown>;
       const {isPasskeyMutation}=await import('../server/identity/kyrubTagPasskeyState.js');
       const service=await import('../server/identity/kyrubTagPasskeyLifecycle.js');
-      if(input.action==='begin'&&isPasskeyMutation(input.purpose)&&Object.keys(input).every(k=>['action','purpose','presentation'].includes(k))){
-        response.status(200).json(await service.beginTagPasskeyMutation(origin,id,input.purpose,input.presentation));return;
+      if(input.action==='begin'&&isPasskeyMutation(input.purpose)&&Object.keys(input).every(k=>['action','purpose','presentation','recoveryCode'].includes(k))){
+        response.status(200).json(await service.beginTagPasskeyMutation(origin,id,input.purpose,input.presentation,input.recoveryCode));return;
       }
-      if(input.action==='finish'&&typeof input.challengeId==='string'&&input.response&&typeof input.response==='object'&&!Array.isArray(input.response)&&Object.keys(input).length===3){
-        response.status(200).json(await service.finishTagPasskeyMutation(origin,id,input.challengeId,input.response as Parameters<typeof service.finishTagPasskeyMutation>[3]));return;
+      if(input.action==='finish'&&typeof input.challengeId==='string'&&input.response&&typeof input.response==='object'&&!Array.isArray(input.response)&&Object.keys(input).every(k=>['action','challengeId','response','recoveryCode'].includes(k))){
+        response.status(200).json(await service.finishTagPasskeyMutation(origin,id,input.challengeId,input.response as Parameters<typeof service.finishTagPasskeyMutation>[3],input.recoveryCode));return;
       }
       response.status(400).json({error:'TAG_INVALID'});
     }catch(error){

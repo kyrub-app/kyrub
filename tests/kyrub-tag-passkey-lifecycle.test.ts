@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential} from '../server/identity/kyrubTagPasskeyState';
+import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement} from '../server/identity/kyrubTagPasskeyState';
 const virgin={distribution:'promotional',model:'adesivo',ownerId:null,activationHash:null,enabled:false,manufacturingState:'released'};
 const owned={...virgin,ownerAuthMode:'passkey',ownerId:'tagpk_'+'x'.repeat(43),enabled:true};
 test('only open stock may register and only passkey-owned stock may mutate',()=>{
@@ -48,4 +48,32 @@ test('pilot API is dark by default, exact origin and no credential response leak
  const svc=readFileSync('server/identity/kyrubTagPasskeyLifecycle.ts','utf8');assert.match(svc,/attempts>=3/);assert.match(svc,/count>=12/);
  const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');assert.match(page,/mode="register"/);assert.match(page,/mode="active"/);assert.match(page,/mode="blocked"/);assert.match(page,/!data\?\.passkeyManaged&&showRecovery/);
  const controls=readFileSync('src/components/KyrubTagPasskeyActions.tsx','utf8');assert.match(controls,/origin===window.location.origin/);assert.match(controls,/Salvar e publicar com chave de acesso/);assert.match(controls,/runKyrubTagPasskey/);
+});
+
+test('recovery only applies to a previously claimed passkey unit and preserves a distinct replacement',()=>{
+ assert.equal(isPasskeyMutation('recover'),true);
+ assert.throws(()=>assertPasskeyTagState(virgin,'recover'));
+ assert.throws(()=>assertPasskeyTagState({...owned,ownerAuthMode:'email'},'recover'));
+ assert.doesNotThrow(()=>assertPasskeyTagState(owned,'recover'));
+ assert.doesNotThrow(()=>assertPasskeyTagState({...owned,blocked:true},'recover'));
+ assert.equal(normalizePasskeyMutation('recover',null),null);
+ assert.throws(()=>normalizePasskeyMutation('recover',{name:'attacker'}));
+ const c={id:'old',publicKey:'YWJj',counter:1,userHandle:'x'.repeat(43),backedUp:false};
+ const next={...c,id:'new',publicKey:'ZGVm',userHandle:'y'.repeat(43),counter:0};
+ assert.doesNotThrow(()=>assertRecoveryCredentialReplacement(c,next));
+ for(const bad of [{...next,id:c.id},{...next,publicKey:c.publicKey},{...next,userHandle:c.userHandle}])assert.throws(()=>assertRecoveryCredentialReplacement(c,bad));
+});
+test('recovery requires the secret twice, counts failed starts and atomically revokes previous proof',()=>{
+ const svc=readFileSync('server/identity/kyrubTagPasskeyLifecycle.ts','utf8');
+ assert.match(svc,/tx.set\(quotaRef,[^\n]+\n  if\(purpose==='recover'&&!recoveryMatches/);
+ assert.match(svc,/recovering&&!recoveryMatches\(tagId,data,recoverySecret\)/);
+ const branch=svc.split('}else if(recovering){')[1].split('}else{')[0];
+ assert.match(branch,/!recoveryMatches\(tagId,current,recoverySecret\)/);
+ assert.match(branch,/currentIndex.exists/);assert.match(branch,/tx.update\(oldIndex,\{revokedAt:stamp\}\)/);
+ assert.match(branch,/tx.create\(index,\{tagId,ownerId\}\)/);
+ assert.match(branch,/passkeyRecoveryHash:tagPasskeyRecoveryHash\(tagId,recoveryCode\),blocked:true,enabled:false/);
+ assert.doesNotMatch(branch,/firstOwnerId:|tx.create\(marker|presentation:/);
+ assert.doesNotMatch(svc,/tx\.(?:create|set|update)\([^\n]*recoverySecret/);
+ const ui=readFileSync('src/components/KyrubTagPasskeyActions.tsx','utf8');
+ assert.match(ui,/Recuperar com nova chave de acesso/);assert.match(ui,/setSecret\(''\)/);
 });

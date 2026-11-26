@@ -7,12 +7,12 @@ import {isTagId} from '../../shared/kyrubTagContract.js';
 export const TAG_PASSKEY_TTL_MS=5*60*1000;
 export const TAG_PASSKEY_USER_VERIFICATION='required' as const;
 export const TAG_PASSKEY_REQUIRE_USER_VERIFICATION=true;
-export type TagPasskeyPurpose='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'link-account';
+export type TagPasskeyPurpose='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account';
 type Scope={origin:string;rpId:string};
 const opaque=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v);
 const ownerValid=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
 const credentialValid=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,1400}$/.test(v);
-const purposes=new Set<string>(['register','edit','block','unblock','rotate-recovery','link-account']);
+const purposes=new Set<string>(['register','edit','block','unblock','rotate-recovery','recover','link-account']);
 
 // Trust the configured, exact canonical origin, never a request Host header.
 // Preview credentials must be scoped to the fixed isolated hostname, not to
