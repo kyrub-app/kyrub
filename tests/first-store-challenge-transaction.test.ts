@@ -97,3 +97,12 @@ test('first-store XP replay rejects altered ledger provenance', async () => {
     assert.equal(f.counts().writes, 2);
   }
 });
+
+test('first-store transaction rejects any changed reward before reading or writing',async()=>{
+  for(const changed of [{...challenge,rewardKCoins:100},{...challenge,rewardXp:3}]){
+    await assert.rejects(awardVerifiedFirstStoreChallengeInTransaction({
+      get:async()=>{throw Error('SHOULD_NOT_READ');},
+      create:()=>{throw Error('SHOULD_NOT_WRITE');},
+    } as any,{challenge:changed,event,...refs as any}),/FIRST_STORE_CHALLENGE_NOT_ELIGIBLE/);
+  }
+});
