@@ -80,3 +80,14 @@ test('profile completion is triggered only after persisted profile save or confi
  assert.match(server,/KYRUB_PROFILE_COMPLETION_PILOT==='true'&&process.env.NODE_ENV==='test'/);
  assert.doesNotMatch(api,/profile-completion-pilot/);
 });
+
+test('social identity and collaborator picker do not display private contact data as profile attributes',()=>{
+ const directory=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ const picker=readFileSync('src/components/modals/UserSearchModal.tsx','utf8');
+ assert.doesNotMatch(directory,/\.(?:email|whatsapp)\s*\|\|/);
+ assert.match(directory,/user.isProfileVisible === true/);
+ assert.match(picker,/data.isProfileVisible !== true/);
+ assert.match(picker,/searchableEmail === normalizedSearch/);
+ assert.doesNotMatch(picker,/searchableEmail\.includes|data.email.split|E-mail não informado/);
+ // This is a presentation regression, not proof of database-level privacy.
+});
