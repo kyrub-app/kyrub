@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Search, UserRound, Users } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import {
@@ -68,7 +68,6 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
   onClose,
   userSearchEmail,
   setUserSearchEmail,
-  appUsers = [],
   selectedFriendsForNote,
   setSelectedFriendsForNote,
   triggerToast,
@@ -81,21 +80,24 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
     if (!isOpen) return;
 
     let unsubscribeDirectory = () => undefined;
+    let active = true;
 
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      if (!active) return;
       unsubscribeDirectory();
+      setDirectoryUsers([]);
       setDirectoryError('');
 
       if (!user) {
-        setDirectoryUsers(appUsers);
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
       unsubscribeDirectory = onSnapshot(
-        collection(db, 'users'),
+        query(collection(db, 'users'), where('isProfileVisible', '==', true)),
         snapshot => {
+          if (!active || auth.currentUser !== user) return;
           const users = snapshot.docs
             .flatMap(snapshotDocument => {
               const data = snapshotDocument.data() as Record<string, unknown>;
@@ -117,12 +119,11 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
           setIsLoading(false);
         },
         error => {
+          if (!active || auth.currentUser !== user) return;
           console.warn('Diretório de usuários indisponível para notas.', error);
-          setDirectoryUsers(
-            appUsers.filter(directoryUser => directoryUser.id !== user.uid)
-          );
+          setDirectoryUsers([]);
           setDirectoryError(
-            'Não foi possível atualizar o diretório agora. Exibindo os usuários disponíveis no cache.'
+            'Não foi possível atualizar o diretório agora. Tente novamente.'
           );
           setIsLoading(false);
         }
@@ -130,10 +131,11 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
     });
 
     return () => {
+      active = false;
       unsubscribeAuth();
       unsubscribeDirectory();
     };
-  }, [appUsers, isOpen]);
+  }, [isOpen]);
 
   const filteredUsers = useMemo(() => {
     const normalizedSearch = userSearchEmail.trim().toLocaleLowerCase('pt-BR');
