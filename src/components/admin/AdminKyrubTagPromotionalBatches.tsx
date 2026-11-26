@@ -10,6 +10,7 @@ type Readiness={
  isolation:'emulator'|'isolated-project'|'unsafe';
  productionDataProtected:boolean;
  permanentStockEnabled?:boolean;
+ productionPasskeyTestId?:string|null;
  clientProjectMatchesServer:boolean;
  previewHost:string|null;
  issuanceEnabled:boolean;
@@ -61,7 +62,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
    headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:body?JSON.stringify(body):undefined});
   if(!res.ok){const body=await res.json().catch(()=>({}));throw Error(body.error==='second_factor_required'?'A emissão definitiva exige autenticação administrativa em dois fatores.':body.error==='reauthentication_required'?'Entre novamente com o segundo fator para emitir o lote.':'Inventário ou emissão indisponível.');}
-  return res.json() as Promise<{batches?:unknown[];batch?:unknown;replay?:boolean;readiness?:Readiness}>;
+  return res.json() as Promise<{batches?:unknown[];batch?:unknown;replay?:boolean;released?:boolean;tagId?:string;readiness?:Readiness}>;
  }
  useEffect(()=>{
   const ctrl=new AbortController();setReady(false);setBatches([]);setNotice('');
@@ -87,6 +88,13 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
   }catch(error){
    setNotice(error instanceof Error?error.message:'Não foi possível confirmar a emissão. Repetir preservará a mesma solicitação, sem duplicar lote.');
   }finally{setBusy(false);}
+ }
+ const [releasedTest,setReleasedTest]=useState('');
+ async function releaseTest(batchId:string,tagId:string){
+  if(busy||writing||tagId!==readiness?.productionPasskeyTestId||!productionPanel)return;
+  if(!window.confirm('Liberar somente esta unidade já conferida para o teste por chave de acesso?'))return;
+  setBusy(true);setNotice('');
+  try{const result=await request('POST',{action:'release-passkey-test',batchId,tagId});if(result.released!==true||result.tagId!==tagId)throw Error('Liberação não confirmada.');setReleasedTest(tagId);setNotice('Unidade liberada. Aproxime novamente a tag ou abra seu cartão oficial.');}catch(error){setNotice(error instanceof Error?error.message:'Não foi possível liberar a unidade.');}finally{setBusy(false);}
  }
  const unit=batches.flatMap(batch=>batch.units).find(item=>item.id===selected);
  // A test with an isolated Firebase project must not write kyrub.com,
@@ -122,13 +130,19 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
    <AdminKyrubTagNfcWizard key={user.uid} user={user} readiness={readiness} batches={official} onBatch={batch=>setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)])}/>
    <details className="rounded-xl border border-[#34443B] p-3">
     <summary className="cursor-pointer font-semibold">Histórico de tags validadas ({validated.length})</summary>
-    <p className="mt-2 text-slate-300">Unidades com URL gravada, relida e registrada no servidor. Ativação pública ainda bloqueada.</p>
+    <p className="mt-2 text-slate-300">Unidades com URL gravada, relida e registrada no servidor. A ativação depende da liberação individual autorizada.</p>
     {validated.length===0?<p className="mt-2 text-slate-400">Nenhum adesivo conferido.</p>:<div className="mt-3 space-y-2">{validated.map(({batchId,unit})=><div key={unit.id} className="rounded-lg border border-[#34443B] p-3">
      <p className="font-semibold text-emerald-300">Validada · {unit.id.slice(-8)}</p>
      <p className="text-xs text-slate-400">Lote {batchId.slice(-8)}</p>
      <p className="break-all text-xs">{unit.url}</p>
     </div>)}</div>}
    </details>
+   {readiness.productionPasskeyTestId&&<section className="rounded-xl border border-orange-500/50 p-3 space-y-2"><h5 className="font-semibold">Teste de ativação por chave de acesso</h5>
+    <p className="break-all text-xs">Unidade selecionada: {readiness.productionPasskeyTestId}</p>
+    {validated.filter(v=>v.unit.id===readiness.productionPasskeyTestId).map(({batchId,unit})=><div key={unit.id} className="space-y-2"><button type="button" className={btn} disabled={busy||writing||releasedTest===unit.id} onClick={()=>void releaseTest(batchId,unit.id)}>{releasedTest===unit.id?'Unidade liberada':'Liberar esta unidade para ativação'}</button><a className="block underline text-orange-300" href={unit.url} target="_blank" rel="noopener noreferrer">Abrir cartão oficial</a></div>)}
+    {!validated.some(v=>v.unit.id===readiness.productionPasskeyTestId)&&<p role="status">Unidade não localizada entre as leituras confirmadas. Retome a unidade pendente e confira o NFC sem regravar.</p>}
+    {notice&&<p role="status">{notice}</p>}
+   </section>}
    <p className="text-xs text-slate-400">{official.length} lote(s) · Limite atual: 100 lotes.</p>
   </section>;
  }

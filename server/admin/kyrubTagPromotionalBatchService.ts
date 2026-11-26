@@ -3,6 +3,8 @@ import {FieldValue} from 'firebase-admin/firestore';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {authorizePilot} from './kyrubTagPilotService.js';
 import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
+import {productionTagPasskeyTestId} from '../identity/kyrubTagPilotIsolation.js';
+import {assertSingleTagRelease} from './kyrubTagSingleReleasePolicy.js';
 import {tagUrl} from '../../shared/kyrubTagContract.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION} from '../../shared/kyrubTagPromotional.js';
 import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer,stableTagPilotHost} from '../identity/kyrubTagPilotIsolation.js';
@@ -44,6 +46,7 @@ function pilotReadiness(){
  return {
   isolation,
   permanentStockEnabled:permanentMode(),
+  productionPasskeyTestId:permanentMode()?productionTagPasskeyTestId():null,
   productionDataProtected:isolation==='unsafe',
   clientProjectMatchesServer:isolation!=='unsafe'&&tagPilotClientMatchesServer(),
   issuanceEnabled:enabled(),
@@ -168,6 +171,22 @@ export async function confirmPromotionalTagReadback(
  });
 }
 
+/** Release only the explicitly selected, previously scanned permanent unit. */
+export async function releaseSinglePasskeyTestUnit(uid:string,batchId:unknown,tagId:unknown){
+ const approved=productionTagPasskeyTestId();
+ if(!permanentMode()||!approved||tagId!==approved||!batchIdValid(batchId)||!batchIdValid(tagId))throw Error('TAG_BATCH_DISABLED');
+ const batch=batchDocs().doc(batchId),unit=adminDb.collection('kyrub_official_tags').doc(tagId);
+ return adminDb.runTransaction(async tx=>{
+  const [role,bd,td]=await Promise.all([tx.get(adminRole(uid)),tx.get(batch),tx.get(unit)]);
+  assertRole(uid,role.data());
+  const state=assertSingleTagRelease(approved,batchId,tagId,bd.data(),td.data());
+  if(state==='released')return {released:true,replay:true,tagId};
+  tx.update(unit,{manufacturingState:'released',releasedAt:FieldValue.serverTimestamp(),releasedBy:uid});
+  tx.create(auditCollection().doc('tag_passkey_test_release_'+tagId),{id:'tag_passkey_test_release_'+tagId,action:'admin.kyrub_tag.single_passkey_test_released',actorId:uid,actorRole:'super_admin',targetType:'kyrub_official_tag',targetId:tagId,batchId,source:'server',createdAt:FieldValue.serverTimestamp()});
+  return {released:true,replay:false,tagId};
+ });
+}
+
 export async function handlePromotionalBatch(authorization:string,method:string,body:unknown){
  try{
   if(method!=='GET'&&method!=='POST')return {status:405,body:{error:'METHOD_NOT_ALLOWED'}};
@@ -187,6 +206,9 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   }
   if(!body||typeof body!=='object'||Array.isArray(body))throw Error('TAG_BATCH_INVALID');
   const b=body as Record<string,unknown>;
+  if(b.action==='release-passkey-test'&&Object.keys(b).length===3){
+   return {status:200,body:await releaseSinglePasskeyTestUnit(uid,b.batchId,b.tagId)};
+  }
   if(b.action==='confirm-readback'&&Object.keys(b).length===4){
    const result=await confirmPromotionalTagReadback(uid,b.batchId,b.tagId,b.readUrl);
    return {status:200,body:result};
