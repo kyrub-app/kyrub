@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../utils/firebase';
+import { auth, db } from '../utils/firebase';
 import type { AuthorDisplayIdentity } from '../utils/authorDisplayIdentity';
 
 export type LiveAuthorIdentity = AuthorDisplayIdentity;
@@ -18,10 +18,21 @@ const validAuthorId = (id: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(id)
  */
 export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<string, LiveAuthorIdentity> {
   const idsKey = [...new Set(authorIds.filter(validAuthorId))].sort().join('|');
-  const [profiles, setProfiles] = useState<Record<string, LiveAuthorIdentity>>({});
+  const [session,setSession]=useState(()=>auth.currentUser);
+  const [state,setState]=useState<{session:typeof auth.currentUser;profiles:Record<string,LiveAuthorIdentity>}>(()=>({session:auth.currentUser,profiles:{}}));
+  const profiles=state.session===session?state.profiles:{};
+  useEffect(()=>auth.onAuthStateChanged(next=>{
+    setSession(next);
+    setState(previous=>previous.session===next?previous:{session:next,profiles:{}});
+  }),[]);
 
   useEffect(() => {
+    if(!session||auth.currentUser!==session)return;
     let active = true;
+    const setProfiles=(update:(current:Record<string,LiveAuthorIdentity>)=>Record<string,LiveAuthorIdentity>)=>{
+      if(!active||auth.currentUser!==session)return;
+      setState(previous=>previous.session===session?{session,profiles:update(previous.profiles)}:previous);
+    };
     const ids = idsKey ? idsKey.split('|') : [];
     const permitted = new Set(ids);
     setProfiles(current => {
@@ -34,7 +45,7 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
         if (!active) return;
         const data = snapshot.data();
         const name = typeof data?.name === 'string' ? data.name.trim().slice(0, 80) : '';
-        const avatar = data?.isProfileVisible === false ? undefined
+        const avatar = data?.isProfileVisible !== true ? ''
           : typeof data?.photoUrl === 'string' ? data.photoUrl.trim() : '';
         setProfiles(current => {
           const existing = current[uid];
@@ -63,10 +74,11 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
       active = false;
       stops.forEach(stop => stop());
     };
-  }, [idsKey]);
+  }, [idsKey,session]);
 
   return useMemo(() => {
+    if(!session||auth.currentUser!==session)return {};
     const permitted = new Set(idsKey ? idsKey.split('|') : []);
     return Object.fromEntries(Object.entries(profiles).filter(([uid]) => permitted.has(uid)));
-  }, [idsKey, profiles]);
+  }, [idsKey, profiles,session]);
 }
