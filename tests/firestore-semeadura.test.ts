@@ -373,3 +373,37 @@ test('staff lookup is scoped to canonical store authority and exact contact with
  await store.collection('members').doc('staff-private').set({storeId:'staff-directory',userId:'staff-private',role:'seller',status:'invited'});
  assert.deepEqual(await lookup('staff-owner','private@example.invalid'),[]);
 });
+
+test('staff invitation revalidates authority, exact lookup, eligibility and uniqueness atomically',async()=>{
+ const {createStoreStaffInvitation}=await import('../server/identity/storeStaffDirectoryService.js');
+ const storeId='invite-private-store',owner='invite-owner',manager='invite-manager',target='invite-target';
+ const store=db.doc('stores/'+storeId),targetRef=db.doc('users/'+target),memberRef=store.collection('members').doc(target);
+ await store.set({id:storeId,ownerId:owner,name:'Loja de teste'});
+ await store.collection('members').doc(manager).set({storeId,userId:manager,role:'manager',status:'active'});
+ await targetRef.set({uid:target,name:'Nome reservado',email:'target@example.invalid',photoUrl:'https://example.invalid/private',isProfileVisible:false});
+ const invite=(actor:string,term:string,role='seller')=>createStoreStaffInvitation(db,actor,storeId,target,term,role);
+ await assert.rejects(invite('outsider','target@example.invalid'),/STAFF_DIRECTORY_FORBIDDEN/);
+ await assert.rejects(invite(manager,'target@example.invalid','manager'),/STAFF_DIRECTORY_FORBIDDEN/);
+ await assert.rejects(invite(owner,'Nome reservado'),/STAFF_DIRECTORY_FORBIDDEN/);
+ await assert.rejects(invite(owner,'wrong@example.invalid'),/STAFF_DIRECTORY_FORBIDDEN/);
+ await store.collection('members').doc(manager).update({status:'suspended'});
+ await assert.rejects(invite(manager,'target@example.invalid'),/STAFF_DIRECTORY_FORBIDDEN/);
+ await db.doc('erp_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only'});
+ await assert.rejects(invite(owner,'target@example.invalid'),/STAFF_DIRECTORY_AGE_REQUIRED/);
+ await db.doc('age_eligibility_private/'+owner).set({uid:owner,status:'verified_adult'});
+ await db.doc('age_eligibility_private/'+target).set({uid:target,status:'verified_underage'});
+ await assert.rejects(invite(owner,'target@example.invalid'),/STAFF_DIRECTORY_AGE_REQUIRED/);
+ assert.equal((await memberRef.get()).exists,false);
+ await db.doc('age_eligibility_private/'+target).update({status:'verified_adult'});
+ const results=await Promise.allSettled([invite(owner,'target@example.invalid'),invite(owner,'target@example.invalid')]);
+ assert.equal(results.filter(result=>result.status==='fulfilled').length,1);
+ const rejected=results.find(result=>result.status==='rejected');
+ assert.match(String(rejected?.reason),/STAFF_INVITATION_EXISTS/);
+ const record=(await memberRef.get()).data()!;
+ assert.equal(record.status,'invited');assert.equal(record.role,'seller');assert.equal(record.invitedBy,owner);
+ assert.equal(record.displayName,'Conta Kyrub');assert.equal(record.email,'');assert.equal(record.photoUrl,'');
+ assert.equal(record.acceptedAt,'');assert.equal(record.userId,target);
+ const targetClient=environment.authenticatedContext(target).firestore();
+ await assertSucceeds(getDoc(doc(targetClient,memberRef.path)));
+ await assertFails(getDoc(doc(environment.authenticatedContext('outsider').firestore(),memberRef.path)));
+});
