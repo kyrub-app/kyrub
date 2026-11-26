@@ -132,3 +132,65 @@ test('stored age eligibility denies mismatched identity, unknown capability and 
  assert.equal(evaluateStoredCapabilityAgeAccess({actorUid:'',record:{uid:'',status:'verified_adult'},capability:'account_ingress',policy:'verified_adult_only'}),false);
  assert.equal(evaluateStoredCapabilityAgeAccess({actorUid:'owner',record:{uid:'owner',status:'verified_adult'},capability:'unknown' as Input['capability'],policy:'verified_adult_only'}),false);
 });
+
+
+test('profile award is isolated and cannot reach real Firebase even with the pilot flag',async()=>{
+ const {profileCompletionPilotEnabled,grantIsolatedProfileCompletion}=await import('../server/gamification/profileCompletionAwardPilot.js');
+ const db={projectId:'demo-kyrub-welcome'} as Parameters<typeof profileCompletionPilotEnabled>[0];
+ const env={KYRUB_PROFILE_COMPLETION_PILOT:'true',NODE_ENV:'test',GCLOUD_PROJECT:'demo-kyrub-welcome',
+  GOOGLE_CLOUD_PROJECT:'demo-kyrub-welcome',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099'};
+ assert.equal(profileCompletionPilotEnabled(db,env),true);
+ for(const override of [{NODE_ENV:'production'},{VERCEL:'1'},{FIREBASE_SERVICE_ACCOUNT_JSON:'present'},
+  {GOOGLE_APPLICATION_CREDENTIALS:'present'},{FIRESTORE_EMULATOR_HOST:'remote:8088'},
+  {FIREBASE_AUTH_EMULATOR_HOST:''},{KYRUB_PROFILE_COMPLETION_PILOT:'false'},{GCLOUD_PROJECT:'kyrub-b8d0e'}])
+  assert.equal(profileCompletionPilotEnabled(db,{...env,...override}),false);
+ const remote={projectId:'kyrub-b8d0e'} as typeof db;
+ assert.equal(profileCompletionPilotEnabled(remote,env),false);
+ await assert.rejects(grantIsolatedProfileCompletion(remote,'u1',async()=>{throw Error('MUST_NOT_READ');}),/PROFILE_COMPLETION_RELEASE_UNAVAILABLE/);
+});
+
+test('profile award atomically credits once, validates saved evidence and refuses corrupt receipts in isolated zero-history fixture',async()=>{
+ const {grantIsolatedProfileCompletion}=await import('../server/gamification/profileCompletionAwardPilot.js');
+ const {emptyCurrencyCheckpoint}=await import('../server/gamification/semeaduraNoWelcomeAuthority.js');
+ const {pitangaHistoricalMembershipDigest}=await import('../server/gamification/pitangaHistoricalMembership.js');
+ const env={KYRUB_PROFILE_COMPLETION_PILOT:'true',NODE_ENV:'test',GCLOUD_PROJECT:'demo-kyrub-welcome',
+  GOOGLE_CLOUD_PROJECT:'demo-kyrub-welcome',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099',
+  KYRUB_SEMEADURA_NO_WELCOME_PILOT:'true',KYRUB_PITANGA_WELCOME_PROJECT_ID:'demo-kyrub-welcome',
+  KYRUB_PITANGA_WELCOME_FENCE_EPOCH:'welcome-emulator-only',KYRUB_WELCOME_BONUS_EFFECTIVE_AT:'2026-11-15T00:00:00.000Z'};
+ const keys=[...Object.keys(env),'VERCEL','FIREBASE_SERVICE_ACCOUNT_JSON','GOOGLE_APPLICATION_CREDENTIALS'];
+ const before=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ try{
+  Object.assign(process.env,env);for(const k of keys.filter(k=>!(k in env)))delete process.env[k];
+  const uid='profile-test',root='users/'+uid,epoch='welcome-emulator-only',challenge=PROFILE_COMPLETION_CHALLENGE.id;
+  const balance=root+'/pitangaBalance/balance',award=root+'/rewardLedger/earn_'+challenge,receipt=root+'/challengeRewards/'+challenge;
+  const checkpoint=emptyCurrencyCheckpoint(uid);
+  const records=new Map<string,Record<string,unknown>>([
+   ['systemControl/pitangaLegacyWriterFence',{status:'fenced',writersVerified:true,epoch}],
+   ['age_eligibility_private/'+uid,{uid,status:'verified_adult'}],
+   ['global_challenges/'+challenge,{...PROFILE_COMPLETION_CHALLENGE,status:'active'}],
+   [balance,{userId:uid,availableKCoins:0,migrationEpoch:epoch}],
+   [root+'/pitangaMigration/receipt',{userId:uid,fenceEpoch:epoch,balance:0,entryCount:0,ledgerSha256:checkpoint.ledgerSha256,
+    historicalMembershipSha256:pitangaHistoricalMembershipDigest({userId:uid,entryIds:[]})}],
+  ]);
+  const ref=(path:string):any=>({path,id:path.split('/').pop(),collection:(n:string)=>ref(path+'/'+n),doc:(n:string)=>ref(path+'/'+n)});
+  const snap=(path:string)=>({id:path.split('/').pop(),exists:records.has(path),data:()=>records.get(path),get:(key:string)=>records.get(path)?.[key]});
+  let writes=0;
+  const db={projectId:'demo-kyrub-welcome',collection:ref,doc:ref,runTransaction:async(fn:(tx:any)=>Promise<unknown>)=>{
+   const staged:Array<()=>void>=[];
+   const result=await fn({get:async(r:any)=>r.path===root+'/rewardLedger'
+    ?{docs:[...records.keys()].filter(p=>p.startsWith(r.path+'/')).map(snap)}
+    :snap(r.path),update:(r:any,data:Record<string,unknown>)=>staged.push(()=>{records.set(r.path,{...records.get(r.path),...data});writes++;}),
+    create:(r:any,data:Record<string,unknown>)=>staged.push(()=>{assert.equal(records.has(r.path),false);records.set(r.path,data);writes++;})});
+   staged.forEach(write=>write());return result;
+  }} as unknown as Parameters<typeof grantIsolatedProfileCompletion>[0];
+  const evidence=async()=>({displayName:'Apelido',handle:'apelido',handleOwnerUid:uid,bio:'Apresentação'});
+  await assert.rejects(grantIsolatedProfileCompletion(db,uid,async()=>({...await evidence(),handleOwnerUid:'other'})),/NOT_ELIGIBLE/);
+  assert.equal(writes,0);
+  assert.deepEqual(await grantIsolatedProfileCompletion(db,uid,evidence),{replay:false,pitangas:100,xp:0,balance:100});
+  assert.equal(writes,3);assert.equal(records.get(award)?.deltaKCoins,100);assert.equal(records.get(receipt)?.xp,0);
+  assert.deepEqual(await grantIsolatedProfileCompletion(db,uid,async()=>{throw Error('REPLAY_MUST_NOT_READ_PROFILE');}),{replay:true,pitangas:100,xp:0,balance:100});
+  assert.equal(writes,3);assert.equal([...records.keys()].some(p=>p.includes('/xpLedger/')||p.includes('first_login_v1')),false);
+  records.delete(receipt);
+  await assert.rejects(grantIsolatedProfileCompletion(db,uid,evidence),/RECEIPT_CONFLICT/);assert.equal(writes,3);
+ }finally{for(const k of keys){if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k];}}
+});
