@@ -8,45 +8,20 @@ import {collection,doc,getDoc,getDocs,setDoc,updateDoc,deleteDoc,serverTimestamp
 import {createStoreStaffInvitation} from '../server/identity/storeStaffDirectoryService';
 import {readVisibleSocialDirectoryPage,readVisibleAuthorIdentities} from '../server/identity/socialDiscoveryDirectoryService';
 import {consumeDirectoryQuota} from '../server/identity/directoryQuotaService';
+import {buildCadastralPrivacyCandidate,candidateSha256} from '../scripts/build-cadastral-privacy-candidate';
 
 const projectId='demo-kyrub-privacy';
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
 let app:App, db:Firestore, env:RulesTestEnvironment;
 before(async()=>{
  const baseline=readFileSync('.firebase/firestore.combined.rules','utf8');
- const root=/match \/users\/\{userId\}\s*\{\s*allow read: if isSignedIn\(\);/g;
- assert.equal([...baseline.matchAll(root)].length,1);
- // Do not change the actual rules artifact or deploy the candidate.
- let rules=baseline.replace(root,"match /users/{userId} {\n allow get: if isSignedIn() && request.auth.uid == userId;\n allow list: if false;");
- const start=rules.indexOf('match /users/{userId}/public_profile/{profileId}');
- assert.ok(start>=0);
- const end=rules.indexOf('allow read: if isSignedIn();',start);
- assert.ok(end>=0&&end-start<3000);
- rules=rules.slice(0,end)+`allow get: if isSignedIn() && profileId == 'main' &&
- (request.auth.uid == userId || (exists(/databases/$(database)/documents/users/$(userId)) &&
- get(/databases/$(database)/documents/users/$(userId)).data.isProfileVisible == true));
- allow list: if false;`+rules.slice(end+'allow read: if isSignedIn();'.length);
- // Simulate the coordinated cutover only in this emulator process.
- const memberStart=rules.indexOf('match /members/{userId} {');
- assert.ok(memberStart>=0);
- const memberCreate=rules.indexOf('allow create: if isSignedIn()',memberStart);
- assert.ok(memberCreate>=0&&memberCreate-memberStart<1000);
- const memberEnd=rules.indexOf(';',memberCreate);
- assert.ok(memberEnd>memberCreate&&memberEnd-memberCreate<1500);
- const original=rules.slice(memberCreate,memberEnd+1);
- assert.ok(original.includes("incoming().status == 'invited'")&&original.includes('storeSecActorCanManageRole'));
- rules=rules.slice(0,memberCreate)+'allow create: if false;'+rules.slice(memberEnd+1);
- // New social connections must target a currently public profile. Existing
- // participant reads and responses must not depend on discovery visibility.
- const connectionStart=rules.indexOf('match /connections/{connectionId} {');
- assert.ok(connectionStart>=0);
- const connectionCreate=rules.indexOf('allow create: if isSignedIn()',connectionStart);
- assert.ok(connectionCreate>=0&&connectionCreate-connectionStart<2500);
- const createPrefix='allow create: if isSignedIn()';
- rules=rules.slice(0,connectionCreate)+createPrefix+
-  '\n    && exists(/databases/$(database)/documents/users/$(incoming().receiverId))'+
-  '\n    && get(/databases/$(database)/documents/users/$(incoming().receiverId)).data.isProfileVisible == true'+
-  rules.slice(connectionCreate+createPrefix.length);
+ const rules=buildCadastralPrivacyCandidate(baseline);
+ const reviewed=readFileSync('.firebase/privacy-review-only/cadastral-candidate.rules.txt','utf8');
+ const manifest=JSON.parse(readFileSync('.firebase/privacy-review-only/manifest.json','utf8'));
+ assert.equal(reviewed,rules);
+ assert.equal(manifest.baselineSha256,candidateSha256(baseline));
+ assert.equal(manifest.candidateSha256,candidateSha256(rules));
+ assert.equal(manifest.deployable,false);
  app=initializeApp({projectId},'isolated-privacy-candidate');
  db=getFirestore(app);
  env=await initializeTestEnvironment({projectId,firestore:{rules,host:'127.0.0.1',port:8088}});
