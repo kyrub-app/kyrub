@@ -10,7 +10,8 @@ import {
   type Timestamp,
   type Unsubscribe,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { auth, db } from './firebase';
+import {adminDirectoryPilotEnabled,countAdminDirectoryUsersPilot} from './adminDirectoryPilot';
 
 export type AdminRole =
   | 'super_admin'
@@ -268,8 +269,16 @@ export const loadAdminDashboardMetrics = async (
   const canReadUsers = hasAdminPermission(profile, 'read_users');
   const canReadStores = hasAdminPermission(profile, 'read_stores');
 
+  const pilot=adminDirectoryPilotEnabled();
+  const session=auth.currentUser;
+  const userCount=async():Promise<number|null>=>{
+    if(!canReadUsers)return null;
+    if(!pilot)return countCollection('users');
+    if(!session||session.uid!==profile.uid)return null;
+    try{return await countAdminDirectoryUsersPilot(session);}catch{return null;}
+  };
   const [users, canonicalStores, legacyTenants] = await Promise.all([
-    canReadUsers ? countCollection('users') : Promise.resolve(null),
+    userCount(),
     canReadStores ? countCollection('stores') : Promise.resolve(null),
     canReadStores ? countCollection('tenants') : Promise.resolve(null),
   ]);
@@ -287,7 +296,7 @@ export const loadAdminDashboardMetrics = async (
   });
 
   return [
-    metric('users', 'Usuários cadastrados', users, canReadUsers),
+    metric('users', 'Usuários cadastrados', pilot&&auth.currentUser!==session?null:users, canReadUsers),
     metric('canonicalStores', 'Lojas canônicas', canonicalStores, canReadStores),
     metric('legacyTenants', 'Tenants legados', legacyTenants, canReadStores),
   ];
