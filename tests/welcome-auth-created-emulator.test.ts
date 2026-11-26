@@ -1300,3 +1300,63 @@ test('administrative pause and resume require authorized reviewer, immutable aud
   for(const [k,v] of Object.entries(prior)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
  }
 });
+
+test('isolated saved profile award authenticates actor, credits once under concurrency and projects completion in existing catalog',async()=>{
+ const {reconcileIsolatedProfileCompletionAfterSave}=await import('../server/gamification/profileCompletionAwardPilot.js');
+ const {readUserPlatformChallengeCatalog}=await import('../server/gamification/userPlatformChallengeCatalogService.js');
+ const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+ const {PROFILE_COMPLETION_CHALLENGE}=await import('../shared/profileCompletionChallenge.js');
+ const person=await googleSignIn('profile-completion-journey');
+ const uid=person.localId,challenge=PROFILE_COMPLETION_CHALLENGE.id;
+ await waitForAward(uid);
+ const account=db.doc('users/'+uid),profile=account.collection('public_profile').doc('main');
+ const age=db.doc('age_eligibility_private/'+uid),definition=db.doc('global_challenges/'+challenge);
+ const identifier='profile-completion-journey';
+ const forward=db.doc('public_social_addresses/profile:'+identifier),reverse=db.doc('public_social_address_targets/profile:'+uid);
+ const receipt=account.collection('challengeRewards').doc(challenge),award=ledger(uid).doc('earn_'+challenge);
+ const savedDefinition=await definition.get(),prior=process.env.KYRUB_PROFILE_COMPLETION_PILOT;
+ const run=()=>reconcileIsolatedProfileCompletionAfterSave(db,auth,person.idToken);
+ try{
+  delete process.env.KYRUB_PROFILE_COMPLETION_PILOT;
+  await assert.rejects(run(),/RELEASE_UNAVAILABLE/);
+  process.env.KYRUB_PROFILE_COMPLETION_PILOT='true';
+  await assert.rejects(reconcileIsolatedProfileCompletionAfterSave(db,auth,'invalid'),/AUTH_INVALID/);
+  await definition.set({...PROFILE_COMPLETION_CHALLENGE,status:'active'});
+  await age.set({uid,status:'verified_adult'});
+  await account.set({name:'Perfil de teste',isProfileVisible:false},{merge:true});
+  await profile.set({userId:uid,name:'Perfil de teste',bio:'Apresentação fictícia'});
+  const before=await readUserPlatformChallengeCatalog(db,uid);
+  assert.equal(before.challenges.find(c=>c.id===challenge)?.status,'available');
+  assert.equal((await balance(uid).get()).get('availableKCoins'),100);
+  await assert.rejects(run(),/NOT_ELIGIBLE/);
+  const reservation={kind:'profile',identifier,targetId:uid};
+  // Explicit server-owned synthetic reservation fixture; not a browser reservation test.
+  await reverse.set(reservation);
+  await assert.rejects(run(),/NOT_ELIGIBLE/);
+  await forward.set({...reservation,targetId:'other'});
+  await assert.rejects(run(),/NOT_ELIGIBLE/);
+  await forward.set(reservation);
+  const results=await Promise.all([run(),run()]);
+  assert.equal(results.filter(r=>!r.replay).length,1);
+  assert.equal(results.filter(r=>r.replay).length,1);
+  assert.equal((await balance(uid).get()).get('availableKCoins'),200);
+  assert.equal((await award.get()).get('deltaKCoins'),100);
+  assert.equal((await receipt.get()).get('xp'),0);
+  const statement=await readPitangaAccount(db,uid);
+  assert.equal(statement.pitangas,200);assert.equal(statement.xp,0);
+  const after=await readUserPlatformChallengeCatalog(db,uid);
+  const completed=after.challenges.find(c=>c.id===challenge);
+  assert.equal(completed?.status,'completed');assert.equal(completed?.completionsConfirmed,1);
+  assert.equal((await account.get()).get('isProfileVisible'),false);
+  await profile.update({bio:'Apresentação editada'});
+  assert.equal((await run()).replay,true);
+  assert.equal((await balance(uid).get()).get('availableKCoins'),200);
+  await auth.updateUser(uid,{disabled:true});
+  await assert.rejects(run(),/AUTH_INVALID/);
+ }finally{
+  await Promise.all([profile.delete(),age.delete(),forward.delete(),reverse.delete(),receipt.delete(),award.delete(),
+   balance(uid).update({availableKCoins:100}),auth.updateUser(uid,{disabled:false})]);
+  if(savedDefinition.exists)await definition.set(savedDefinition.data()!);else await definition.delete();
+  if(prior===undefined)delete process.env.KYRUB_PROFILE_COMPLETION_PILOT;else process.env.KYRUB_PROFILE_COMPLETION_PILOT=prior;
+ }
+});
