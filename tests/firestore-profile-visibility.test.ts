@@ -7,7 +7,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, query, where, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, limit, query, where, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
 const USER_ID = 'visibility-owner';
@@ -179,6 +179,53 @@ test('isolated root privacy candidate denies direct cross-account reads and pres
     await assertFails(getDoc(doc(other, PATH + '/tasks/shared-note')));
     await assertFails(getDoc(doc(other, PATH)));
     assert.equal((await assertSucceeds(getDoc(doc(other, invitationPath)))).get('status'), 'revoked');
+
+    // Messaging authorization must depend on the accepted connection, not
+    // the visibility of either account or a copied profile snapshot.
+    const connectionId = USER_ID + '_visibility-visitor';
+    const connectionPath = 'connections/' + connectionId;
+    const messagesPath = 'social_chats/' + connectionId + '/messages';
+    const messagePath = messagesPath + '/message-one';
+    const messagePayload = () => ({
+      senderId: USER_ID, receiverId: 'visibility-visitor',
+      text: 'Mensagem de homologação', createdAt: serverTimestamp(),
+    });
+    await assertSucceeds(setDoc(doc(owner, connectionPath), {
+      senderId: USER_ID, receiverId: 'visibility-visitor',
+      participantIds: [USER_ID, 'visibility-visitor'],
+      senderName: 'Perfil de Teste', receiverName: 'Kairubido',
+      status: 'pending', createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }));
+    await assertFails(setDoc(doc(owner, messagePath), messagePayload()));
+    await assertFails(getDocs(query(collection(other, messagesPath), limit(100))));
+    await assertFails(updateDoc(doc(owner, connectionPath), {
+      status: 'accepted', acceptedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }));
+    await assertSucceeds(updateDoc(doc(other, connectionPath), {
+      status: 'accepted', acceptedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    }));
+    await assertFails(getDoc(doc(stranger, connectionPath)));
+    await assertSucceeds(setDoc(doc(owner, messagePath), messagePayload()));
+    const received = await assertSucceeds(getDoc(doc(other, messagePath)));
+    assert.equal(received.get('text'), 'Mensagem de homologação');
+    const messages = await assertSucceeds(getDocs(query(collection(other, messagesPath), limit(100))));
+    assert.equal(messages.size, 1);
+    await assertFails(getDoc(doc(stranger, messagePath)));
+    await assertFails(getDocs(query(collection(stranger, messagesPath), limit(100))));
+    await assertFails(getDocs(query(collection(admin, messagesPath), limit(100))));
+    await assertFails(setDoc(doc(owner, messagesPath + '/wrong-recipient'), {
+      ...messagePayload(), receiverId: 'visibility-stranger',
+    }));
+    await assertSucceeds(setDoc(doc(other, messagesPath + '/reply'), {
+      senderId: 'visibility-visitor', receiverId: USER_ID,
+      text: 'Resposta de homologação', createdAt: serverTimestamp(),
+    }));
+    await assertFails(updateDoc(doc(owner, messagePath), { text: 'Alteração retroativa' }));
+    await assertFails(getDoc(doc(other, PATH)));
+    await assertSucceeds(deleteDoc(doc(other, connectionPath)));
+    await assertFails(getDoc(doc(other, messagePath)));
+    await assertFails(getDoc(doc(owner, messagePath)));
+    await assertFails(setDoc(doc(owner, messagesPath + '/after-removal'), messagePayload()));
   } finally {
     // This test shares the emulator project with other serial rule suites.
     // Restore the unmodified baseline even when a candidate assertion fails.
