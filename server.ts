@@ -308,6 +308,23 @@ if(process.env.KYRUB_STAFF_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='tes
   });
 }
 
+// Local-only social directory; preserve the same quota instance per listener.
+if(process.env.KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'&&
+   process.env.GCLOUD_PROJECT==='demo-kyrub-welcome'&&process.env.GOOGLE_CLOUD_PROJECT==='demo-kyrub-welcome'&&
+   process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
+   process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
+   !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS){
+  let socialRouterPromise:Promise<ReturnType<typeof import('./server/identity/socialDirectoryEmulatorRouter.js').createSocialDirectoryEmulatorRouter>>|undefined;
+  app.use('/api',async(req,res,next)=>{
+    if(!req.path.startsWith('/social-directory-pilot/')){next();return;}
+    try{
+      socialRouterPromise??=Promise.all([import('./server/firebaseAdmin.js'),import('./server/identity/socialDirectoryEmulatorRouter.js')])
+        .then(([{adminDb,adminAuth},{createSocialDirectoryEmulatorRouter}])=>createSocialDirectoryEmulatorRouter(adminDb,adminAuth));
+      (await socialRouterPromise)(req,res,next);
+    }catch{socialRouterPromise=undefined;res.set('Cache-Control','private, no-store').sendStatus(503);}
+  });
+}
+
 app.use(
   "/api/notifications",
   integrationRateLimiter,
