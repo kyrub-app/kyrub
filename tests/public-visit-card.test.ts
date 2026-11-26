@@ -37,7 +37,9 @@ test('approved tag personalization has four compact individually expandable dest
  assert.match(panel,/Prévia dos destinos selecionados/);
  assert.match(panel,/Salvar minha Kyrub Tag/);
  assert.doesNotMatch(panel,/<select/);
- assert.match(page,/if\(authReady&&owner&&user\)return <main/);
+ assert.match(page,/if\(authReady&&owner&&user&&\(!publicOwnerView\|\|showEdit\)\)return <main/);
+ assert.match(page,/const publicOwnerView=owner&&!!user&&data\?\.status==='active'/);
+ assert.match(page,/publicOwnerView\?<button/);
 });
 
 
@@ -96,7 +98,9 @@ test('promo tag uses verified e-mail and transactional claim; public card carrie
  assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation\)/);
  assert.match(page,/claim-promotional/);
  assert.match(page,/recover-promotional/);
- assert.match(page,/SOS · Informações de emergência/);
+ assert.match(page,/aria-expanded=\{showSos\}/);
+ assert.match(page,/>SOS<\/button>/);
+ assert.match(page,/Emergência no Brasil/);
  assert.match(page,/number:'190'/);
  assert.match(page,/number:'192'/);
  assert.match(page,/number:'193'/);

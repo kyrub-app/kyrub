@@ -103,6 +103,14 @@ test('production candidate preserves isolated legacy path and constrains every m
  assert.match(isolation,/projectId===KYRUB_PRODUCTION_PROJECT_ID\|\|!projectId/);
 });
 
+test('owner identification is scoped to active passkey stock and carries no presentation',()=>{
+ assert.doesNotThrow(()=>assertPasskeyTagState(owned,'identify-owner'));
+ assert.throws(()=>assertPasskeyTagState(virgin,'identify-owner'));
+ assert.throws(()=>assertPasskeyTagState({...owned,blocked:true},'identify-owner'));
+ assert.equal(normalizePasskeyMutation('identify-owner',undefined),null);
+ assert.throws(()=>normalizePasskeyMutation('identify-owner',{name:'Ana',occupation:'Autônoma',about:'Olá'}));
+});
+
 test('Pix is optional, consent-gated and enabled only through authenticated edit',()=>{
  const card={name:'Pessoa teste',occupation:'',about:''};
  const pix={keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000',recipientName:'Fulano de Tal',recipientCity:'BRASILIA',publicConsent:true};

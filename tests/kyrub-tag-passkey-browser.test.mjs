@@ -88,7 +88,18 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   const original=(await ref.get()).data();assert.equal(original.ownerAuthMode,'passkey');assert.equal(original.presentation.name,'Pessoa de homologação');
   await page.getByRole('button',{name:'Já guardei · Continuar'}).click();
   await page.getByRole('heading',{name:'Pessoa de homologação',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Editar meu cartão'}).click();
+  assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  const visitor=await device();
+  await visitor.page.getByRole('button',{name:'Compartilhar',exact:true}).waitFor();
+  assert.equal(await visitor.page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  await visitor.page.getByRole('button',{name:'SOS',exact:true}).click();
+  await visitor.page.getByText('Emergência no Brasil',{exact:true}).waitFor();
+  await visitor.ctx.close();
+  await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
+  await page.getByRole('button',{name:'Editar',exact:true}).click();
+  assert.deepEqual((await ref.get()).data(),original);
+  assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),0);
   await page.getByLabel('Nome',{exact:true}).fill('Cartão atualizado');
   await page.getByLabel('Disponibilizar recebimentos via Pix').check();
   await page.getByLabel('Chave Pix',{exact:true}).fill('123e4567-e12b-12d1-a456-426655440000');
@@ -103,12 +114,17 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   assert.ok((await page.getByRole('img',{name:'QR Code Pix para pagamento'}).locator('path').getAttribute('d')).length>100);
   await page.getByText('Exibir Pix Copia e Cola',{exact:true}).click();
   assert.equal(await page.getByLabel('Código Pix Copia e Cola').inputValue(),'00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***63041D3D');
-  await page.getByRole('button',{name:'Editar meu cartão'}).click();
+  await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
+  await page.getByRole('button',{name:'Editar',exact:true}).click();
   await page.getByLabel('Atividade',{exact:true}).fill('Artista');
   await page.getByRole('button',{name:'Confirmar alterações com chave de acesso'}).click();
   await page.getByText('Artista',{exact:true}).waitFor();
   assert.equal((await ref.get()).data().presentation.pix.key,'123e4567-e12b-12d1-a456-426655440000');
-  await page.getByRole('button',{name:'Editar meu cartão'}).click();
+  // Simulate a fresh quota bucket in the verified isolated emulator only.
+  await adminDb.doc('kyrub_tag_passkey_quotas/'+tagId).delete();
+  await adminDb.doc('kyrub_tag_passkey_quotas/'+tagId+'-verify').delete();
+  await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
+  await page.getByRole('button',{name:'Editar',exact:true}).click();
   await page.getByLabel('Disponibilizar recebimentos via Pix').uncheck();
   await page.getByRole('button',{name:'Confirmar alterações com chave de acesso'}).click();
   await page.getByRole('heading',{name:'Cartão atualizado',exact:true}).waitFor();
@@ -117,6 +133,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   assert.equal((await ref.get()).data().presentation.pix,null);
   assert.equal(await page.getByRole('img',{name:'QR Code Pix para pagamento'}).count(),0);
   await page.screenshot({path:'passkey-browser-public-card.png',fullPage:true});
+  await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
   await page.getByRole('button',{name:'Bloquear tag perdida'}).click();
   await page.getByText('Este cartão está bloqueado. As informações do titular não estão públicas.',{exact:true}).waitFor();
   assert.equal(await page.getByText('Cartão atualizado',{exact:true}).count(),0);
