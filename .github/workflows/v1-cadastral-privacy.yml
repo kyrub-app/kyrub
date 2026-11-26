@@ -6,6 +6,9 @@ on:
       - 'server/identity/directoryQuotaService.ts'
       - 'server/identity/storeStaffDirectoryService.ts'
       - 'scripts/inventory-user-directory-access.mjs'
+      - 'scripts/build-cadastral-privacy-candidate.ts'
+      - 'src/utils/storeDirectory.ts'
+      - 'docs/security/V1_CADASTRAL_CUTOVER_RUNBOOK.md'
       - 'tests/v1-cadastral-privacy-emulator.test.ts'
       - '.github/workflows/v1-cadastral-privacy.yml'
 permissions:
@@ -35,4 +38,11 @@ jobs:
           path: directory-inventory.json
           retention-days: 3
       - run: npm run firestore:compose
+      - run: node --import tsx scripts/build-cadastral-privacy-candidate.ts
       - run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-privacy --only firestore "node --test --import tsx tests/v1-cadastral-privacy-emulator.test.ts"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cadastral-privacy-review-only
+          path: .firebase/privacy-review-only/
+          include-hidden-files: true
+          retention-days: 3
