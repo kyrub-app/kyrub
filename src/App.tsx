@@ -31,6 +31,7 @@ import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
 import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
+import { KyrubCardDemonstrationPage } from './components/KyrubCardDemonstration';
 import { PublicSocialDestinationPage } from './components/PublicSocialDestinationPage';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
@@ -366,6 +367,9 @@ export default function App() {
 
   const searchParams = new URLSearchParams(window.location.search);
   const entry = searchParams.get('entry');
+
+  // Explicit design preview: root, staff, public routes and existing sessions stay unchanged.
+  if (route.kind === 'default' && entry === 'card-demo') return <KyrubCardDemonstrationPage />;
 
   // The former "Meu Kyrub / Comece por aqui" landing remains deliberately
   // accessible for the separately planned onboarding change, never the default.

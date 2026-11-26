@@ -4,6 +4,8 @@ import {auth} from '../utils/firebase';
 import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
+import {KyrubCardDemonstration} from './KyrubCardDemonstration';
+import {clearCardDraft} from '../utils/cardDemonstrationDraft';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
 import {KYRUB_TAG_MODEL_LABELS,isTagModel,parseTagExternalUrl,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract';
@@ -115,6 +117,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     const configured=await request('configure-promotional',{presentation:draft}) as OwnedKyrubTag;
     if(configured.id===identifier&&configured.distribution==='promotional')record=configured;
     sessionStorage.removeItem('kyrub.tag.draft.'+identifier);
+    clearCardDraft(sessionStorage,'kyrub.card.demo.tag.'+identifier);
    }catch{setNotice('A unidade já pertence a você. Confira sua apresentação e toque em Salvar para publicá-la.');}
    setOwnerRecord(record);setOwner(true);
   }catch{setNotice('Não foi possível ativar. Esta unidade pode ter sido ativada por outra pessoa ou a campanha ainda não foi liberada.');}
@@ -176,24 +179,18 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
    </section>:
    promotional?
-   <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
-    <h1 className="text-2xl font-bold">Sua apresentação, do seu jeito.</h1>
-    <p className="text-sm text-slate-300">Este adesivo pode ser ativado por quem concluir primeiro a confirmação do e-mail. Você não precisa de uma conta Kyrub completa.</p>
-    <label className="block text-sm">Nome de apresentação (opcional)
-     <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.name} maxLength={80} placeholder="Como deseja ser chamado?" onChange={e=>setPresentation('name',e.target.value)}/>
-    </label>
-    <label className="block text-sm">O que você faz? (opcional)
-     <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.occupation} maxLength={90} placeholder="Entregador, autônomo, comerciante" onChange={e=>setPresentation('occupation',e.target.value)}/>
-    </label>
-    <label className="block text-sm">Sobre você (opcional)
-     <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.about} rows={3} maxLength={320} placeholder="Sua breve apresentação" onChange={e=>setPresentation('about',e.target.value)}/>
-    </label>
-    <p className="text-sm text-slate-300">A apresentação pública incluirá um botão SOS com números oficiais. Não são publicados e-mail ou dados médicos.</p>
-    {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
+   <KyrubCardDemonstration key={identifier} draftKey={'kyrub.card.demo.tag.'+identifier}
+    onSave={value=>{setPresentation('name',value.name);setPresentation('occupation',value.occupation);setPresentation('about',value.about);}}
+    onClear={()=>{setDraft({...EMPTY_PROMOTIONAL_PRESENTATION});try{sessionStorage.removeItem('kyrub.tag.draft.'+identifier);}catch{}}}>
+    <details open={new URLSearchParams(window.location.search).has('oobCode')||undefined} className="space-y-3 rounded-xl border border-[#34443B] p-3">
+     <summary className="cursor-pointer text-sm font-semibold">Vincular esta tag física</summary>
+     <p className="text-sm text-slate-300">A vinculação desta unidade é separada do cadastro gratuito do cartão. A primeira identidade de e-mail confirmada poderá assumir a unidade quando a campanha estiver liberada. Nome, atividade e apresentação salvos serão usados na apresentação desta tag; os destinos do cartão pessoal são configurados na Central Pessoal.</p>
+     {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
       <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>
-       <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar e salvar minha Kyrub Tag'}</button></div>:
+       <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar vínculo e publicar apresentação da tag'}</button></div>:
       <TagEmailLinkIdentity tagId={identifier}/>}
-   </section>:
+    </details>
+   </KyrubCardDemonstration>:
    data?.status==='unclaimed'&&data.activation==='account'?
    <section className="space-y-3 rounded-xl border border-[#34443B] p-4"><h1 className="text-xl font-bold">Vincule sua Kyrub Tag</h1>
     <p>Esta unidade experimental foi reservada para uma conta específica. Não é necessário informar códigos.</p>
