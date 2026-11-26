@@ -1539,3 +1539,44 @@ test('note collaborator lookup trusts verified Auth identity and refuses reserve
   await Promise.all([targetRef.update({isProfileVisible:false,email:term}),spoofRef.update({isProfileVisible:false,email:'note-search-spoof@example.invalid'})]);
  }
 });
+
+test('administrative identity lookup checks current grant, resolves authoritative email and records audit before returning',async()=>{
+ const {lookupAdminDirectoryIdentity}=await import('../server/identity/adminDirectoryIdentityService.js');
+ const actor=await googleSignIn('admin-identity-actor'),target=await googleSignIn('admin-identity-target'),spoof=await googleSignIn('admin-identity-spoof');
+ await Promise.all([actor,target,spoof].map(person=>waitForAward(person.localId)));
+ const grant=db.doc('kyrub_admin/control_plane/admins/'+actor.localId);
+ const targetRef=db.doc('users/'+target.localId),spoofRef=db.doc('users/'+spoof.localId);
+ const audits=db.collection('kyrub_admin/control_plane/audit_logs').where('actorId','==',actor.localId);
+ const email='admin-identity-target@example.invalid';
+ const lookup=(term:string)=>lookupAdminDirectoryIdentity(db,auth,actor.localId,term);
+ try{
+  await targetRef.set({uid:target.localId,name:'Conta reservada',email:'outdated-admin@example.invalid',isProfileVisible:false,photoUrl:'',cpf:'fixture',phone:'fixture'},{merge:true});
+  await spoofRef.set({uid:spoof.localId,email,name:'Conta imitadora',isProfileVisible:true},{merge:true});
+  await assert.rejects(lookup(email),/ADMIN_DIRECTORY_FORBIDDEN/);
+  await grant.set({uid:actor.localId,role:'finance',status:'active'});
+  await assert.rejects(lookup(email),/ADMIN_DIRECTORY_FORBIDDEN/);
+  await grant.set({uid:target.localId,role:'super_admin',status:'active'});
+  await assert.rejects(lookup(email),/ADMIN_DIRECTORY_FORBIDDEN/);
+  await grant.set({uid:actor.localId,role:'support',status:'active'});
+  const record=await lookup(email.toUpperCase());
+  assert.equal(record?.uid,target.localId);assert.equal(record?.email,email);
+  assert.equal(record?.isProfileVisible,false);
+  assert.deepEqual(Object.keys(record!).sort(),['createdAt','email','isProfileVisible','name','photoUrl','uid','updatedAt']);
+  assert.equal((await lookup(target.localId))?.uid,target.localId);
+  assert.equal(await lookup('missing-admin-identity@example.invalid'),null);
+  const beforeRevocation=await audits.get();
+  assert.equal(beforeRevocation.size,3);
+  assert.equal(beforeRevocation.docs.filter(doc=>doc.get('outcome')==='found'&&doc.get('targetId')===target.localId).length,2);
+  assert.equal(beforeRevocation.docs.filter(doc=>doc.get('outcome')==='not_found').length,1);
+  for(const audit of beforeRevocation.docs){
+   assert.equal(audit.get('source'),'server');assert.equal(audit.get('actorRole'),'support');
+   assert.doesNotMatch(JSON.stringify(audit.data()),/@example\.invalid/);
+  }
+  await grant.update({status:'suspended'});
+  await assert.rejects(lookup(email),/ADMIN_DIRECTORY_FORBIDDEN/);
+  assert.equal((await audits.get()).size,3);
+ }finally{
+  await Promise.all((await audits.get()).docs.map(doc=>doc.ref.delete()));
+  await Promise.all([grant.delete(),targetRef.update({email}),spoofRef.update({email:'admin-identity-spoof@example.invalid',isProfileVisible:false})]);
+ }
+});
