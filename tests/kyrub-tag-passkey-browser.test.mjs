@@ -88,11 +88,16 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   const original=(await ref.get()).data();assert.equal(original.ownerAuthMode,'passkey');assert.equal(original.presentation.name,'Pessoa de homologação');
   await page.getByRole('button',{name:'Já guardei · Continuar'}).click();
   await page.getByRole('heading',{name:'Pessoa de homologação',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Editar meu cartão'}).click();
+  assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
+  await page.getByRole('button',{name:'Editar',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),0);
   await page.getByLabel('Nome',{exact:true}).fill('Cartão atualizado');
   await page.getByRole('button',{name:'Confirmar alterações com chave de acesso'}).click();
   await page.getByRole('heading',{name:'Cartão atualizado',exact:true}).waitFor();
   await page.screenshot({path:'passkey-browser-public-card.png',fullPage:true});
+  await page.getByRole('button',{name:'Acessar meu CID',exact:true}).click();
   await page.getByRole('button',{name:'Bloquear tag perdida'}).click();
   await page.getByText('Este cartão está bloqueado. As informações do titular não estão públicas.',{exact:true}).waitFor();
   assert.equal(await page.getByText('Cartão atualizado',{exact:true}).count(),0);
