@@ -13,6 +13,7 @@ type Props={
  // The adapter must verify each operation on the server. UI capabilities are not authorization.
  actions:Partial<Record<CidChatAction,()=>Promise<void>>>;
  resolveOccurrence?:(reason:CidSosResolution)=>Promise<void>;
+ preserveEvidence?:(reason:string)=>Promise<{id:string;status:'pending-review'}>;
  sendMessage:(input:{id:string;body:string})=>Promise<void>;
  onBack:()=>void;
  simulation?:boolean;
@@ -29,12 +30,19 @@ const menuItems=[
 const field='min-h-11 rounded-xl border border-[#34443B] p-3 text-sm';
 function timeLabel(value:number){return Number.isFinite(value)?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short',timeZone:'America/Sao_Paulo'}).format(value):'';}
 // The parent must remount on occurrence/session changes and supply only an authorized projection.
-export function KyrubCidOccurrenceChat({view,actions,resolveOccurrence,sendMessage,onBack,simulation=false}:Props){
- return <ChatPanel key={view.id} view={view} actions={actions} resolveOccurrence={resolveOccurrence} sendMessage={sendMessage} onBack={onBack} simulation={simulation}/>;
+export function KyrubCidOccurrenceChat({view,actions,resolveOccurrence,preserveEvidence,sendMessage,onBack,simulation=false}:Props){
+ return <ChatPanel key={view.id} view={view} actions={actions} resolveOccurrence={resolveOccurrence} preserveEvidence={preserveEvidence} sendMessage={sendMessage} onBack={onBack} simulation={simulation}/>;
 }
-function ChatPanel({view,actions,resolveOccurrence,sendMessage,onBack,simulation}:Props){
+function ChatPanel({view,actions,resolveOccurrence,preserveEvidence,sendMessage,onBack,simulation}:Props){
  const [menu,setMenu]=useState(false),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[confirmClose,setConfirmClose]=useState(false);
  const [resolution,setResolution]=useState<CidSosResolution|''>('');
+ const [preserveOpen,setPreserveOpen]=useState(false),[preserveReason,setPreserveReason]=useState('');
+ async function submitPreservation(){
+  if(locked.current||view.role!=='owner'||!preserveEvidence||!preserveReason.trim())return;
+  locked.current=true;setBusy(true);setStatus('');
+  try{const result=await preserveEvidence(preserveReason.trim());setStatus('Solicitação '+result.id+' registrada para análise. Não confirma retenção ou divulgação.');setPreserveOpen(false);setPreserveReason('');}catch{setStatus('Não foi possível confirmar o registro da solicitação.');}
+  finally{locked.current=false;setBusy(false);}
+ }
  const locked=useRef(false),pending=useRef<{id:string;body:string}|null>(null);
  async function send(){
   if(locked.current||view.closed)return;
@@ -61,11 +69,12 @@ function ChatPanel({view,actions,resolveOccurrence,sendMessage,onBack,simulation
   </header>
   {menu&&<div aria-label="Ações da ocorrência" className="space-y-1 rounded-xl border border-[#34443B] bg-[#1D2924] p-2">
    {menuItems.filter(m=>m.key!=='close'||view.role==='owner').map(({key,label,Icon})=>{
-    const enabled=(!!actions[key]||key==='close'&&!!resolveOccurrence)&&!(key==='close'&&view.closed);
-    return <button key={key} type="button" disabled={!enabled||busy} className="flex min-h-11 w-full items-center gap-2 rounded-lg p-2 text-left text-sm disabled:opacity-50" onClick={()=>{if(key==='close'){setResolution('');setConfirmClose(true);setMenu(false);}else void run(key);}}><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-[#F47825]"/><span>{label}{!enabled&&<span className="block text-xs text-slate-300">Indisponível</span>}</span></button>;
+    const enabled=(!!actions[key]||key==='close'&&!!resolveOccurrence||key==='preserve'&&view.role==='owner'&&!!preserveEvidence)&&!(key==='close'&&view.closed);
+    return <button key={key} type="button" disabled={!enabled||busy} className="flex min-h-11 w-full items-center gap-2 rounded-lg p-2 text-left text-sm disabled:opacity-50" onClick={()=>{if(key==='close'){setResolution('');setConfirmClose(true);setMenu(false);}else if(key==='preserve'&&preserveEvidence){setMenu(false);setPreserveOpen(true);}else void run(key);}}><Icon aria-hidden="true" className="h-5 w-5 shrink-0 text-[#F47825]"/><span>{label}{!enabled&&<span className="block text-xs text-slate-300">Indisponível</span>}</span></button>;
    })}
   </div>}
   {confirmClose&&<div role="group" aria-label="Confirmar encerramento" className="space-y-2 rounded-lg border border-amber-500/50 p-3"><p className="text-sm">Encerrar a ocorrência? O envio de novas mensagens será desabilitado.</p>{resolveOccurrence&&<fieldset className="space-y-2"><legend className="text-sm font-semibold">Motivo do encerramento</legend>{Object.entries(CID_SOS_RESOLUTION_LABELS).map(([key,label])=><label key={key} className="flex items-center gap-2 text-sm"><input type="radio" name="cid-resolution" checked={resolution===key} onChange={()=>setResolution(key as CidSosResolution)}/>{label}</label>)}</fieldset>}<button type="button" className={field} disabled={!!resolveOccurrence&&!resolution} onClick={()=>void run('close')}>Confirmar encerramento</button><button type="button" className={field} onClick={()=>setConfirmClose(false)}>Cancelar</button></div>}
+  {preserveOpen&&<form aria-label="Solicitar preservação de evidências" className="space-y-2 rounded-lg border border-amber-500/50 p-3" onSubmit={e=>{e.preventDefault();void submitPreservation();}}><p className="text-sm">A solicitação será analisada. Não autoriza acesso a IPs, divulgação nem retenção indefinida.</p><label className="block text-sm">Motivo da preservação<textarea className={field+' w-full bg-[#1D2924]'} aria-label="Motivo da preservação" maxLength={500} value={preserveReason} disabled={busy} onChange={e=>setPreserveReason(e.target.value)}/></label><button className={field} type="submit" disabled={busy||!preserveReason.trim()}>Solicitar preservação</button><button className={field} type="button" disabled={busy} onClick={()=>{setPreserveOpen(false);setPreserveReason('');}}>Cancelar</button></form>}
   {simulation&&<p className="text-xs text-amber-200">Simulação — nenhum alerta ou mensagem real.</p>}
   <aside className="space-y-1 rounded-lg border border-amber-500/40 p-3 text-xs"><strong>Uso responsável</strong><p>{CID_SOS_NOTICE}</p></aside>
   <div role="log" aria-label="Mensagens da ocorrência" aria-live="polite" className="max-h-[50vh] space-y-3 overflow-y-auto">
