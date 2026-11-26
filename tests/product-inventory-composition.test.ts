@@ -117,7 +117,11 @@ describe('product inventory and composition', () => {
       availableCatalogAfterReservations(physical, reservedQuantities({})), recipe
     ), 5);
     assert.match(actionExecuteSource, /inventoryReservationStates\/\$\{reservationStateId\}/);
-    assert.match(actionExecuteSource, /transaction\.getAll\(tenantRef, inventoryRef, stateRef\)/);
+    assert.match(actionExecuteSource, /transaction\.getAll\(inventoryRef, stateRef\)/);
+    assert.match(actionExecuteSource, /resolveCanonicalInventoryAuthorityInTransaction\(/);
+    assert.match(actionExecuteSource, /legacyTenantId \? legacyTenantId !== storeId : ownerId !== storeId/);
+    assert.match(actionExecuteSource, /authority\.ownerUserId !== ownerId/);
+    assert.match(actionExecuteSource, /doc\(authority\.inventoryDocumentPath\)/);
     assert.match(actionExecuteSource, /inventory\.availableCatalogAfterReservations\(/);
   });
 
