@@ -6,7 +6,7 @@ const fields=[
  {key:'name',label:'Nome',placeholder:'Como deseja ser chamado?',max:80},
  {key:'occupation',label:'Título ou atividade',placeholder:'Sua atividade ou apresentação',max:90},
  {key:'about',label:'Informações adicionais',placeholder:'Conte um pouco sobre você',max:320},
- {key:'profile',label:'Perfil no Kyrub',placeholder:'kyrub.com/kairubido/seu-perfil',max:120},
+ {key:'profile',label:'Perfil no Kyrub',placeholder:'kyrub.com/seu-perfil',max:120},
  {key:'store',label:'Loja no Kyrub',placeholder:'kyrub.com/@sua-loja',max:120},
  {key:'community',label:'Comunidade no Kyrub',placeholder:'kyrub.com/comunidade/sua-comunidade',max:120},
 ] as const;
