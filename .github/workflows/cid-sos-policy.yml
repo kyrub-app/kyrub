@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'server/identity/cidSosAlertPolicy.ts'
+      - 'shared/cidSosRequest.ts'
       - 'tests/cid-sos-alert-policy.test.ts'
       - '.github/workflows/cid-sos-policy.yml'
 permissions:
