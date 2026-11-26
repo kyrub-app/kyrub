@@ -1,0 +1,41 @@
+name: V1 isolated social directory HTTP
+on:
+  pull_request:
+    paths:
+      - 'server/identity/socialDirectoryEmulatorRouter.ts'
+      - 'src/utils/socialDirectoryPilot.ts'
+      - 'src/hooks/useLiveAuthorIdentities.ts'
+      - 'src/components/modals/UserSearchModal.tsx'
+      - 'tests/v1-social-directory-http.test.ts'
+      - '.github/workflows/v1-social-directory-http.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run firestore:compose
+      - name: Verify isolated Auth and Firestore HTTP transport
+        env:
+          NODE_ENV: test
+          KYRUB_SOCIAL_DIRECTORY_PILOT: 'true'
+          GCLOUD_PROJECT: demo-kyrub-welcome
+          GOOGLE_CLOUD_PROJECT: demo-kyrub-welcome
+          FIREBASE_PROJECT_ID: demo-kyrub-welcome
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-welcome --only auth,firestore "node --test --import tsx tests/v1-social-directory-http.test.ts"
