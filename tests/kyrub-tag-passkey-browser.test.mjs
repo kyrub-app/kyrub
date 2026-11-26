@@ -109,6 +109,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await page.getByLabel('Disponibilizar recebimentos via Pix').uncheck();
   await page.getByRole('button',{name:'Confirmar alterações com chave de acesso'}).click();
   await page.getByRole('heading',{name:'Cartão atualizado',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Copiar Pix',exact:true}).waitFor({state:'hidden'});
   assert.equal(await page.getByRole('button',{name:'Copiar Pix',exact:true}).count(),0);
   assert.equal((await ref.get()).data().presentation.pix,null);
   await page.screenshot({path:'passkey-browser-public-card.png',fullPage:true});
