@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedCommit": "cd84e452ebdb8360add3673e215fbf67b46b1077",
+  "reviewedCommit": "34e7303d91572d98ea32542c7c2ab2a36503023a",
   "scope": "Static call-site observations only. No deployment or external coverage, no authorization or proof of complete call graph.",
   "entries": [
     {
@@ -28,14 +28,6 @@
       "observation": "Canonical fence and first-login evidence passed to XP conversion primitive."
     },
     {
-      "path": "server/gamification/firstStoreChallengeAwardTransaction.ts",
-      "blobSha": "09c475ca0a3877979400f3016c2c10a13658d0a7",
-      "primitive": "applyPitangaEarnInTransaction",
-      "line": 66,
-      "classification": "legacy-conditional-earn",
-      "observation": "Conditional Pitanga branch passes canonical fence; first-store reward contract separately requires zero Pitangas."
-    },
-    {
       "path": "server/gamification/pitangaVerifiedVoucherIssuance.ts",
       "blobSha": "8a686d987f453533aaa6940d1710da1ceeaeee33",
       "primitive": "issuePitangaVoucherInTransaction",
@@ -53,11 +45,11 @@
     },
     {
       "path": "server/gamification/semeaduraService.ts",
-      "blobSha": "974b2f3177173cb98c7026517ef053dbddcf361b",
+      "blobSha": "631376307d5d9a1fe91bbb3673f20e92ac38aeb4",
       "primitive": "settleAcceptedSeedInTransaction",
-      "line": 151,
+      "line": 163,
       "classification": "emulator-only-seed-settlement",
-      "observation": "Strict public mutation adapter requires isolated release gate, zero-start and no-welcome policies, and trusted Auth project before accepted receipt; settlement precedes writes. Fixture-only adapters remain. No deployed writer attestation."
+      "observation": "Strict public mutation adapter requires isolated release gate, zero-start and no-welcome policies, and trusted Auth project before accepted receipt; settlement precedes writes. Optional age-preview check reads both actor and author private records in the same transaction. Fixture-only adapters remain. No deployed writer attestation."
     }
   ]
 }
