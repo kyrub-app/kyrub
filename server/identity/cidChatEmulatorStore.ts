@@ -12,6 +12,8 @@ import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} 
 import {assertSamePasskeyCredential} from './kyrubTagPasskeyState.js';
 import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import type {CidSosOccurrence,CidSosMessage} from './cidSosAlertPolicy.js';
+import {prepareCidOccurrenceReport,formatCidConversationText} from './cidOccurrenceReport.js';
+import {requestCidEvidencePreservation,type PreservationRequest} from './cidEvidencePreservation.js';
 import {normalizeCidSosResolution,cidSosResolutionNotice} from '../../shared/cidSosResolution.js';
 import {buildTrustedCidSosProfile,type TrustedTag,type CidSosConfig,type ChannelGrant} from './cidSosPrivateConfig.js';
 type ContactRoute={participantId:string;channel:'email'|'whatsapp'|'sms';address:string;verifiedAt:number};
@@ -309,6 +311,47 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
     for(const message of updates)tx.create(outbox.doc(digest(message.key)),{message,status:'simulation-pending',createdAt:now});
     for(const row of rows)if(['simulation-pending','simulation-retry'].includes(row.get('status')))tx.update(row.ref,{status:'simulation-cancelled',completedAt:now,cancellationReason:'occurrence-closed'});
     return {closed:true as const,duplicate:false,queued:updates.length};
+   });
+  },
+  async exportOccurrence(credential:Credential,format:unknown,now:number){
+   checkNow(now);if(format!=='text'&&format!=='structured')return deny();
+   return db.runTransaction(async tx=>{
+    checkNow(now);
+    const [chat,s,o,q]=await Promise.all([readChat(tx),readSession(tx,credential,now),tx.get(occurrence),tx.get(root.collection('private').doc('export-quota'))]);
+    const member=authorizeCidChatSession(chat,s.session,credential.secret,now,'read');
+    if(member.role!=='owner'||member.id!==chat.ownerId)return deny();
+    await ownerCredential(tx,chat);
+    const data=o.data() as CidSosOccurrence|undefined;
+    if(!data||data.id!==occurrenceId||data.tagId!==tagId||data.ownerId!==chat.ownerId)return deny();
+    const bucket=Math.floor(now/60000),count=q.get('bucket')===bucket?q.get('count'):0;
+    if(!Number.isSafeInteger(count)||count<0||count>=5)return deny();
+    const history=await tx.get(messages.limit(1001));
+    // Never silently truncate a report. Larger histories need a separate bounded export flow.
+    if(history.size>1000)return deny();
+    const records=history.docs.map(d=>{const m=d.data() as ChatMessage;if(m.id!==d.id)return deny();return m;});
+    const report=prepareCidOccurrenceReport(chat,s.session,credential.secret,data,records,now);
+    const content=format==='text'?formatCidConversationText(report):JSON.stringify(report,null,2);
+    if(Buffer.byteLength(content,'utf8')>8*1024*1024)return deny();
+    tx.create(root.collection('issuedReports').doc(report.content.reportId),{occurrenceId,tagId,ownerId:chat.ownerId,issuedAt:now,format,algorithm:report.algorithm,checksum:report.checksum,fileChecksum:digest(content),messageCount:records.length,simulation:true});
+    tx.set(q.ref,{bucket,count:count+1});
+    return {reportId:report.content.reportId,format,content,simulated:true as const};
+   });
+  },
+  async preserveEvidence(credential:Credential,reason:unknown,now:number){
+   checkNow(now);return db.runTransaction(async tx=>{
+    checkNow(now);
+    const [chat,s,o,prior]=await Promise.all([readChat(tx),readSession(tx,credential,now),tx.get(occurrence),tx.get(root.collection('private').doc('preservation-request'))]);
+    const data=o.data() as CidSosOccurrence|undefined;
+    if(!data||data.id!==occurrenceId||data.tagId!==tagId||data.ownerId!==chat.ownerId)return deny();
+    const request=requestCidEvidencePreservation(chat,s.session,credential.secret,reason,now);
+    await ownerCredential(tx,chat);
+    if(prior.exists){
+     const saved=prior.get('request') as PreservationRequest|undefined;
+     if(!saved||saved.occurrenceId!==occurrenceId||saved.status!=='pending-review'||saved.reason!==request.reason)return deny();
+     return {id:saved.id,status:saved.status,duplicate:true,simulated:true as const};
+    }
+    tx.create(prior.ref,{request,tagId,ownerId:chat.ownerId,simulation:true});
+    return {id:request.id,status:request.status,duplicate:false,simulated:true as const};
    });
   },
   async revokeOwnSession(credential:Credential,now:number){
