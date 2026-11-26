@@ -14,7 +14,7 @@ import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import type {CidSosOccurrence,CidSosMessage} from './cidSosAlertPolicy.js';
 import {normalizeCidSosResolution,cidSosResolutionNotice} from '../../shared/cidSosResolution.js';
 import {buildTrustedCidSosProfile,type TrustedTag,type CidSosConfig,type ChannelGrant} from './cidSosPrivateConfig.js';
-type ContactRoute={participantId:string;channel:'email'|'whatsapp'|'sms';address:string};
+type ContactRoute={participantId:string;channel:'email'|'whatsapp'|'sms';address:string;verifiedAt:number};
 type ContactChallenge={id:string;inviteId:string;chatId:string;tagId:string;route:ContactRoute;digest:string;expiresAt:number;attempts:number;usedAt?:number};
 const CONTACT_TTL=5*60*1000;
 const randomToken=()=>randomBytes(32).toString('base64url');
@@ -47,9 +47,9 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
   const profile=buildTrustedCidSosProfile(trusted,config,grants,now);
   const candidate=profile.contacts.find(p=>p.id===participantId)?.channels.find(r=>r.channel===channel);
   if(!candidate||!data.recipients.some(r=>r.role==='contact'&&r.participantId===participantId&&r.channel===channel&&r.address===candidate.address))return deny();
-  return {participantId,channel,address:candidate.address};
+  return {participantId,channel,address:candidate.address,verifiedAt:candidate.verifiedAt};
  }
- const sameRoute=(a:ContactRoute,b:ContactRoute)=>a.participantId===b.participantId&&a.channel===b.channel&&a.address===b.address;
+ const sameRoute=(a:ContactRoute,b:ContactRoute)=>a.participantId===b.participantId&&a.channel===b.channel&&a.address===b.address&&a.verifiedAt===b.verifiedAt;
  function assertInvite(invite:ChatInvite|undefined,credential:Credential,chat:CidChat,now:number){
   if(!invite||invite.id!==credential.id||invite.chatId!==chat.id||invite.usedAt!==undefined||invite.revokedAt!==undefined||chat.closedAt!==undefined||now<invite.createdAt||now>=invite.expiresAt||!matches(credential.secret,invite.digest))return deny();return invite;
  }
