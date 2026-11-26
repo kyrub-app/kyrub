@@ -32,3 +32,9 @@ export function projectSocialAddress(record: SocialAddressRecord, source: Record
     description: record.kind === 'profile' ? clean(profile?.bio,280) : clean(source.description,500),
     image: /^https:\/\//i.test(photo) ? photo : ''};
 }
+
+/** Both indices must attest the same identity; neither alone proves ownership. */
+export function matchesSocialAddressRecord(record: Record<string, unknown> | undefined, kind: SocialDestinationKind, identifier: string, targetId: string): boolean {
+  return isSocialAddress(kind, identifier) && isDocumentId(targetId) &&
+    record?.kind === kind && record.identifier === identifier && record.targetId === targetId;
+}
