@@ -1,0 +1,50 @@
+name: CID SOS isolated Chromium
+on:
+  pull_request:
+    paths:
+      - 'src/components/KyrubCid*.tsx'
+      - 'src/utils/cidSosHomologationHttpClient.ts'
+      - 'server/identity/cid*.ts'
+      - 'tests/cid-sos-chromium.test.mjs'
+      - 'tests/fixtures/cid-sos-browser.tsx'
+      - '.github/workflows/cid-sos-chromium.yml'
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - name: Chromium through local HTTPS and Firestore
+        env:
+          KYRUB_CID_SOS_EMULATOR: 'true'
+          GCLOUD_PROJECT: demo-kyrub-cid-sos
+          FIREBASE_PROJECT_ID: demo-kyrub-cid-sos
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-cid-sos --only firestore "node --test --test-concurrency=1 --import tsx tests/cid-sos-chromium.test.mjs" 2>&1 | tee cid-sos-browser.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cid-sos-browser-evidence
+          path: |
+            cid-sos-browser.log
+            cid-sos-browser-chat.png
+          if-no-files-found: ignore
+          retention-days: 7
