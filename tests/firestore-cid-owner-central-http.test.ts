@@ -25,7 +25,7 @@ const person=(id:string)=>({id,name:id,channels:[{channel:'email',address:id+'@e
 const config=prepareCidSosConfig(tag,ownerId,null,{expectedRevision:0,enabled:true,owner:person(ownerId),contacts:[person('contact-test')]});
 const grants:ChannelGrant[]=[config.owner,...config.contacts].flatMap(p=>p.channels.map(c=>({...c,tagId,ownerId,participantId:p.id,verifiedAt:now-1000,consent:true})));
 const hash=(s:string)=>createHash('sha256').update(s).digest('hex');
-after(async()=>{for(const a of getApps().filter(a=>['cid-central-fixtures','cid-sos-local-emulator','cid-chat-local-emulator','cid-owner-central-local-emulator'].includes(a.name)))await deleteApp(a);});
+after(async()=>{for(const a of getApps().filter(a=>['cid-central-fixtures','cid-sos-local-emulator','cid-chat-local-emulator','cid-owner-central-local-emulator','cid-access-local-emulator'].includes(a.name)))await deleteApp(a);});
 test('central HTTPS has independent cookie, signed editing and recipient consent without login',async()=>{
  await root.set({tag,revision:0});
  const scope=isolatedTagPasskeyScope(origin,origin),auth=makeSoftwareTagAuthenticator(origin,scope.rpId);
@@ -48,6 +48,8 @@ test('central HTTPS has independent cookie, signed editing and recipient consent
    });req.on('error',reject);req.end(JSON.stringify(data));
   });
   assert.equal((await call('central/read',{})).status,403);
+  assert.equal((await call('access',{latitude:0,longitude:0})).status,403);
+  assert.deepEqual((await call('access',{})).body,{accepted:true,simulated:true});
   assert.equal((await call('central/begin',{},'',{Origin:'https://foreign.example'})).status,403);
   const challenge=await call('central/begin',{});assert.equal(challenge.status,200);
   const opened=await call('central/finish',{challengeId:challenge.body.challengeId,response:auth.assert(challenge.body.options)});
@@ -56,7 +58,7 @@ test('central HTTPS has independent cookie, signed editing and recipient consent
   const header=opened.cookies[0];for(const attribute of ['HttpOnly','Secure','SameSite=Strict','Max-Age=1800','Path='+base+'central/'])assert.ok(header.includes(attribute));
   assert.ok(header.startsWith('__Secure-cid-central-homologation='));
   const cookie=header.split(';')[0];
-  assert.equal((await call('central/read',{},cookie)).body.occurrences.length,0);
+  const overview=await call('central/read',{},cookie);assert.equal(overview.body.occurrences.length,0);assert.ok(overview.body.location.access.observedAt>0);assert.equal(overview.body.location.shared,null);
   assert.equal((await call('central/editor',{},cookie.replace('__Secure-cid-central-homologation','__Secure-cid-homologation'))).status,403);
   assert.equal((await call('central/editor',{},cookie)).body.draft.expectedRevision,0);
   const draft={expectedRevision:0,enabled:true,owner:config.owner,contacts:config.contacts};

@@ -72,6 +72,8 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   await db.collection('kyrub_tag_passkey_credential_index').doc(createHash('sha256').update(credential.id).digest('hex')).set({ownerId,tagId});
   const p=emitter.page;
   await p.goto(origin+'/cid-test/'+tagId+'/emitter');
+  for(let i=0;i<100&&!(await root.collection('private').doc('last-access').get()).exists;i++)await new Promise(r=>setTimeout(r,50));
+  assert.equal((await root.collection('private').doc('last-access').get()).get('observation.kind'),'cid-access');
   await p.getByRole('button',{name:'Emitir alerta',exact:true}).click();
   assert.equal((await root.collection('occurrences').get()).size,0);
   await p.getByLabel('Motivo do alerta').fill('Animal encontrado');
@@ -122,5 +124,5 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   assert.equal((await records.docs[0].ref.get()).get('resolution'),'recovered');
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   console.info('CID_BROWSER: TLS loopback, independent cookie jars, virtual WebAuthn registration and authentication, contact confirmation, persisted messages and close/revoke; zero external requests.');
- }finally{await browser?.close();if(server)await new Promise(r=>server.close(r));rmSync(folder,{recursive:true,force:true});for(const a of getApps().filter(a=>['cid-browser-fixtures','cid-sos-local-emulator','cid-chat-local-emulator'].includes(a.name)))await deleteApp(a);}
+ }finally{await browser?.close();if(server)await new Promise(r=>server.close(r));rmSync(folder,{recursive:true,force:true});for(const a of getApps().filter(a=>['cid-browser-fixtures','cid-sos-local-emulator','cid-chat-local-emulator','cid-access-local-emulator'].includes(a.name)))await deleteApp(a);}
 });
