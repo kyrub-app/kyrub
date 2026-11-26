@@ -134,6 +134,8 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await revokedCard.waitFor();
   assert.equal(await revokedCard.locator('img').count(),0);
   assert.equal((await distantConnection.get()).get('status'),'accepted');
+  await page.getByRole('button',{name:'Fechar meu perfil'}).click();
+  await page.locator('#profile-social-hub-modal').waitFor({state:'detached'});
   await page.getByRole('button',{name:'Solicitar conexão pela publicação fixture'}).click();
   await page.waitForFunction(()=>document.querySelector('[data-testid="community-connection-result"]')?.textContent==='enviada');
   const newConnection=(await db.doc('connections/'+[actor.uid,'social-browser-02'].sort().join('_')).get()).data();
