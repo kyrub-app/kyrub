@@ -1,6 +1,8 @@
 import {useState} from 'react';
-import {Copy} from 'lucide-react';
+import {Copy,QrCode} from 'lucide-react';
 import {buildCidPixPayload,normalizeCidPix,type CidPixConfig,type CidPixKeyType} from '../../shared/cidPix';
+
+import {cidPixQrMatrix} from '../utils/cidPixQr';
 
 export type CidPixDraft={enabled:boolean;keyType:CidPixKeyType;key:string;recipientName:string;recipientCity:string;publicConsent:boolean};
 export function initialCidPixDraft(pix?:CidPixConfig|null):CidPixDraft{
@@ -29,10 +31,15 @@ export function KyrubCidPixFields({value,onChange,disabled}:{value:CidPixDraft;o
 }
 export function KyrubCidPixPublic({pix}:{pix:CidPixConfig}){
  const [notice,setNotice]=useState('');
+ const [showQr,setShowQr]=useState(false);
  let code:string;try{code=buildCidPixPayload(pix);}catch{return null;}
+ let matrix:ReturnType<typeof cidPixQrMatrix>|null=null;
+ if(showQr){try{matrix=cidPixQrMatrix(code);}catch{/* Keep Pix Copia e Cola available. */}}
  return <section className="space-y-2 rounded-xl border border-[#34443B] p-3">
   <h2 className="font-bold text-[#F47825]">Receber via Pix</h2>
   <p className="text-sm text-slate-300">Pagamento direto. Escolha o valor no aplicativo do seu banco e confira o beneficiário antes de confirmar.</p>
+  <button type="button" aria-expanded={showQr} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#34443B] p-3 text-sm font-semibold" onClick={()=>setShowQr(v=>!v)}><QrCode aria-hidden="true" className="h-5 w-5"/>{showQr?'Ocultar QR Code Pix':'Exibir QR Code Pix'}</button>
+  {showQr&&(matrix?<svg role="img" aria-label="QR Code Pix para pagamento" viewBox={'0 0 '+matrix.size+' '+matrix.size} className="mx-auto h-auto w-full max-w-[300px] bg-white" shapeRendering="crispEdges"><rect width={matrix.size} height={matrix.size} fill="#fff"/><path d={matrix.path} fill="#000"/></svg>:<p role="status" className="text-sm">QR indisponível. Use o Pix Copia e Cola.</p>)}
   <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#34443B] p-3 text-sm font-semibold" onClick={()=>{if(!navigator.clipboard){setNotice('Abra a opção abaixo e copie o código.');return;}void navigator.clipboard.writeText(code).then(()=>setNotice('Pix copiado. Abra seu banco.')).catch(()=>setNotice('Abra a opção abaixo e copie o código.'));}}><Copy aria-hidden="true" className="h-5 w-5"/>Copiar Pix</button>
   <details><summary className="text-sm underline">Exibir Pix Copia e Cola</summary><textarea aria-label="Código Pix Copia e Cola" readOnly value={code} className={field+' text-xs'} rows={4}/></details>
   {notice&&<p role="status" className="text-xs">{notice}</p>}
