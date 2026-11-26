@@ -35,7 +35,7 @@ function timeLabel(value:number){return Number.isFinite(value)?new Intl.DateTime
 export function KyrubCidOccurrenceChat({view,actions,resolveOccurrence,preserveEvidence,denounceOccurrence,sendMessage,onBack,simulation=false}:Props){
  return <ChatPanel key={view.id} view={view} actions={actions} resolveOccurrence={resolveOccurrence} preserveEvidence={preserveEvidence} denounceOccurrence={denounceOccurrence} sendMessage={sendMessage} onBack={onBack} simulation={simulation}/>;
 }
-function ChatPanel({view,actions,resolveOccurrence,preserveEvidence,sendMessage,onBack,simulation}:Props){
+function ChatPanel({view,actions,resolveOccurrence,preserveEvidence,denounceOccurrence,sendMessage,onBack,simulation}:Props){
  const [menu,setMenu]=useState(false),[draft,setDraft]=useState(''),[busy,setBusy]=useState(false),[status,setStatus]=useState(''),[confirmClose,setConfirmClose]=useState(false);
  const [resolution,setResolution]=useState<CidSosResolution|''>('');
  const [preserveOpen,setPreserveOpen]=useState(false),[preserveReason,setPreserveReason]=useState('');
