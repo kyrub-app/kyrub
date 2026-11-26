@@ -113,3 +113,16 @@ test('legacy connected and mobile social bridges cannot enumerate unfiltered acc
   assert.doesNotMatch(source,/collection\(db,\s*['"]users['"]\)/,file);
  }
 });
+
+test('author presentation follows the current session without replacing immutable saved attribution',()=>{
+ const author=readFileSync('src/hooks/useLiveAuthorIdentities.ts','utf8');
+ const display=readFileSync('src/utils/authorDisplayIdentity.ts','utf8');
+ const community=readFileSync('src/utils/communityPostConnections.ts','utf8');
+ assert.match(author,/auth.onAuthStateChanged/);
+ assert.match(author,/auth.currentUser!==session/);
+ assert.match(author,/data\?\.isProfileVisible !== true \? ''/);
+ assert.match(display,/current\[authorId\]\?\.name \|\| savedName/);
+ assert.match(display,/current\[authorId\]\?\.avatar \?\? savedAvatar/);
+ assert.match(community,/const visible = data.isProfileVisible === true/);
+ assert.doesNotMatch(community,/user.displayName \|\| user.email/);
+});
