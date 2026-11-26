@@ -102,3 +102,11 @@ test('production candidate preserves isolated legacy path and constrains every m
  const isolation=readFileSync('server/identity/kyrubTagPilotIsolation.ts','utf8');
  assert.match(isolation,/projectId===KYRUB_PRODUCTION_PROJECT_ID\|\|!projectId/);
 });
+
+test('owner identification is scoped to active passkey stock and carries no presentation',()=>{
+ assert.doesNotThrow(()=>assertPasskeyTagState(owned,'identify-owner'));
+ assert.throws(()=>assertPasskeyTagState(virgin,'identify-owner'));
+ assert.throws(()=>assertPasskeyTagState({...owned,blocked:true},'identify-owner'));
+ assert.equal(normalizePasskeyMutation('identify-owner',undefined),null);
+ assert.throws(()=>normalizePasskeyMutation('identify-owner',{name:'Ana',occupation:'Autônoma',about:'Olá'}));
+});

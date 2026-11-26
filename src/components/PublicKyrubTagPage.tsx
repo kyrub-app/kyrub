@@ -5,6 +5,8 @@ import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {KyrubCardDemonstration} from './KyrubCardDemonstration';
+import {Pencil,HeartPulse} from 'lucide-react';
+import {KyrubCidShare} from './KyrubCidShare';
 import {KyrubTagPasskeyActions} from './KyrubTagPasskeyActions';
 import {clearCardDraft,loadCardDraft,cardDraftUrls,type CardDraft} from '../utils/cardDemonstrationDraft';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
@@ -139,13 +141,17 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   finally{lock.current=false;setBusy(false);}
  }
 
- if(authReady&&owner&&user)return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-3 py-5">
+ const publicOwnerView=owner&&!!user&&data?.status==='active'&&!!data.presentation&&!data.passkeyManaged;
+ if(authReady&&owner&&user&&(!publicOwnerView||showEdit))return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-3 py-5">
+  {publicOwnerView&&<button type="button" className="text-sm underline" onClick={()=>{setShowEdit(false);window.location.reload();}}>Voltar ao CID</button>}
   {ownerRecord?.distribution==='promotional'?
    <PromotionalKyrubTagEditor initial={ownerRecord} oneTimeRecoveryCode={recoveryCode} initialDraft={!ownerRecord.enabled?currentPresentation():undefined}/>:
    <OfficialKyrubTagPanel key={user.uid+identifier} userId={user.uid} initialTagId={identifier}/>}
   <a href="/" className="block p-3 text-center text-sm text-slate-300 underline">Kairub-se!</a>
  </div></main>;
 
+ const actionButton='min-h-11 rounded-xl border border-[#34443B] p-3 text-sm font-semibold';
+ const sosAction=<button type="button" aria-expanded={showSos} className={actionButton+' flex items-center justify-center gap-2 text-rose-200'} onClick={()=>setShowSos(s=>!s)}><HeartPulse aria-hidden="true" className="h-5 w-5"/>SOS</button>;
  const promotional=data?.status==='unclaimed'&&(data.activation==='email'||data.activation==='setup');
  return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-4 py-6">
   {!promotional&&!(data?.status==='active'&&data.presentation)&&<header className="flex items-center justify-between gap-2">
@@ -163,7 +169,10 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
     {data.presentation.about&&<p className="whitespace-pre-wrap break-words text-slate-200">{data.presentation.about}</p>}
     {data.links.map(link=>{const dest=parsePublicDestinationUrl(link.url);if(!dest||dest.kind==='card')return null;return <a key={link.url} href={buildPublicDestinationPath(dest.kind,dest.identifier)??'/'} className="block rounded-xl border border-[#34443B] p-3 text-sm"><span className="block text-xs text-[#F47825]">{dest.kind==='profile'?'Perfil':dest.kind==='store'?'Loja':'Comunidade'}</span>{link.name}</a>;})}
-    <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
+    {data.passkeyManaged?<KyrubTagPasskeyActions key={identifier} tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links} sosAction={sosAction}/>:<>
+     <div className="grid grid-cols-2 gap-2">{publicOwnerView?<button type="button" className={actionButton+' flex items-center justify-center gap-2 text-[#F47825]'} onClick={()=>setShowEdit(true)}><Pencil aria-hidden="true" className="h-5 w-5"/>Editar</button>:<KyrubCidShare tagId={identifier} className={actionButton}/>} {sosAction}</div>
+     {!publicOwnerView&&<button type="button" className="text-sm text-[#F47825] underline" onClick={()=>setShowEdit(v=>!v)}>Acessar meu CID</button>}
+    </>}
     {showSos&&<div className="space-y-2 rounded-xl border border-rose-600/50 p-3">
      <h2 className="font-semibold">Emergência no Brasil</h2>
      <p className="text-xs text-slate-300">Toque em um número para abrir o discador. Esta página não envia alertas nem aciona socorro automaticamente.</p>
@@ -179,7 +188,6 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
       </div>)}
      </div>}
     </div>}
-    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
    </section>:
    data?.status==='blocked'&&data.passkeyManaged?<section className="space-y-3"><p role="status">Este cartão está bloqueado. As informações do titular não estão públicas.</p><KyrubTagPasskeyActions tagId={identifier} mode="blocked" origin={data.passkeyOrigin}/></section>:
    promotional?
@@ -221,7 +229,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
    <p className="text-sm text-slate-300">Saber o endereço NFC não autoriza editar. Confirme sua identidade pelo e-mail usado na ativação.</p>
    {!user?.emailVerified?<TagEmailLinkIdentity tagId={identifier}/>:<p className="text-sm text-slate-300">Autenticado como {user.email}. Se esta é sua unidade, o painel de edição será aberto.</p>}
   </section>}
-  {!data?.passkeyManaged&&<button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>}
+  {!data?.passkeyManaged&&!owner&&<button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>}
   {!data?.passkeyManaged&&showRecovery&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <p className="text-sm text-slate-300">Use o código secreto de recuperação entregue na primeira ativação. Será necessário verificar o novo e-mail; a tag ficará bloqueada até você revisá-la.</p>
    {user?.emailVerified?<><p className="text-sm text-slate-300">Novo e-mail verificado: {user.email}</p>
