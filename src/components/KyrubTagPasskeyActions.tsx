@@ -12,7 +12,7 @@ const orange=button+' bg-[#F47825] text-[#121A17] w-full';
 export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links=[]}:{tagId:string;mode:'register'|'active'|'blocked';origin?:string;getDraft?:()=>PromotionalTagPresentation;initial?:PromotionalTagPresentation;links?:{url:string}[]}){
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[recovery,setRecovery]=useState(''),[editing,setEditing]=useState(false);
  const [recovering,setRecovering]=useState(false),[secret,setSecret]=useState('');
- const [draft,setDraft]=useState(initial??{name:'',occupation:'',about:''});
+ const [draft,setDraft]=useState(()=>({name:initial?.name??'',occupation:initial?.occupation??'',about:initial?.about??''}));
  const [pixDraft,setPixDraft]=useState(()=>initialCidPixDraft(initial?.pix));
  const [pixTouched,setPixTouched]=useState(false);
  const [destinations,setDestinations]=useState(()=>Object.fromEntries(links.flatMap(l=>{const p=parsePublicDestinationUrl(l.url);return p&&p.kind!=='card'?[[p.kind,p.identifier]]:[];})) as Partial<Record<'profile'|'store'|'community',string>>);
