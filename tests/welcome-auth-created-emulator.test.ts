@@ -1453,3 +1453,48 @@ test('staff directory HTTP pilot authenticates actor, protects reserved target a
   if(prior===undefined)delete process.env.KYRUB_STAFF_DIRECTORY_PILOT;else process.env.KYRUB_STAFF_DIRECTORY_PILOT=prior;
  }
 });
+
+test('social directory HTTP pilot authenticates, paginates and hydrates only explicitly visible identities',async()=>{
+ const {createSocialDirectoryEmulatorRouter}=await import('../server/identity/socialDirectoryEmulatorRouter.js');
+ const express=(await import('express')).default;
+ const actor=await googleSignIn('social-directory-http-actor');
+ await waitForAward(actor.localId);
+ const visible='social-http-visible-fixture',hidden='social-http-hidden-fixture';
+ const prior=process.env.KYRUB_SOCIAL_DIRECTORY_PILOT;
+ const visibleRef=db.doc('users/'+visible),hiddenRef=db.doc('users/'+hidden);
+ const http=express();http.use(express.json({limit:'8kb'}));http.use('/api',createSocialDirectoryEmulatorRouter(db,auth));
+ const listener=http.listen(0,'127.0.0.1');
+ await new Promise<void>((resolve,reject)=>{listener.once('listening',resolve);listener.once('error',reject);});
+ const address=listener.address();assert.ok(address&&typeof address!=='string');
+ const url='http://127.0.0.1:'+address.port+'/api/social-directory-pilot/';
+ const post=(op:string,body:unknown={},token=actor.idToken)=>fetch(url+op,{method:'POST',
+ headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ try{
+  await visibleRef.set({uid:visible,name:'Nome público',photoUrl:'https://example.invalid/photo',isProfileVisible:true,email:'private@example.invalid',cpf:'fixture'});
+  await hiddenRef.set({uid:hidden,name:'Nome reservado',photoUrl:'https://example.invalid/hidden',isProfileVisible:false,email:'hidden@example.invalid'});
+  delete process.env.KYRUB_SOCIAL_DIRECTORY_PILOT;
+  assert.equal((await post('page')).status,404);
+  process.env.KYRUB_SOCIAL_DIRECTORY_PILOT='true';
+  assert.equal((await post('page',{},'invalid')).status,401);
+  assert.equal((await post('page',{actorUid:visible})).status,400);
+  const page=await post('page',{after:'social-http-hidden-fixture'});assert.equal(page.status,200);
+  assert.equal(page.headers.get('cache-control'),'private, no-store');
+  const results=await page.json();
+  assert.ok(results.entries.some((entry:any)=>entry.id===visible));
+  assert.ok(results.entries.every((entry:any)=>Object.keys(entry).sort().join(',')==='id,isProfileVisible,name,photoUrl'));
+  const authors=await post('authors',{authorIds:[visible,hidden,visible]});
+  assert.equal(authors.status,200);
+  assert.deepEqual(await authors.json(),{entries:[{id:visible,name:'Nome público',avatar:'https://example.invalid/photo'}]});
+  assert.equal((await post('authors',{authorIds:Array(41).fill(visible)})).status,400);
+  await visibleRef.update({isProfileVisible:false});
+  assert.deepEqual(await (await post('authors',{authorIds:[visible,hidden]})).json(),{entries:[]});
+  for(let i=0;i<7;i++)assert.equal((await post('authors',{authorIds:[]})).status,200);
+  assert.equal((await post('page')).status,429);
+  await auth.updateUser(actor.localId,{disabled:true});
+  assert.equal((await post('page')).status,401);
+ }finally{
+  await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  await Promise.all([visibleRef.delete(),hiddenRef.delete(),auth.updateUser(actor.localId,{disabled:false})]);
+  if(prior===undefined)delete process.env.KYRUB_SOCIAL_DIRECTORY_PILOT;else process.env.KYRUB_SOCIAL_DIRECTORY_PILOT=prior;
+ }
+});
