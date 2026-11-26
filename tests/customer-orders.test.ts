@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import './payment-ux-policy.test';
@@ -434,4 +435,19 @@ describe('customer orders', () => {
       getLastCustomerOrderStorageKey('buyer-a', 'store-b')
     );
   });
+});
+
+
+test('preferred order listeners fence obsolete canonical generations and stop all callbacks on disposal', () => {
+  const source=readFileSync(new URL('../src/utils/customerOrders.ts',import.meta.url),'utf8');
+  for(const [start,end] of [
+    ['subscribeToPreferredCustomerOrder =','subscribeToCustomerOrder ='],
+    ['subscribeToPreferredStoreCustomerOrders =','subscribeToStoreCustomerOrders ='],
+  ]){
+    const listener=source.slice(source.indexOf('export const '+start),source.indexOf('export const '+end));
+    assert.equal((listener.match(/if\(stopped\|\|generation!==canonicalGeneration\)return;/g)??[]).length,2);
+    assert.equal((listener.match(/if\(stopped\)return;/g)??[]).length,5);
+    assert.match(listener,/return \(\) => \{\s*stopped=true;\s*canonicalGeneration\+\+;\s*unsubscribeLegacy\(\);\s*unsubscribeConfig\(\);\s*unsubscribeCanonical\(\);/);
+    assert.match(listener,/if\(stopped\)return;\s*canonicalEnabled = false;\s*restartCanonical\(\);\s*onError\?\.\(error\);/);
+  }
 });
