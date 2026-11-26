@@ -149,6 +149,8 @@ export async function configurePromotionalKyrubTag(actor:string,id:string,input:
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  const presentation=normalizePromotionalPresentation(input);
+ // Pix is initially restricted to passkey-managed promotional cards.
+ if(presentation.pix!==undefined)throw Error('TAG_PRESENTATION_INVALID');
  const ref=tags().doc(id),initial=await ref.get(),before=initial.data();
  if(before?.distribution!=='promotional'||before.ownerAuthMode==='passkey'||before.ownerId!==actor||before.blocked===true)throw Error('TAG_FORBIDDEN');
  await validatePromotionalMediaReferences(actor,id,presentation);

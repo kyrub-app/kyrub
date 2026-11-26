@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {normalizePromotionalPresentation,publicPromotionalPresentation} from '../shared/kyrubTagPromotional';
 import {buildCidPixPayload,normalizeCidPix,cidPixCrc16} from '../shared/cidPix';
 const base={keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000',recipientName:'Fulano de Tal',recipientCity:'BRASILIA',publicConsent:true};
 test('static payload matches BCB manual 2.6.3 byte for byte, without fixed amount',()=>{
@@ -13,4 +14,26 @@ test('consent and bounded fields are mandatory, without claiming bank verificati
 test('supported key types are syntactically validated, without querying external services',()=>{
  for(const [keyType,key,expected] of [['cpf','529.982.247-25','52998224725'],['cnpj','04.252.011/0001-10','04252011000110'],['phone','+5511999999999','+5511999999999'],['email','TESTE@example.com','teste@example.com']])assert.equal(normalizeCidPix({...base,keyType,key}).key,expected);
  for(const [keyType,key] of [['cpf','00000000000'],['cnpj','11111111111111'],['phone','11999999999'],['email','abc@x'],['email','a'.repeat(70)+'@example.com']])assert.throws(()=>normalizeCidPix({...base,keyType,key}),/CID_PIX_INVALID/);
+});
+
+test('only expressly consented Pix is projected into the public presentation',()=>{
+ const card={name:'Pessoa teste',occupation:'',about:''};
+ assert.equal(publicPromotionalPresentation(normalizePromotionalPresentation(card)).pix,undefined);
+ assert.equal(publicPromotionalPresentation(normalizePromotionalPresentation({...card,pix:null})).pix,undefined);
+ assert.throws(()=>normalizePromotionalPresentation({...card,pix:{...base,publicConsent:false}}));
+ assert.deepEqual(publicPromotionalPresentation(normalizePromotionalPresentation({...card,pix:base})).pix,base);
+});
+
+import {cidPixQrMatrix} from '../src/utils/cidPixQr';
+test('QR uses local byte-mode matrix, deterministic and with four-module quiet zone',()=>{
+ const payload=buildCidPixPayload(base);
+ const matrix=cidPixQrMatrix(payload);
+ assert.deepEqual(cidPixQrMatrix(payload),matrix);
+ assert.ok(matrix.size>=29&&(matrix.size-29)%4===0);
+ assert.notEqual(cidPixQrMatrix(buildCidPixPayload({...base,key:'123e4567-e12b-12d1-a456-426655440001'})).path,matrix.path);
+ const cells=[...matrix.path.matchAll(/M(\d+),(\d+)h1v1h-1z/g)];
+ assert.ok(cells.length>0);
+ assert.equal(cells.map(m=>m[0]).join(''),matrix.path);
+ for(const [,x,y] of cells){assert.ok(+x>=4&&+x<matrix.size-4);assert.ok(+y>=4&&+y<matrix.size-4);}
+ assert.throws(()=>cidPixQrMatrix(''));assert.throws(()=>cidPixQrMatrix('x'.repeat(301)));
 });
