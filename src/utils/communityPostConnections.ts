@@ -3,6 +3,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import {socialDirectoryPilotEnabled,readAuthorIdentitiesPilot} from './socialDirectoryPilot';
 
 export interface CommunityPostConnection {
   id: string;
@@ -48,6 +49,16 @@ export const subscribeCommunityPostConnections = (
 
 export const readCommunityPostPublicProfile = async (userId: string): Promise<CommunityPublicProfile> => {
   if (!userId || !/^[a-zA-Z0-9_-]{1,128}$/.test(userId)) throw new Error('Perfil inválido.');
+  if(socialDirectoryPilotEnabled()){
+    const actor=auth.currentUser;
+    if(!actor)throw Error('Entre no Kyrub para consultar o perfil.');
+    const entries=await readAuthorIdentitiesPilot(actor,[userId]);
+    if(auth.currentUser!==actor)throw Error('Sessão alterada.');
+    const entry=entries.find(item=>item.id===userId);
+    // Missing, inconsistent and reserved profiles are intentionally indistinguishable.
+    return {id:userId,name:entry?.name||'Kairubido',avatar:entry?.avatar||'',
+      role:'Kairubido',bio:'',visible:Boolean(entry)};
+  }
   const snapshot = await getDoc(doc(db, 'users', userId));
   if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
   const data = snapshot.data();
@@ -67,6 +78,7 @@ export const requestCommunityPostConnection = async (userId: string): Promise<vo
   if (!user) throw new Error('Entre no Kyrub para conectar.');
   if (userId === user.uid) throw new Error('Não é possível conectar consigo mesmo.');
   const profile = await readCommunityPostPublicProfile(userId);
+  if(auth.currentUser!==user)throw Error('Sessão alterada.');
   if (!profile.visible) throw new Error('Este perfil não aceita novas conexões.');
   const id = connectionIdFor(user.uid, userId);
   // A create-only rule rejects duplicate or pre-existing pending/accepted records,
