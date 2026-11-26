@@ -4,18 +4,33 @@ import { evaluateProfileCompletion, PROFILE_COMPLETION_CHALLENGE } from '../../s
 import { kyrubKCoinBalance, type KyrubRewardLedgerEntry } from '../../shared/gamification.js';
 import { verifyCleanBaselineSpendingEligibilityInTransaction } from './cleanBaselineSpendingEligibility.js';
 import { readIsolatedZeroCurrencyBalance } from './semeaduraNoWelcomeAuthority.js';
+import { matchesSocialAddressRecord } from '../identity/publicSocialAddressPolicy.js';
 
 const PROJECT='demo-kyrub-welcome';
 const EPOCH='welcome-emulator-only';
 const CHALLENGE=PROFILE_COMPLETION_CHALLENGE.id;
 const validUid=(uid:string)=>/^[A-Za-z0-9_-]{1,128}$/.test(uid);
 
-/** No public route or production writer. The trusted adapter must read the
- * authoritative saved profile and handle reservation INSIDE this transaction.
- * A display handle generated from email is not evidence of ownership. */
-export type ProfileCompletionEvidenceReader=(tx:Transaction,uid:string)=>Promise<{
- displayName:unknown;handle:unknown;handleOwnerUid:unknown;bio:unknown;
-}>;
+/** Only persisted profile fields and matching server-owned indices count.
+ * No request-supplied evidence, email fallback, visibility or photo required.
+ * Reads belong to the same transaction as the economic award. */
+async function readSavedProfileCompletionEvidence(db:Firestore,tx:Transaction,uid:string){
+ const [account,profile,target]=await Promise.all([
+  tx.get(db.doc('users/'+uid)),
+  tx.get(db.doc('users/'+uid+'/public_profile/main')),
+  tx.get(db.doc('public_social_address_targets/profile:'+uid)),
+ ]);
+ const p=profile.data(),t=target.data(),u=account.data();
+ if(!u||!p||p.userId!==uid||typeof p.name!=='string'||!p.name.trim()||p.name.length>80||
+  typeof u.name!=='string'||u.name.trim()!==p.name.trim()||
+  typeof p.bio!=='string'||!p.bio.trim()||p.bio.length>280||
+  typeof t?.identifier!=='string'||!matchesSocialAddressRecord(t,'profile',t.identifier,uid))
+  throw Error('PROFILE_COMPLETION_NOT_ELIGIBLE');
+ const forward=(await tx.get(db.doc('public_social_addresses/profile:'+t.identifier))).data();
+ if(!matchesSocialAddressRecord(forward,'profile',t.identifier,uid))
+  throw Error('PROFILE_COMPLETION_NOT_ELIGIBLE');
+ return {displayName:p.name,handle:t.identifier,handleOwnerUid:uid,bio:p.bio};
+}
 
 export function profileCompletionPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv=process.env){
  return env.KYRUB_PROFILE_COMPLETION_PILOT==='true'&&env.NODE_ENV!=='production'&&
@@ -25,7 +40,7 @@ export function profileCompletionPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv
  !env.VERCEL&&!env.FIREBASE_SERVICE_ACCOUNT_JSON&&!env.GOOGLE_APPLICATION_CREDENTIALS;
 }
 
-export async function grantIsolatedProfileCompletion(db:Firestore,uid:string,readEvidence:ProfileCompletionEvidenceReader){
+export async function grantIsolatedProfileCompletion(db:Firestore,uid:string){
  if(!profileCompletionPilotEnabled(db)||!validUid(uid))throw Error('PROFILE_COMPLETION_RELEASE_UNAVAILABLE');
  const root=db.collection('users').doc(uid);
  const receiptRef=root.collection('challengeRewards').doc(CHALLENGE);
@@ -79,7 +94,7 @@ export async function grantIsolatedProfileCompletion(db:Firestore,uid:string,rea
   if(!d||d.id!==CHALLENGE||!['active','published'].includes(d.status)||d.validationMode!=='deterministic'||
    d.sponsorType!=='kyrub'||d.rewardKCoins!==100||d.rewardXp!==0||d.maxCompletionsPerUser!==1||
    d.startsAt!==undefined||d.endsAt!==undefined)throw Error('PROFILE_COMPLETION_DEFINITION_INVALID');
-  const evidence=await readEvidence(tx,uid);
+  const evidence=await readSavedProfileCompletionEvidence(db,tx,uid);
   const eligibility=evaluateProfileCompletion({...evidence,uid,ageStatus:'verified_adult',
    releaseApproved:true,challengeActive:true,receiptExists:false});
   if(!eligibility.eligible||eligibility.idempotencyKey!==key||!Number.isSafeInteger(available+100))
