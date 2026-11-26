@@ -1580,3 +1580,62 @@ test('administrative identity lookup checks current grant, resolves authoritativ
   await Promise.all([grant.delete(),targetRef.update({email}),spoofRef.update({email:'admin-identity-spoof@example.invalid',isProfileVisible:false})]);
  }
 });
+
+test('admin directory HTTP pilot enforces isolation, current roles, verified session, audit and quota',async()=>{
+ const {createAdminDirectoryEmulatorRouter}=await import('../server/identity/adminDirectoryEmulatorRouter.js');
+ const express=(await import('express')).default;
+ const actor=await googleSignIn('admin-directory-http-actor'),target=await googleSignIn('admin-directory-http-target');
+ await Promise.all([actor,target].map(person=>waitForAward(person.localId)));
+ const grant=db.doc('kyrub_admin/control_plane/admins/'+actor.localId);
+ const targetRef=db.doc('users/'+target.localId);
+ const audits=db.collection('kyrub_admin/control_plane/audit_logs').where('actorId','==',actor.localId);
+ const prior=process.env.KYRUB_ADMIN_DIRECTORY_PILOT,priorNodeEnv=process.env.NODE_ENV;
+ const http=express();http.use(express.json({limit:'8kb'}));http.use('/api',createAdminDirectoryEmulatorRouter(db,auth));
+ const listener=http.listen(0,'127.0.0.1');
+ await new Promise<void>((resolve,reject)=>{listener.once('listening',resolve);listener.once('error',reject);});
+ const address=listener.address();assert.ok(address&&typeof address!=='string');
+ const url='http://127.0.0.1:'+address.port+'/api/admin-directory-pilot/identity';
+ const term='admin-directory-http-target@example.invalid';
+ const post=(body:unknown={term},token=actor.idToken)=>fetch(url,{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
+ try{
+  await targetRef.set({uid:target.localId,name:'Titular reservado',email:'wrong-profile@example.invalid',isProfileVisible:false,cpf:'fixture',phone:'fixture'},{merge:true});
+  process.env.NODE_ENV='test';delete process.env.KYRUB_ADMIN_DIRECTORY_PILOT;
+  assert.equal((await post()).status,404);
+  process.env.KYRUB_ADMIN_DIRECTORY_PILOT='true';
+  assert.equal((await fetch(url)).status,405);
+  assert.equal((await post({term},'invalid')).status,401);
+  assert.equal((await post({term},target.idToken)).status,403);
+  await grant.set({uid:actor.localId,role:'finance',status:'active'});
+  assert.equal((await post()).status,403);
+  await grant.update({role:'support'});
+  assert.equal((await post({term,actorUid:target.localId})).status,400);
+  const found=await post();assert.equal(found.status,200);
+  assert.equal(found.headers.get('cache-control'),'private, no-store');
+  const result=(await found.json()).user;
+  assert.equal(result.uid,target.localId);assert.equal(result.email,term);
+  assert.equal(result.isProfileVisible,false);
+  assert.deepEqual(Object.keys(result).sort(),['createdAt','email','isProfileVisible','name','photoUrl','uid','updatedAt']);
+  const records=await audits.get();assert.equal(records.size,1);
+  assert.equal(records.docs[0].get('targetId'),target.localId);
+  assert.equal(records.docs[0].get('source'),'server');
+  assert.equal(records.docs[0].get('outcome'),'found');
+  const missing=await post({term:'missing-admin-http@example.invalid'});
+  assert.equal(missing.status,200);assert.deepEqual(await missing.json(),{user:null});
+  assert.equal((await audits.get()).size,2);
+  await grant.update({status:'revoked'});
+  assert.equal((await post()).status,403);
+  await grant.update({status:'active'});
+  await auth.updateUser(actor.localId,{emailVerified:false});
+  assert.equal((await post()).status,401);
+  await auth.updateUser(actor.localId,{emailVerified:true});
+  for(let i=0;i<7;i++)assert.equal((await post({term:target.localId})).status,200);
+  const limited=await post();assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
+  assert.equal((await audits.get()).size,9);
+ }finally{
+  await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  await Promise.all((await audits.get()).docs.map(doc=>doc.ref.delete()));
+  await Promise.all([grant.delete(),targetRef.update({email:term}),auth.updateUser(actor.localId,{emailVerified:true})]);
+  if(prior===undefined)delete process.env.KYRUB_ADMIN_DIRECTORY_PILOT;else process.env.KYRUB_ADMIN_DIRECTORY_PILOT=prior;
+  if(priorNodeEnv===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=priorNodeEnv;
+ }
+});
