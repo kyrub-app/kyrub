@@ -23,3 +23,17 @@ test('only expressly consented Pix is projected into the public presentation',()
  assert.throws(()=>normalizePromotionalPresentation({...card,pix:{...base,publicConsent:false}}));
  assert.deepEqual(publicPromotionalPresentation(normalizePromotionalPresentation({...card,pix:base})).pix,base);
 });
+
+import {cidPixQrMatrix} from '../src/utils/cidPixQr';
+test('QR uses local byte-mode matrix, deterministic and with four-module quiet zone',()=>{
+ const payload=buildCidPixPayload(base);
+ const matrix=cidPixQrMatrix(payload);
+ assert.deepEqual(cidPixQrMatrix(payload),matrix);
+ assert.ok(matrix.size>=29&&(matrix.size-29)%4===0);
+ assert.notEqual(cidPixQrMatrix(buildCidPixPayload({...base,key:'123e4567-e12b-12d1-a456-426655440001'})).path,matrix.path);
+ const cells=[...matrix.path.matchAll(/M(\d+),(\d+)h1v1h-1z/g)];
+ assert.ok(cells.length>0);
+ assert.equal(cells.map(m=>m[0]).join(''),matrix.path);
+ for(const [,x,y] of cells){assert.ok(+x>=4&&+x<matrix.size-4);assert.ok(+y>=4&&+y<matrix.size-4);}
+ assert.throws(()=>cidPixQrMatrix(''));assert.throws(()=>cidPixQrMatrix('x'.repeat(301)));
+});
