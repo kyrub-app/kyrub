@@ -77,4 +77,27 @@ describe('Finance Results & Margins workspace', () => {
     assert.match(workspace, /xl:grid-cols-4/);
     assert.doesNotMatch(workspace, /recharts|chart\.js|<canvas|<svg/i);
   });
+
+  test('isolates profitability snapshots by store and authenticated user', () => {
+    assert.match(workspace, /onAuthStateChanged\(auth, setUser\)/);
+    assert.match(workspace, /key=\{JSON\.stringify\(\[storeId, user\?\.uid \?\? null\]\)\}/);
+    assert.match(workspace, /orders\.storeId !== storeId \|\| products\.storeId !== storeId/);
+  });
+
+  test('aborts replaced or unmounted requests and guards all async state writes', () => {
+    assert.match(workspace, /activeRequest\.current\?\.abort\(\)/);
+    assert.match(workspace, /activeRequest\.current === controller/);
+    assert.match(workspace, /!controller\.signal\.aborted && auth\.currentUser === user/);
+    assert.match(workspace, /if \(!isCurrent\(\)\) return;\s+setOrders\(result\.orders\)/);
+    assert.match(workspace, /catch \(caught\) \{\s+if \(!isCurrent\(\)\) return;/);
+    assert.match(workspace, /finally \{\s+if \(isCurrent\(\)\) \{/);
+    assert.match(workspace, /return \(\) => \{ activeRequest\.current\?\.abort\(\); activeRequest\.current = null; \}/);
+  });
+
+  test('uses the same session token and cancellation signal for both profitability requests', () => {
+    assert.match(workspace, /loadProfitability\(storeId, token, controller\.signal\)/);
+    assert.match(workspace, /authorizedJson<OrderOverview>\([^\n]+, token, signal\)/);
+    assert.match(workspace, /authorizedJson<ProductOverview>\([^\n]+, token, signal\)/);
+  });
+
 });
