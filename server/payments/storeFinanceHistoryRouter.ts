@@ -232,20 +232,34 @@ const recoverAllMissingCanonicalPaidCaptures = async (storeId: string): Promise<
     });
     if (candidates.length > 0) {
       const refs = candidates.map(payment => adminDb.doc(storeEconomicLedgerEntryPath(storeId, buildPaymentCaptureEconomicEntryId(payment.id))));
-      const existing = await adminDb.getAll(...refs);
-      const batch = adminDb.batch();
-      let writes = 0;
-      candidates.forEach((payment, index) => {
-        if (existing[index]?.exists) return;
-        batch.set(refs[index], buildRecoveredPaymentCaptureEconomicEntry({ payment, paymentIntentId: payment.paymentIntentId ?? '' }));
-        writes += 1;
+      const writes = await adminDb.runTransaction(async transaction => {
+        const existing = await transaction.getAll(...refs);
+        let count = 0;
+        candidates.forEach((payment, index) => {
+          if (existing[index]?.exists) return;
+          transaction.create(refs[index], buildRecoveredPaymentCaptureEconomicEntry({ payment, paymentIntentId: payment.paymentIntentId ?? '' }));
+          count += 1;
+        });
+        return count;
       });
-      if (writes > 0) { await batch.commit(); recoveredCount += writes; }
+      recoveredCount += writes;
     }
     lastDocumentId = snapshot.docs[snapshot.docs.length - 1]?.id ?? '';
     if (snapshot.size < RECOVERY_BATCH || !lastDocumentId) break;
   }
   return recoveredCount;
+};
+
+// Share only work currently in flight, never a completed recovery result.
+const activeCaptureRecoveries = new Map<string, Promise<number>>();
+const recoverCanonicalPaidCaptures = (storeId: string): Promise<number> => {
+  const existing = activeCaptureRecoveries.get(storeId);
+  if (existing) return existing;
+  const pending = recoverAllMissingCanonicalPaidCaptures(storeId).finally(() => {
+    if (activeCaptureRecoveries.get(storeId) === pending) activeCaptureRecoveries.delete(storeId);
+  });
+  activeCaptureRecoveries.set(storeId, pending);
+  return pending;
 };
 
 type HistoryItem = { id: string; kind: StoreEconomicLedgerKind; currency: 'BRL'; amountMinor: number; paymentId: string; orderId: string; buyerId: string; paymentMethod: PaymentMethod; provider: string; providerPaymentId: string; sourceAuthority: StoreEconomicLedgerSourceAuthority; occurredAt: string; providerFeeMinor: number | null };
@@ -393,10 +407,10 @@ export const createStoreFinanceHistoryRouter = (): Router => {
       const zone=parseFinancePeriodTimeZone(request.query.timeZone);
       if(mode!=='period'&&zone!=='UTC')throw Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
       const periodRange=mode==='period'?parsePeriod(request.query.period,true,zone):parsePeriod(request.query.period);
-      const recoveredCount = await recoverAllMissingCanonicalPaidCaptures(storeId);
       if (mode === 'period') {
         const period = periodRange;
         if (!period) throw new Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
+        const recoveredCount = await recoverCanonicalPaidCaptures(storeId);
         response.status(200).json({ storeId, recoveredCount, report: await buildPeriodView(storeId, period) });
         return;
       }
@@ -408,6 +422,7 @@ export const createStoreFinanceHistoryRouter = (): Router => {
       const rawView=clean(request.query.view)||'current';
       if(rawView!=='current'&&rawView!=='all')throw Error('STORE_FINANCE_HISTORY_FILTER_INVALID');
       const phase=await getOfficialOperationalPhaseForLegacyStore(storeId);
+      const recoveredCount = await recoverCanonicalPaidCaptures(storeId);
       const activeView=phase.active?rawView:'all';
       const page = await listHistoryPage({
         storeId,period,kind,paymentMethod,cursor,limit,
