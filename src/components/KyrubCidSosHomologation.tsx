@@ -12,6 +12,8 @@ export type HomologationChatSession={
  close?:()=>Promise<void>;
  resolve?:(reason:CidSosResolution)=>Promise<void>;
  revoke:()=>Promise<void>;
+ exportOccurrence?:(format:'text'|'structured')=>Promise<void>;
+ preserveEvidence?:(reason:string)=>Promise<{id:string;status:'pending-review'}>;
 };
 export type HomologationEntry=
  | {role:'emitter';smsAvailable:boolean;submit:(request:CidSosRequest)=>Promise<HomologationChatSession>;requestLocation?:()=>Promise<Omit<CidSosSharedLocation,'consent'>>}
@@ -58,7 +60,7 @@ function Panel({entry,privacyUrl}:Props){
  return <section aria-label="Homologação integrada SOS" className="mx-auto max-w-md space-y-3 rounded-xl bg-[#121A17] p-3 text-[#F5F5F3]">
   <p className="text-xs text-amber-200">Homologação isolada — dados fictícios; nenhum alerta real será enviado.</p>
   {view&&session?<><button type="button" className={button} disabled={busy} onClick={()=>void perform(()=>reload(session))}>Atualizar conversa</button>
-   <KyrubCidOccurrenceChat view={view} simulation resolveOccurrence={view.role==='owner'&&session.resolve?async reason=>{await session.resolve!(reason);await reload(session);}:undefined} onBack={()=>void leave()} actions={view.role==='owner'&&session.close?{close:async()=>{await session.close!();await reload(session);}}:{}} sendMessage={async input=>{await session.send(input);await reload(session);}}/>
+   <KyrubCidOccurrenceChat view={view} simulation resolveOccurrence={view.role==='owner'&&session.resolve?async reason=>{await session.resolve!(reason);await reload(session);}:undefined} onBack={()=>void leave()} preserveEvidence={view.role==='owner'?session.preserveEvidence:undefined} actions={view.role==='owner'?{...(session.close?{close:async()=>{await session.close!();await reload(session);}}:{}),...(session.exportOccurrence?{download:()=>session.exportOccurrence!('text'),report:()=>session.exportOccurrence!('structured')}: {})}:{}} sendMessage={async input=>{await session.send(input);await reload(session);}}/>
   </>:entry.role==='emitter'?<KyrubCidSosAlertForm simulation smsAvailable={entry.smsAvailable} privacyUrl={privacyUrl} requestLocation={entry.requestLocation} submitAlert={async request=>{await attach(await entry.submit(request));return {accepted:true,simulated:true};}}/>:entry.role==='owner'?
    <button type="button" className={button} disabled={busy} onClick={()=>void perform(async()=>attach(await entry.open()))}>Acessar ocorrência por passkey</button>:
    <div className="space-y-2">
