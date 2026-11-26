@@ -182,3 +182,23 @@ test('community post connection pilot uses only visible identity projection and 
  assert.doesNotMatch(pilot,/getDoc|email|phone/);
  assert.match(source,/await readCommunityPostPublicProfile\(userId\);\s*if\(auth.currentUser!==user\)/);
 });
+
+test('admin directory identity transport is isolated and does not bypass mandatory server audit',()=>{
+ const client=readFileSync('src/utils/adminDirectoryPilot.ts','utf8');
+ const directory=readFileSync('src/utils/adminDirectory.ts','utf8');
+ const service=readFileSync('server/identity/adminDirectoryIdentityService.ts','utf8');
+ const router=readFileSync('server/identity/adminDirectoryEmulatorRouter.ts','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(client,/import\.meta\.env\?\.DEV===true/);
+ assert.match(client,/VITE_KYRUB_ADMIN_DIRECTORY_PILOT==='true'/);
+ assert.match(client,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(client,/method:'POST',cache:'no-store'/);
+ assert.match(directory,/pilot&&session\?await lookupAdminDirectoryPilot\(session,lookup.value\):await findUser\(lookup\)/);
+ assert.match(directory,/if\(!pilot\)void recordAdminDirectorySearch/);
+ assert.match(service,/tx\.create\(auditRef/);
+ assert.match(service,/return db\.runTransaction/);
+ assert.match(router,/auth\.verifyIdToken\(token,true\)/);
+ assert.match(router,/actor\.disabled\|\|!actor\.emailVerified/);
+ assert.match(server,/KYRUB_ADMIN_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'/);
+ assert.match(server,/adminDirectoryRouterPromise\?\?=Promise\.all/);
+});
