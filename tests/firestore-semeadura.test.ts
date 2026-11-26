@@ -327,3 +327,27 @@ test('reserved personal presentation is private to owner; public discovery requi
  await db.doc('users/'+owner).delete();
  await assertFails(getDoc(doc(other,path)));
 });
+
+test('server directory pages only visible canonical identities without leaking private fields',async()=>{
+ const {readVisibleSocialDirectoryPage}=await import('../server/identity/socialDiscoveryDirectoryService.js');
+ const batch=db.batch();
+ for(let i=0;i<45;i++){
+  const uid='directory-'+String(i).padStart(2,'0');
+  batch.set(db.doc('users/'+uid),{uid,name:'Pessoa '+i,photoUrl:'https://example.invalid/photo',isProfileVisible:true,email:'private@example.invalid',cpf:'fixture',whatsapp:'private'});
+ }
+ batch.set(db.doc('users/directory-private'),{uid:'directory-private',name:'Reservado',isProfileVisible:false,email:'private@example.invalid'});
+ batch.set(db.doc('users/directory-no-opt-in'),{uid:'directory-no-opt-in',name:'Sem escolha'});
+ batch.set(db.doc('users/directory-wrong-owner'),{uid:'other',name:'Inconsistente',isProfileVisible:true});
+ await batch.commit();
+ const first=await readVisibleSocialDirectoryPage(db,'directory-00');
+ assert.equal(first.entries.length,39);assert.equal(first.nextCursor,'directory-39');
+ const second=await readVisibleSocialDirectoryPage(db,'directory-00',first.nextCursor!);
+ assert.equal(second.entries.length,5);assert.equal(second.nextCursor,null);
+ const entries=[...first.entries,...second.entries];
+ assert.equal(new Set(entries.map(e=>e.id)).size,44);
+ for(const entry of entries)assert.deepEqual(Object.keys(entry).sort(),['id','isProfileVisible','name','photoUrl']);
+ await db.doc('users/directory-01').update({isProfileVisible:false});
+ const refreshed=await readVisibleSocialDirectoryPage(db,'directory-00');
+ assert.ok(!refreshed.entries.some(e=>e.id==='directory-01'));
+ await assert.rejects(readVisibleSocialDirectoryPage(db,'directory-00','../private'),/DIRECTORY_INPUT_INVALID/);
+});
