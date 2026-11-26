@@ -89,7 +89,7 @@ export function createCidSosHttpEmulatorHandler(deliverSimulatedConfirmation:(en
    const session=cookie(req);
    if(action==='read'){exact(input,[]);return respond(res,200,await chat.read(session,now));}
    if(action==='send'){exact(input,['id','body']);return respond(res,200,await chat.send(session,input,now));}
-   if(action==='close'){exact(input,[]);return respond(res,200,await chat.close(session,now));}
+   if(action==='close'){exact(input,['resolution']);return respond(res,200,await chat.resolve(session,input.resolution,now));}
    if(action==='revoke'){exact(input,[]);await chat.revokeOwnSession(session,now);setCookie(res,path);return respond(res,200,{revoked:true});}
    return deny();
   }catch{

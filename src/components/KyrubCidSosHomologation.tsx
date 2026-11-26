@@ -1,3 +1,4 @@
+import type {CidSosResolution} from '../../shared/cidSosResolution';
 import {useRef,useState} from 'react';
 import {KyrubCidSosAlertForm} from './KyrubCidSosAlertForm';
 import {KyrubCidOccurrenceChat,type CidChatView} from './KyrubCidOccurrenceChat';
@@ -9,6 +10,7 @@ export type HomologationChatSession={
  read:()=>Promise<CidChatView>;
  send:(input:{id:string;body:string})=>Promise<void>;
  close?:()=>Promise<void>;
+ resolve?:(reason:CidSosResolution)=>Promise<void>;
  revoke:()=>Promise<void>;
 };
 export type HomologationEntry=
@@ -56,7 +58,7 @@ function Panel({entry,privacyUrl}:Props){
  return <section aria-label="Homologação integrada SOS" className="mx-auto max-w-md space-y-3 rounded-xl bg-[#121A17] p-3 text-[#F5F5F3]">
   <p className="text-xs text-amber-200">Homologação isolada — dados fictícios; nenhum alerta real será enviado.</p>
   {view&&session?<><button type="button" className={button} disabled={busy} onClick={()=>void perform(()=>reload(session))}>Atualizar conversa</button>
-   <KyrubCidOccurrenceChat view={view} simulation onBack={()=>void leave()} actions={view.role==='owner'&&session.close?{close:async()=>{await session.close!();await reload(session);}}:{}} sendMessage={async input=>{await session.send(input);await reload(session);}}/>
+   <KyrubCidOccurrenceChat view={view} simulation resolveOccurrence={view.role==='owner'&&session.resolve?async reason=>{await session.resolve!(reason);await reload(session);}:undefined} onBack={()=>void leave()} actions={view.role==='owner'&&session.close?{close:async()=>{await session.close!();await reload(session);}}:{}} sendMessage={async input=>{await session.send(input);await reload(session);}}/>
   </>:entry.role==='emitter'?<KyrubCidSosAlertForm simulation smsAvailable={entry.smsAvailable} privacyUrl={privacyUrl} requestLocation={entry.requestLocation} submitAlert={async request=>{await attach(await entry.submit(request));return {accepted:true,simulated:true};}}/>:entry.role==='owner'?
    <button type="button" className={button} disabled={busy} onClick={()=>void perform(async()=>attach(await entry.open()))}>Acessar ocorrência por passkey</button>:
    <div className="space-y-2">

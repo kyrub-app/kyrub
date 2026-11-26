@@ -2,13 +2,14 @@
 // Profiles, authenticated identity, delivery evidence and time must originate in trusted server state.
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {normalizeCidSosRequest,CID_SOS_MAX_CONTACTS,type CidSosRequest} from '../../shared/cidSosRequest.js';
+import type {CidSosResolution} from '../../shared/cidSosResolution.js';
 type Channel='email'|'whatsapp'|'sms';
 type VerifiedChannel={channel:Channel;address:string;verifiedAt:number;consent:boolean};
 type Participant={id:string;channels:VerifiedChannel[]};
 type SosProfile={tagId:string;ownerId:string;displayName:string;active:boolean;enabled:boolean;owner:Participant;contacts:Participant[]};
 type Recipient={participantId:string;role:'owner'|'contact';channel:Channel;address:string};
-export type CidSosOccurrence={id:string;tagId:string;ownerId:string;displayName:string;createdAt:number;reason:string;sms:boolean;location?:CidSosRequest['location'];recipients:Recipient[];status:'open'|'owner-safe';resolvedAt?:number};
-export type CidSosMessage={key:string;recipient:Recipient;kind:'alert'|'owner-safe';text:string};
+export type CidSosOccurrence={id:string;tagId:string;ownerId:string;displayName:string;createdAt:number;reason:string;sms:boolean;location?:CidSosRequest['location'];recipients:Recipient[];status:'open'|'owner-safe'|'resolved';resolvedAt?:number;resolution?:CidSosResolution};
+export type CidSosMessage={key:string;recipient:Recipient;kind:'alert'|'owner-safe'|'resolution';text:string};
 const fail=():never=>{throw Error('CID_SOS_UNAVAILABLE');};
 const validId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{22,80}$/.test(v);
 const validTime=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;

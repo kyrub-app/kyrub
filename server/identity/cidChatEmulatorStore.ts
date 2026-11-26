@@ -11,7 +11,8 @@ import {isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyC
 import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
 import {assertSamePasskeyCredential} from './kyrubTagPasskeyState.js';
 import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
-import type {CidSosOccurrence} from './cidSosAlertPolicy.js';
+import type {CidSosOccurrence,CidSosMessage} from './cidSosAlertPolicy.js';
+import {normalizeCidSosResolution,cidSosResolutionNotice} from '../../shared/cidSosResolution.js';
 import {buildTrustedCidSosProfile,type TrustedTag,type CidSosConfig,type ChannelGrant} from './cidSosPrivateConfig.js';
 type ContactRoute={participantId:string;channel:'email'|'whatsapp'|'sms';address:string};
 type ContactChallenge={id:string;inviteId:string;chatId:string;tagId:string;route:ContactRoute;digest:string;expiresAt:number;attempts:number;usedAt?:number};
@@ -260,7 +261,7 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
     const data=o.data() as CidSosOccurrence|undefined;
     if(!data||data.id!==chat.id||data.tagId!==tagId||data.ownerId!==chat.ownerId)return deny();
     const contacts=chat.members.filter(m=>m.role==='contact');
-    return {...view,reason:data.reason,hasOlderMessages:snapshot.size>100,messages:snapshot.docs.slice(0,100).map(d=>{
+    return {...view,reason:data.reason,...(data.resolution?{resolution:data.resolution}:{}),hasOlderMessages:snapshot.size>100,messages:snapshot.docs.slice(0,100).map(d=>{
      const m=d.data() as ChatMessage;
      if(m.chatId!==chat.id||m.id!==d.id)return deny();
      const member=chat.members.find(p=>p.id===m.authorId);
@@ -276,6 +277,38 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
     const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential,now)]);
     const closed=closeCidChat(chat,s.session,credential.secret,now);
     tx.update(root,{closedAt:closed.closedAt});return {closed:true as const};
+   });
+  },
+  async resolve(credential:Credential,input:unknown,now:number){
+   checkNow(now);const resolution=normalizeCidSosResolution(input);
+   return db.runTransaction(async tx=>{
+    checkNow(now);
+    const [chat,s,o,t,c,g]=await Promise.all([readChat(tx),readSession(tx,credential,now),tx.get(occurrence),tx.get(tag),tx.get(tag.collection('private').doc('config')),tx.get(tag.collection('private').doc('grants'))]);
+    const member=authorizeCidChatSession(chat,s.session,credential.secret,now,'read');
+    if(member.role!=='owner'||member.id!==chat.ownerId)return deny();
+    const data=o.data() as CidSosOccurrence|undefined,trusted=t.get('tag') as TrustedTag|undefined,config=c.get('config') as CidSosConfig|undefined,grants=g.get('grants') as ChannelGrant[]|undefined;
+    if(!data||data.id!==chat.id||data.tagId!==tagId||data.ownerId!==chat.ownerId||!trusted||trusted.tagId!==tagId||trusted.ownerId!==chat.ownerId||now<data.createdAt)return deny();
+    if(data.status==='resolved'&&chat.closedAt===data.resolvedAt&&data.resolution===resolution)return {closed:true as const,duplicate:true,queued:0};
+    if(data.status!=='open'||chat.closedAt!==undefined)return deny();
+    const profile=config&&Array.isArray(grants)?buildTrustedCidSosProfile(trusted,config,grants,now):null;
+    if(data.recipients.length>12)return deny();
+    const outbox=tag.collection('outbox');
+    const rows=await Promise.all(data.recipients.map((_,i)=>tx.get(outbox.doc(digest(data.id+':alert:'+i)))));
+    const updates:CidSosMessage[]=[];
+    for(const [i,r] of data.recipients.entries()){
+     const row=rows[i],key=data.id+':alert:'+i;
+     if(!row.exists||row.get('message.key')!==key||row.get('message.recipient.participantId')!==r.participantId||row.get('message.recipient.role')!==r.role||row.get('message.recipient.channel')!==r.channel||row.get('message.recipient.address')!==r.address)return deny();
+     if(row.get('status')==='simulation-delivered'&&r.role==='contact'&&profile?.contacts.some(p=>p.id===r.participantId&&p.channels.some(ch=>ch.channel===r.channel&&ch.address===r.address&&ch.consent===true))){
+      updates.push({key:data.id+':resolution:'+i,recipient:r,kind:'resolution',text:'Kyrub CID: '+cidSosResolutionNotice(resolution)});
+     }
+    }
+    const closed=closeCidChat(chat,s.session,credential.secret,now);
+    tx.update(root,{closedAt:closed.closedAt});
+    tx.update(occurrence,{status:'resolved',resolvedAt:now,resolution});
+    tx.create(messages.doc(chat.id+'-resolution'),{id:chat.id+'-resolution',chatId:chat.id,authorId:'system',kind:'system',body:cidSosResolutionNotice(resolution),createdAt:now} satisfies ChatMessage);
+    for(const message of updates)tx.create(outbox.doc(digest(message.key)),{message,status:'simulation-pending',createdAt:now});
+    for(const row of rows)if(['simulation-pending','simulation-retry'].includes(row.get('status')))tx.update(row.ref,{status:'simulation-cancelled',completedAt:now,cancellationReason:'occurrence-closed'});
+    return {closed:true as const,duplicate:false,queued:updates.length};
    });
   },
   async revokeOwnSession(credential:Credential,now:number){

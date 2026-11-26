@@ -1,4 +1,5 @@
 import type {AuthenticationResponseJSON,PublicKeyCredentialRequestOptionsJSON} from '@simplewebauthn/browser';
+import type {CidSosResolution} from '../../shared/cidSosResolution';
 import type {CidSosRequest,CidSosSharedLocation} from '../../shared/cidSosRequest';
 import type {CidChatView} from '../components/KyrubCidOccurrenceChat';
 import type {HomologationEntry,HomologationChatSession} from '../components/KyrubCidSosHomologation';
@@ -28,7 +29,7 @@ export function createCidSosHomologationHttpClient(tagId:string){
   return {read:async()=>{const v=await post<CidChatView>(id,'read',{});if(v.id!==id||v.role!==role)return deny();return v;},
    send:async input=>{await post(id,'send',input);},
    revoke:async()=>{await post(id,'revoke',{});},
-   ...(role==='owner'?{close:async()=>{await post(id,'close',{});}}:{})};
+   ...(role==='owner'?{resolve:async(resolution:CidSosResolution)=>{await post(id,'close',{resolution});}}:{})};
  }
  function emitter(smsAvailable:boolean,requestLocation?:()=>Promise<Omit<CidSosSharedLocation,'consent'>>):HomologationEntry{
   let previous:{id:string;seed:string}|undefined;
