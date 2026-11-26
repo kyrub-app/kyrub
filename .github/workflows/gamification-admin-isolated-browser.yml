@@ -1,7 +1,7 @@
 name: Gamification admin isolated browser
 on:
   pull_request:
-    branches: [main, test-gamification-transversal-browser]
+    branches: [main, test-gamification-transversal-browser, feat/finance-mobile-module-navigation-v1]
     paths:
       - 'server/gamification/semeadura*.ts'
       - 'src/components/admin/AdminGamification*.tsx'
