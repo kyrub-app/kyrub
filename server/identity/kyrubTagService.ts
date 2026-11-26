@@ -1,6 +1,6 @@
 import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {adminDb} from '../firebaseAdmin.js';
-import {assertTagPilotWriteIsolated,tagPasskeyPilotOrigin} from './kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,tagPasskeyUnitOrigin} from './kyrubTagPilotIsolation.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION,isOpenPromotionalTag,normalizePromotionalPresentation,publicPromotionalPresentation,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import {validatePromotionalMediaReferences} from './kyrubTagMediaService.js';
 import {isTagId,isTagModel,tagUrl,normalizeTagRecipientEmail,parseTagExternalUrl,type TagExternalLink,type TagDestinationCatalog,type TagDestinationOption,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract.js';
@@ -298,15 +298,15 @@ export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubT
  if(!data||!isTagModel(data.model))return null;
  if(data.manufacturingState!==undefined&&data.manufacturingState!=='released')return {id,model:data.model,status:'unclaimed',activation:'setup',links:[]};
  if(data.ownerId===null){
-  if(isOpenPromotionalTag(data)){const origin=tagPasskeyPilotOrigin();return {id,model:data.model,status:'unclaimed',activation:promotionalEnabled()?'email':'setup',links:[],...(origin?{passkeyOrigin:origin}:{})};}
+  if(isOpenPromotionalTag(data)){const origin=tagPasskeyUnitOrigin(id,data);return {id,model:data.model,status:'unclaimed',activation:promotionalEnabled()?'email':'setup',links:[],...(origin?{passkeyOrigin:origin}:{})};}
   return {id,model:data.model,status:'unclaimed',activation:typeof data.reservedEmailHash==='string'?'account':'code',links:[]};
  }
- if(data.ownerAuthMode==='passkey'&&data.distribution==='promotional'&&data.blocked===true){const origin=tagPasskeyPilotOrigin();return {id,model:data.model,status:'blocked',links:[],passkeyManaged:true,...(origin?{passkeyOrigin:origin}:{})};}
+ if(data.ownerAuthMode==='passkey'&&data.distribution==='promotional'&&data.blocked===true){const origin=tagPasskeyUnitOrigin(id,data);return {id,model:data.model,status:'blocked',links:[],passkeyManaged:true,...(origin?{passkeyOrigin:origin}:{})};}
  if(data.enabled!==true||data.blocked===true||typeof data.ownerId!=='string'||!Array.isArray(data.targets)||data.targets.length+externalLinks(data.externalUrls).length>CARD_LIMIT)return null;
  const targets=data.targets.filter(isBoundTarget);
  const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerAuthMode==='passkey'&&typeof data.linkedAccountId==='string'?data.linkedAccountId:data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);
  const current=await ref.get();
  if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
- const origin=data.ownerAuthMode==='passkey'?tagPasskeyPilotOrigin():null;
+ const origin=data.ownerAuthMode==='passkey'?tagPasskeyUnitOrigin(id,data):null;
  return {id,model:data.model,status:'active',links:[...links,...externalLinks(data.externalUrls)],...(data.ownerAuthMode==='passkey'?{passkeyManaged:true,...(origin?{passkeyOrigin:origin}:{})}:{}),...(data.distribution==='promotional'?{presentation:publicPromotionalPresentation(normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION))}:{})};
 }

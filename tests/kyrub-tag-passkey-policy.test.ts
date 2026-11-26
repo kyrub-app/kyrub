@@ -30,3 +30,21 @@ test('recovery secret is distinct from public tag, bound to unit and checked by 
  assert.equal(matchesTagPasskeyRecovery(tagId,newTagPasskeyRecoveryCode(),hash),false);
  assert.equal(matchesTagPasskeyRecovery(tagId,tagId,hash),false);
 });
+
+import {productionTagPasskeyScope} from '../server/identity/kyrubTagPasskeyPolicy';
+import {productionPasskeyPilotId,assertProductionPasskeyUnit} from '../server/identity/kyrubTagPasskeyReleasePolicy';
+test('production trial needs explicit flags, correct project and exactly one released permanent unit',()=>{
+ const env={VERCEL_ENV:'production',KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED:'true',KYRUB_TAG_PERMANENT_STOCK_ENABLED:'true',KYRUB_TAG_PASSKEY_PRODUCTION_TEST_ID:tagId};
+ const data={distribution:'promotional',model:'adesivo',urlMode:'permanent',manufacturingState:'released',promotionalBatchId:otherTag,activationHash:null};
+ assert.equal(productionPasskeyPilotId('kyrub-b8d0e',env),tagId);
+ for(const config of [{...env,VERCEL_ENV:'preview'},{...env,KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED:'false'},{...env,KYRUB_TAG_PERMANENT_STOCK_ENABLED:'false'},{...env,KYRUB_TAG_PASSKEY_PRODUCTION_TEST_ID:tagId+','+otherTag},{...env,FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'},{}])assert.equal(productionPasskeyPilotId('kyrub-b8d0e',config),null);
+ assert.equal(productionPasskeyPilotId('kyrub-tags',env),null);
+ assert.doesNotThrow(()=>assertProductionPasskeyUnit(tagId,tagId,data));
+ for(const invalid of [{...data,manufacturingState:'held'},{...data,urlMode:'pilot'},{...data,pilotBatch:'experimental-001'},{...data,distribution:'protected'},{...data,promotionalBatchId:undefined}])assert.throws(()=>assertProductionPasskeyUnit(tagId,tagId,invalid));
+ assert.throws(()=>assertProductionPasskeyUnit(tagId,otherTag,data));
+ const prod=productionTagPasskeyScope('https://www.kyrub.com');
+ assert.equal(prod.rpId,'www.kyrub.com');
+ for(const wrong of ['https://kyrub.com','https://admin.kyrub.com','https://kyrub.vercel.app','http://www.kyrub.com','https://www.kyrub.com/'])assert.throws(()=>productionTagPasskeyScope(wrong));
+ const prodBinding={...registration,scope:prod};
+ assert.doesNotThrow(()=>assertUnusedTagPasskeyChallenge(issueTagPasskeyChallenge(prodBinding,1000),prodBinding,1001));
+});

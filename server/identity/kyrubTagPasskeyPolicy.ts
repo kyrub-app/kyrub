@@ -1,5 +1,6 @@
 import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {isTagId} from '../../shared/kyrubTagContract.js';
+import {PRODUCTION_TAG_ORIGIN,PRODUCTION_TAG_RP_ID} from './kyrubTagPasskeyReleasePolicy.js';
 
 // Policy only. This module does not verify a WebAuthn signature or grant access.
 // The transport must use a vetted WebAuthn verifier, a transactional challenge
@@ -25,11 +26,16 @@ export function isolatedTagPasskeyScope(configuredOrigin:string,requestOrigin:st
   throw Error('TAG_PASSKEY_ORIGIN');
  return {origin:origin.origin,rpId:origin.hostname};
 }
+export function productionTagPasskeyScope(requestOrigin:string):Scope{
+ if(requestOrigin!==PRODUCTION_TAG_ORIGIN)throw Error('TAG_PASSKEY_ORIGIN');
+ return {origin:PRODUCTION_TAG_ORIGIN,rpId:PRODUCTION_TAG_RP_ID};
+}
 type Binding={tagId:string;purpose:TagPasskeyPurpose;ownerId:string|null;credentialId:string|null;scope:Scope};
 export type TagPasskeyChallenge=Binding&{id:string;challenge:string;issuedAt:number;expiresAt:number;usedAt:number|null};
 function validateBinding(binding:Binding){
  if(!isTagId(binding.tagId)||!purposes.has(binding.purpose))throw Error('TAG_PASSKEY_SCOPE');
- isolatedTagPasskeyScope(binding.scope.origin,binding.scope.origin);
+ if(binding.scope.origin===PRODUCTION_TAG_ORIGIN)productionTagPasskeyScope(binding.scope.origin);
+ else isolatedTagPasskeyScope(binding.scope.origin,binding.scope.origin);
  if(binding.scope.rpId!==new URL(binding.scope.origin).hostname)throw Error('TAG_PASSKEY_SCOPE');
  if(binding.purpose==='register'?(binding.ownerId!==null||binding.credentialId!==null):(!ownerValid(binding.ownerId)||!credentialValid(binding.credentialId)))throw Error('TAG_PASSKEY_SCOPE');
 }

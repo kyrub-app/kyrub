@@ -93,3 +93,12 @@ test('account link is voluntary, bound to one real account and never changes the
  assert.doesNotMatch(list,/passkeyRecoveryHash|publicKey|credential:/);
  const api=readFileSync('api/health.ts','utf8');assert.match(api,/adminAuth.verifyIdToken\(bearer,true\)/);assert.match(api,/decoded.email_verified!==true/);
 });
+
+test('production candidate preserves isolated legacy path and constrains every mutation to one released unit',()=>{
+ const svc=readFileSync('server/identity/kyrubTagPasskeyLifecycle.ts','utf8');
+ assert.match(svc,/approved!==tagId/);assert.match(svc,/productionTagPasskeyScope\(origin\)/);
+ assert.match(svc,/assertReleaseUnit\(tagId,data\)/);assert.match(svc,/assertReleaseUnit\(tagId,current\)/);
+ const api=readFileSync('api/health.ts','utf8');assert.match(api,/KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED/);
+ const isolation=readFileSync('server/identity/kyrubTagPilotIsolation.ts','utf8');
+ assert.match(isolation,/projectId===KYRUB_PRODUCTION_PROJECT_ID\|\|!projectId/);
+});

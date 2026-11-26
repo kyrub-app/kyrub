@@ -7,8 +7,8 @@ export function KyrubLinkedPasskeyTags({userId}:{userId:string}){
  const [notice,setNotice]=useState('');
  useEffect(()=>{
   const ctrl=new AbortController();setTags([]);setNotice('');
-  // No additional request on the production application.
-  if(!window.location.hostname.endsWith('.vercel.app'))return()=>ctrl.abort();
+  // The server is authoritative; the public client flag limits requests to the trial.
+  if(!window.location.hostname.endsWith('.vercel.app')&&!(window.location.origin==='https://www.kyrub.com'&&import.meta.env.VITE_KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED==='true'))return()=>ctrl.abort();
   const user=auth.currentUser;
   if(!user||user.uid!==userId||!user.emailVerified)return()=>ctrl.abort();
   void user.getIdToken(true).then(token=>fetch('/api/health?transport=manage-kyrub-tag&view=linked-passkeys',{cache:'no-store',signal:ctrl.signal,headers:{Authorization:'Bearer '+token}})).then(async res=>{

@@ -134,7 +134,7 @@ export default async function handler(
   if (transport === 'kyrub-tag-passkey') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     response.setHeader('X-Content-Type-Options','nosniff');
-    if(process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true'){
+    if(process.env.VERCEL_ENV==='production'?process.env.KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED!=='true':(process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')){
       response.status(404).json({error:'TAG_PASSKEY_DISABLED'});return;
     }
     if((request.method??'GET').toUpperCase()!=='POST'){response.setHeader('Allow','POST');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
@@ -143,8 +143,8 @@ export default async function handler(
     if(!/^application\/json(?:\s*;.*)?$/i.test(contentType)){response.status(415).json({error:'TAG_INVALID'});return;}
     const id=queryValue(request.query?.id);
     try{
-      const {tagPasskeyPilotOrigin}=await import('../server/identity/kyrubTagPilotIsolation.js');
-      const allowed=tagPasskeyPilotOrigin();
+      const {tagPasskeyRuntimeOrigin}=await import('../server/identity/kyrubTagPilotIsolation.js');
+      const allowed=tagPasskeyRuntimeOrigin();
       if(!allowed||origin!==allowed){response.status(403).json({error:'TAG_PASSKEY_ORIGIN'});return;}
       const body=request.body;
       if(!body||typeof body!=='object'||Array.isArray(body)||JSON.stringify(body).length>24000){response.status(400).json({error:'TAG_INVALID'});return;}
@@ -202,7 +202,7 @@ export default async function handler(
       if(method==='GET'){
         const view=queryValue(request.query?.view);
         if(view==='linked-passkeys'){
-          if(id||process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true'){response.status(404).json({error:'TAG_PASSKEY_DISABLED'});return;}
+          if(id||(process.env.VERCEL_ENV==='production'?process.env.KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED!=='true':(process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true'))){response.status(404).json({error:'TAG_PASSKEY_DISABLED'});return;}
           const {adminAuth}=await import('../server/firebaseAdmin.js');
           const identity=await adminAuth.getUser(actor);
           if(identity.disabled||!identity.emailVerified||!identity.email)throw Error('TAG_FORBIDDEN');

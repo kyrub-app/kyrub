@@ -1,11 +1,12 @@
 import {createHash} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
-import {assertTagPilotWriteIsolated,stableTagPilotHost} from './kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,stableTagPilotHost,productionTagPasskeyTestId} from './kyrubTagPilotIsolation.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {isBoundTarget,parseCardTargets} from './publicCardPolicy.js';
 import {resolveTarget} from './publicVisitCardService.js';
-import {isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyChallenge,newTagPasskeyRecoveryCode,tagPasskeyRecoveryHash,matchesTagPasskeyRecovery,type TagPasskeyChallenge} from './kyrubTagPasskeyPolicy.js';
+import {assertProductionPasskeyUnit} from './kyrubTagPasskeyReleasePolicy.js';
+import {productionTagPasskeyScope,isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyChallenge,newTagPasskeyRecoveryCode,tagPasskeyRecoveryHash,matchesTagPasskeyRecovery,type TagPasskeyChallenge} from './kyrubTagPasskeyPolicy.js';
 import {tagRegistrationOptions,tagAuthenticationOptions,verifyTagRegistration,verifyTagAuthentication,type StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
 import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement,assertTagAccountLink,type PasskeyMutation} from './kyrubTagPasskeyState.js';
 import type {PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
@@ -19,12 +20,23 @@ const challenges=()=>adminDb.collection('kyrub_tag_passkey_challenges');
 const indexes=()=>adminDb.collection('kyrub_tag_passkey_credential_index');
 const quotas=()=>adminDb.collection('kyrub_tag_passkey_quotas');
 type RecordData=TagPasskeyChallenge&{presentation:PromotionalTagPresentation|null;tagVersion:string;credentialVersion:string|null;linkedAccountActor?:string};
-function scope(origin:string){
+function scope(origin:string,tagId:string){
+ if(process.env.VERCEL_ENV==='production'){
+  const approved=productionTagPasskeyTestId();
+  if(!approved||approved!==tagId)throw Error('TAG_PASSKEY_DISABLED');
+  return productionTagPasskeyScope(origin);
+ }
  assertTagPilotWriteIsolated();
  if(process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')throw Error('TAG_PASSKEY_DISABLED');
  const host=stableTagPilotHost();
  if(!host)throw Error('TAG_PASSKEY_ORIGIN');
  return isolatedTagPasskeyScope('https://'+host,origin);
+}
+function assertReleaseUnit(tagId:string,data:Record<string,unknown>|undefined){
+ if(process.env.VERCEL_ENV==='production'){
+  const approved=productionTagPasskeyTestId();if(!approved)throw Error('TAG_PASSKEY_DISABLED');
+  assertProductionPasskeyUnit(approved,tagId,data);
+ }
 }
 function version(t:Timestamp|undefined){if(!t)throw Error('TAG_CHANGED');return t.seconds+':'+t.nanoseconds;}
 function readCredential(data:FirebaseFirestore.DocumentData|undefined,ownerId:unknown):StoredTagPasskey{
@@ -43,7 +55,7 @@ function requireRecoveryInput(purpose:PasskeyMutation,secret:unknown){
 }
 
 export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose:PasskeyMutation,input?:unknown,recoverySecret?:unknown,accountActor?:string){
- const rp=scope(origin);
+ const rp=scope(origin,tagId);
  if(!isTagId(tagId)||!isPasskeyMutation(purpose))throw Error('TAG_INVALID');
  requireRecoveryInput(purpose,recoverySecret);
  if((purpose==='link-account')!==!!accountActor)throw Error('TAG_FORBIDDEN');
@@ -52,6 +64,7 @@ export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose
   const tagRef=tags().doc(tagId),credentialRef=credentials().doc(tagId),quotaRef=quotas().doc(purpose==='recover'?tagId+'-recover':tagId);
   const [tag,credential,quota]=await Promise.all([tx.get(tagRef),tx.get(credentialRef),tx.get(quotaRef)]);
   const data=tag.data();
+  assertReleaseUnit(tagId,data);
   assertPasskeyTagState(data,purpose);
   if(purpose==='link-account'){
    assertTagAccountLink(data,accountActor);
@@ -78,7 +91,7 @@ export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose
 }
 
 export async function finishTagPasskeyMutation(origin:string,tagId:string,challengeId:string,response:RegistrationResponseJSON|AuthenticationResponseJSON,recoverySecret?:unknown,accountActor?:string){
- const rp=scope(origin);
+ const rp=scope(origin,tagId);
  if(!isTagId(tagId)||!validChallengeId(challengeId))throw Error('TAG_INVALID');
  const tagRef=tags().doc(tagId),challengeRef=challenges().doc(challengeId),credentialRef=credentials().doc(tagId);
  // Bound invalid proofs before invoking cryptography. A failed assertion never
@@ -96,6 +109,7 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
  const [initial,challenge,credential]=await Promise.all([tagRef.get(),challengeRef.get(),credentialRef.get()]);
  const record=challenge.data() as RecordData|undefined,data=initial.data();
  if(!record||record.id!==challengeId||!isPasskeyMutation(record.purpose))throw Error('TAG_PASSKEY_CHALLENGE_INVALID');
+ assertReleaseUnit(tagId,data);
  assertPasskeyTagState(data,record.purpose);
  requireRecoveryInput(record.purpose,recoverySecret);
  if(record.purpose==='link-account'){assertTagAccountLink(data,accountActor);if(record.linkedAccountActor!==accountActor)throw Error('TAG_FORBIDDEN');}
@@ -122,6 +136,7 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
   const current=tag.data(),live=currentChallenge.data() as RecordData|undefined;
   if(!live||live.id!==challengeId||live.challenge!==record.challenge||!challenge.updateTime?.isEqual(currentChallenge.updateTime!)||
    record.tagVersion!==version(tag.updateTime)||record.credentialVersion!==(currentCredential.exists?version(currentCredential.updateTime):null))throw Error('TAG_CHANGED');
+  assertReleaseUnit(tagId,current);
   assertPasskeyTagState(current,record.purpose);
   if(record.purpose==='link-account'){
    assertTagAccountLink(current,accountActor);

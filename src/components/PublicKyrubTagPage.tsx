@@ -189,8 +189,8 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
      <h2 className="text-base font-bold">Cadastrar meu cartão</h2>
      <p className="text-sm text-slate-300">Publique seu cartão nesta unidade, sem criar um perfil completo no Kyrub. A primeira pessoa que confirmar a titularidade poderá gerenciá-la. Os dados preenchidos ficarão públicos neste endereço; links serão verificados pelo Kyrub.</p>
      {data.passkeyOrigin&&<KyrubTagPasskeyActions tagId={identifier} mode="register" origin={data.passkeyOrigin} getDraft={currentPresentation}/>}
-     {data.passkeyOrigin&&<p className="text-xs text-slate-300">Alternativa: confirmar por e-mail.</p>}
-     {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
+     {data.passkeyOrigin&&data.activation==='email'&&<p className="text-xs text-slate-300">Alternativa: confirmar por e-mail.</p>}
+     {data.activation==='setup'&&data.passkeyOrigin?null:data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
       <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>
        <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar vínculo e publicar apresentação da tag'}</button></div>:
       <TagEmailLinkIdentity tagId={identifier}/>}
