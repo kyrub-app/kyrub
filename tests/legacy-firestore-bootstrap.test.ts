@@ -31,8 +31,13 @@ test('legacy bootstrap does not write unsupported Firestore collections', () => 
   }
 });
 
-test('authorized user directory listener remains active', () => {
-  assert.match(legacyApp, /listenCollection\('users'/);
+test('authorized user directory stays available through shared session-bound discovery', () => {
+  assert.match(legacyApp, /subscribeSocialDiscoveryDirectory\(setDbUsers\)/);
+  assert.match(legacyApp, /auth\.currentUser\?\.uid!==authenticatedUserId/);
+  assert.doesNotMatch(legacyApp, /listenCollection\('users'/);
+  const directory = fs.readFileSync('src/utils/socialDiscoveryDirectory.ts', 'utf8');
+  assert.match(directory, /where\('isProfileVisible','==',true\)/);
+  assert.match(directory, /if\(socialDirectoryPilotEnabled\(\)\)return subscribePilotDirectory/);
 });
 
 test('notes use the authenticated user task path instead of the fixed legacy tenant', () => {
