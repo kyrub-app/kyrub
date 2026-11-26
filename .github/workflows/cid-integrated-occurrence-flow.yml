@@ -1,0 +1,28 @@
+name: CID integrated occurrence flow
+on:
+  pull_request:
+    paths:
+      - 'server/identity/cid*.ts'
+      - 'shared/cid*.ts'
+      - 'src/components/KyrubCid*.tsx'
+      - 'tests/cid-*.test.ts'
+      - 'tests/cid-*.test.tsx'
+      - '.github/workflows/cid-integrated-occurrence-flow.yml'
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx --test tests/cid-integrated-occurrence-flow.test.ts
+      - run: node --import tsx --test tests/cid-sos-alert-policy.test.ts tests/cid-sos-private-config.test.ts tests/cid-occurrence-chat-access.test.ts tests/cid-assisted-location.test.ts tests/cid-occurrence-evidence.test.ts tests/cid-occurrence-guidance.test.ts
+      - run: node --import tsx --test tests/cid-sos-alert-form.test.tsx tests/cid-occurrence-chat-ui.test.tsx
