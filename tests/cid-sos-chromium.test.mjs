@@ -109,6 +109,8 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   await owner.page.screenshot({path:'cid-sos-browser-chat.png',fullPage:true});
   await owner.page.getByRole('button',{name:'Opções da ocorrência'}).click();
   await owner.page.getByRole('button',{name:'Encerrar ocorrência',exact:true}).click();
+  assert.equal(await owner.page.getByRole('button',{name:'Confirmar encerramento'}).isDisabled(),true);
+  await owner.page.getByRole('radio',{name:'Objeto recuperado'}).check();
   await owner.page.getByRole('button',{name:'Confirmar encerramento'}).click();
   await owner.page.getByText('Ocorrência encerrada.',{exact:false}).waitFor();
   await p.getByRole('button',{name:'Atualizar conversa'}).click();
@@ -117,6 +119,7 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   await contact.page.getByRole('region',{name:'Chat da ocorrência'}).waitFor({state:'hidden'});
   await contact.page.waitForFunction(async path=>(await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Cid-Homologation':'1'},body:'{}'})).status===403,api+'read');
   assert.equal((await root.collection('outbox').get()).size,2);
+  assert.equal((await records.docs[0].ref.get()).get('resolution'),'recovered');
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   console.info('CID_BROWSER: TLS loopback, independent cookie jars, virtual WebAuthn registration and authentication, contact confirmation, persisted messages and close/revoke; zero external requests.');
  }finally{await browser?.close();if(server)await new Promise(r=>server.close(r));rmSync(folder,{recursive:true,force:true});for(const a of getApps().filter(a=>['cid-browser-fixtures','cid-sos-local-emulator','cid-chat-local-emulator'].includes(a.name)))await deleteApp(a);}
