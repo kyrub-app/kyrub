@@ -25,6 +25,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
  const email='social-browser-actor@example.invalid',password='fixture-social-password-2026';
  let vite,server,browser,page;
  const diagnostics=[],requests=[],privateAvatarRequests=[];
+ let issuedBearer='';
  try{
   const actor=await auth.createUser({email,password,emailVerified:true,displayName:'Titular fixture'});
   const privateId='social-browser-private';
@@ -55,6 +56,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   page=await context.newPage();
   page.on('pageerror',error=>diagnostics.push(error.message));
   page.on('request',request=>{if(request.url().includes('reserved-contact-avatar'))privateAvatarRequests.push(request.url());});
+  page.on('request',request=>{if(new URL(request.url()).pathname==='/api/social-directory-pilot/page')issuedBearer=request.headers().authorization||'';});
   page.on('response',response=>{if(new URL(response.url()).pathname==='/api/social-directory-pilot/page'&&response.ok())requests.push(response.request().postDataJSON());});
   await page.goto('http://127.0.0.1:'+server.address().port);
   await page.getByLabel('Email de teste').fill(email);
@@ -105,6 +107,14 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await revokedCard.waitFor();
   assert.equal(await revokedCard.locator('img').count(),0);
   assert.equal((await distantConnection.get()).get('status'),'accepted');
+  assert.ok(issuedBearer.startsWith('Bearer '));
+  // A token issued before email verification was removed must not grant
+  // directory access even if its cached email_verified claim is still true.
+  await auth.updateUser(actor.uid,{emailVerified:false});
+  const staleResponse=await fetch('http://127.0.0.1:'+server.address().port+'/api/social-directory-pilot/page',{
+   method:'POST',headers:{Authorization:issuedBearer,'Content-Type':'application/json'},body:'{}'
+  });
+  assert.equal(staleResponse.status,401);
   await context.close();
  }catch(error){
   console.error('[social-browser]',JSON.stringify({diagnostics:diagnostics.slice(-20),requests}));
