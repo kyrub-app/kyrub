@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bookmark } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
-import { collection, onSnapshot } from 'firebase/firestore';
 import type { Friend } from '../types';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
-import { auth, db } from '../utils/firebase';
+import { subscribeSocialDiscoveryDirectory } from '../utils/socialDiscoveryDirectory';
+import { auth } from '../utils/firebase';
 import { ChatModal } from './modals/ChatModal';
 
 const findButtonByText = (
@@ -50,12 +50,9 @@ export function ProfileSocialMobileFirstBridge() {
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
   useEffect(() => {
-    if (!user) return;
-    return onSnapshot(collection(db, 'users'), snapshot => {
-      directory.setDbUsers(
-        snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-      );
-    });
+    directory.setDbUsers([]);
+    if (!user || auth.currentUser!==user) return;
+    return subscribeSocialDiscoveryDirectory(directory.setDbUsers);
   }, [directory.setDbUsers, user]);
 
   useEffect(() => {
