@@ -129,6 +129,15 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   const chatState=records.docs[0].ref.collection('chat').doc('state');
   assert.equal((await chatState.collection('issuedReports').get()).size,1);
   assert.equal((await chatState.collection('private').doc('preservation-request').get()).get('request.status'),'pending-review');
+  await contact.page.getByRole('button',{name:'Opções da ocorrência'}).click();
+  await contact.page.getByRole('button',{name:'Denunciar ocorrência',exact:true}).click();
+  assert.equal(await contact.page.getByRole('button',{name:'Enviar denúncia'}).isDisabled(),true);
+  await contact.page.getByLabel('Categoria da denúncia').selectOption('privacy');
+  await contact.page.getByLabel('Relato da denúncia').fill('Relato fictício para homologação.');
+  await contact.page.getByRole('checkbox',{name:'Confirmo o envio deste relato para análise.'}).check();
+  await contact.page.getByRole('button',{name:'Enviar denúncia'}).click();
+  await contact.page.getByText('registrada para análise administrativa.',{exact:false}).waitFor();
+  assert.equal((await db.collection('cid_sos_emulator_review_queue').get()).size,2);
   await contact.page.getByRole('button',{name:'Voltar'}).click();
   await contact.page.getByRole('region',{name:'Chat da ocorrência'}).waitFor({state:'hidden'});
   await contact.page.waitForFunction(async path=>(await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-Cid-Homologation':'1'},body:'{}'})).status===403,api+'read');
