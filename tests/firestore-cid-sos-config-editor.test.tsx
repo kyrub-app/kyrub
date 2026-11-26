@@ -79,7 +79,7 @@ test('owner Central config editor saves by fresh passkey and requests consent se
   await wait(()=>!find('Recarregar e descartar alterações não salvas')?.disabled);
   await press('Recarregar e descartar alterações não salvas');
   await wait(()=>!find('Solicitar autorização — E-mail — Contato 1')&&!!doc.body.textContent?.includes('Verificado e autorizado'));
-  await press('Sair da Central');await wait(()=>!!find('Acessar meu CID por passkey'));
+  await press('Sair da Central');await wait(()=>!!find('Acessar meu CID por passkey')&&!find('Acessar meu CID por passkey')!.disabled);
   assert.equal(doc.querySelector('[aria-label="E-mail — Contato 1"]'),null);
  }finally{await cleanup?.();dom.window.close();for(const [key,value] of previous){if(value)Object.defineProperty(globalThis,key,value);else Reflect.deleteProperty(globalThis,key);}}
 });
