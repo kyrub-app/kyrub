@@ -1,0 +1,36 @@
+name: CID chat emulator persistence
+on:
+  pull_request:
+    paths:
+      - 'server/identity/cidChatEmulatorStore.ts'
+      - 'server/identity/cidOccurrenceChatAccess.ts'
+      - 'server/identity/cidSosEmulatorStore.ts'
+      - 'tests/firestore-cid-chat-emulator.test.ts'
+      - '.github/workflows/cid-chat-emulator-persistence.yml'
+      - 'firestore*.rules'
+permissions:
+  contents: read
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run firestore:compose
+      - name: Test local chat transactions and private access
+        env:
+          KYRUB_CID_SOS_EMULATOR: 'true'
+          GCLOUD_PROJECT: demo-kyrub-cid-sos
+          FIREBASE_PROJECT_ID: demo-kyrub-cid-sos
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-cid-sos --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-cid-chat-emulator.test.ts"
