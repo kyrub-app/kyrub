@@ -3,6 +3,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import {socialDirectoryPilotEnabled,readAuthorIdentitiesPilot} from './socialDirectoryPilot';
 
 export interface CommunityPostConnection {
   id: string;
@@ -48,10 +49,18 @@ export const subscribeCommunityPostConnections = (
 
 export const readCommunityPostPublicProfile = async (userId: string): Promise<CommunityPublicProfile> => {
   if (!userId || !/^[a-zA-Z0-9_-]{1,128}$/.test(userId)) throw new Error('Perfil inválido.');
+  const session=auth.currentUser;
+  if(socialDirectoryPilotEnabled()){
+    if(!session)throw new Error('Entre no Kyrub para consultar o perfil.');
+    const [profile]=await readAuthorIdentitiesPilot(session,[userId]);
+    if(auth.currentUser!==session)throw new Error('Sessão alterada.');
+    return {id:userId,name:profile?.name||'Kairubido',avatar:profile?.avatar||'',role:'Kairubido',bio:'',visible:!!profile};
+  }
   const snapshot = await getDoc(doc(db, 'users', userId));
+  if(auth.currentUser!==session)throw new Error('Sessão alterada.');
   if (!snapshot.exists()) throw new Error('Perfil não encontrado.');
   const data = snapshot.data();
-  const visible = data.isProfileVisible !== false;
+  const visible = data.isProfileVisible === true;
   return {
     id: userId,
     name: typeof data.name === 'string' && data.name ? data.name : 'Kairubido',
@@ -67,6 +76,7 @@ export const requestCommunityPostConnection = async (userId: string): Promise<vo
   if (!user) throw new Error('Entre no Kyrub para conectar.');
   if (userId === user.uid) throw new Error('Não é possível conectar consigo mesmo.');
   const profile = await readCommunityPostPublicProfile(userId);
+  if (auth.currentUser!==user) throw new Error('Sessão alterada.');
   if (!profile.visible) throw new Error('Este perfil não aceita novas conexões.');
   const id = connectionIdFor(user.uid, userId);
   // A create-only rule rejects duplicate or pre-existing pending/accepted records,
@@ -76,14 +86,16 @@ export const requestCommunityPostConnection = async (userId: string): Promise<vo
     receiverId: userId,
     participantIds: [user.uid, userId].sort(),
     status: 'pending',
-    senderName: (user.displayName || user.email || 'Kairubido').slice(0, 160),
-    senderRole: 'Cliente',
-    senderAvatar: user.photoURL || '',
-    senderBio: '',
+    senderName: (user.displayName || 'Kairubido').slice(0, 160),
     receiverName: profile.name,
-    receiverRole: profile.role,
-    receiverAvatar: profile.avatar,
-    receiverBio: profile.bio,
+    ...(socialDirectoryPilotEnabled()?{}:{
+      senderRole: 'Cliente',
+      senderAvatar: user.photoURL || '',
+      senderBio: '',
+      receiverRole: profile.role,
+      receiverAvatar: profile.avatar,
+      receiverBio: profile.bio,
+    }),
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
