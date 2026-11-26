@@ -16,6 +16,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
+import { buildPublicDestinationPath } from '../../../shared/publicDestinationRoutes';
 import { PersonalFinancePlanner } from '../PersonalFinancePlanner';
 import { WalletMovementsPanel } from './WalletModal';
 import { PitangaAccount } from '../tabs/PitangaAccount';
@@ -81,17 +82,6 @@ interface UserProfileModalProps {
 
 type PersonalPanel = 'movements' | 'finance' | 'xp' | 'devices' | 'challenges' | null;
 
-const getProfileHandle = (email: string, name: string): string => {
-  const emailHandle = email.split('@')[0]?.trim();
-  const source = emailHandle || name || 'usuario';
-  return source
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '')
-    .slice(0, 30);
-};
-
 const Avatar = ({
   src,
   name,
@@ -152,7 +142,38 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const displayName =
     profileName.trim() || currentUser?.displayName || profileEmail || 'Você';
   const displayAvatar = profilePhotoUrl || currentUser?.photoURL || '';
-  const profileHandle = getProfileHandle(profileEmail, displayName);
+  const [identifierState,setIdentifierState] = useState<{uid:string;identifier:string|null;status:'loading'|'ready'|'error'}|null>(null);
+  useEffect(()=>{
+    if(!isOpen||!currentUserId){setIdentifierState(null);return;}
+    const user=auth.currentUser;
+    let controller:AbortController|null=null;
+    let active=true;
+    const load=async()=>{
+      controller?.abort();
+      const request=new AbortController();controller=request;
+      const current=()=>active&&!request.signal.aborted&&auth.currentUser===user;
+      setIdentifierState({uid:currentUserId,identifier:null,status:'loading'});
+      try{
+        if(!user||user.uid!==currentUserId)throw Error('AUTH_REQUIRED');
+        const token=await user.getIdToken();
+        if(!current())return;
+        const res=await fetch('/api/health?transport=manage-public-social-address&kind=profile',{
+          headers:{Authorization:'Bearer '+token},cache:'no-store',signal:request.signal});
+        if(!res.ok)throw Error('UNAVAILABLE');
+        const data=await res.json();
+        if(data.identifier!==null&&(typeof data.identifier!=='string'||data.identifier.length<3||!buildPublicDestinationPath('profile',data.identifier)))throw Error('INVALID');
+        if(current())setIdentifierState({uid:currentUserId,identifier:data.identifier,status:'ready'});
+      }catch{if(current())setIdentifierState({uid:currentUserId,identifier:null,status:'error'});}
+    };
+    const refresh=(event:Event)=>{
+      if((event as CustomEvent<{uid?:string}>).detail?.uid===currentUserId)void load();
+    };
+    window.addEventListener('kyrub:personal-identifier-reserved',refresh);
+    void load();
+    return()=>{active=false;controller?.abort();window.removeEventListener('kyrub:personal-identifier-reserved',refresh);};
+  },[isOpen,currentUserId]);
+  const personalIdentifier=identifierState?.uid===currentUserId?identifierState:null;
+
 
   const toggleProfileVisibility = async () => {
     const user = auth.currentUser;
@@ -303,7 +324,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   </button>
                   </div>
                   <p className="mt-1 truncate text-[10px] font-mono text-slate-500">
-                    @{profileHandle}
+                    {personalIdentifier?.status==='ready' ? personalIdentifier.identifier || 'Identificador ainda não definido' : personalIdentifier?.status==='error' ? 'Identificador não confirmado' : 'Consultando identificador…'}
                   </p>
                   <p className="mt-3 text-[9px] leading-relaxed text-slate-500">
                     Seu centro pessoal é privado. Publicações acontecem na Praça e nas Comunidades.
