@@ -3,12 +3,12 @@ import {test} from 'node:test';
 import {createHash} from 'node:crypto';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {createServer} from 'node:https';
 import {initializeApp,getApps,deleteApp} from 'firebase-admin/app';
 import {getFirestore} from 'firebase-admin/firestore';
-import {createServer as createViteServer} from 'vite';
+import {build as viteBuild} from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 import {chromium} from 'playwright';
 import {assertCidSosEmulator,CID_EMULATOR_PROJECT} from '../server/identity/cidSosEmulatorStore.ts';
@@ -28,21 +28,25 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
  const config=prepareCidSosConfig(tag,ownerId,null,{expectedRevision:0,enabled:true,owner:person(ownerId),contacts:[person('contact-test')]});
  const grants=[config.owner,...config.contacts].flatMap(p=>p.channels.map(c=>({...c,tagId,ownerId,participantId:p.id,verifiedAt:now-1000,consent:true})));
  const folder=mkdtempSync(join(tmpdir(),'cid-browser-')),key=join(folder,'key.pem'),cert=join(folder,'cert.pem');
- let vite,server,browser,confirmation='';
+ let server,browser,confirmation='';
  const errors=[],external=[];
  try{
   await root.set({tag,revision:0});
   await root.collection('private').doc('config').set({config});
   await root.collection('private').doc('grants').set({grants});
   execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN=kyrub-cid-emulator.vercel.app','-addext','subjectAltName=DNS:kyrub-cid-emulator.vercel.app'],{stdio:'ignore'});
-  vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false,allowedHosts:['kyrub-cid-emulator.vercel.app']},esbuild:{jsx:'automatic'}});
+  const out=join(folder,'dist');
+  await viteBuild({configFile:false,publicDir:false,plugins:[tailwindcss()],esbuild:{jsx:'automatic'},build:{outDir:out,emptyOutDir:true,rollupOptions:{input:resolve('tests/fixtures/cid-sos-browser.html')}}});
+  const html=readFileSync(join(out,'tests/fixtures/cid-sos-browser.html'));
   const handler=createCidSosHttpEmulatorHandler(async envelope=>{assert.equal(envelope.route.address,'contact-test@example.invalid');confirmation=envelope.secret;});
   server=createServer({key:readFileSync(key),cert:readFileSync(cert)},(req,res)=>{
    if(req.url?.startsWith('/cid-homologation/api/'))return void handler(req,res);
    if(req.method==='GET'&&req.url?.startsWith('/cid-test/')){
-    void vite.transformIndexHtml(req.url,'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/cid-sos-browser.tsx"></script></body></html>').then(html=>{res.setHeader('Content-Type','text/html; charset=utf-8');res.end(html);},()=>{res.statusCode=500;res.end();});return;
+    res.setHeader('Content-Type','text/html; charset=utf-8');res.end(html);return;
    }
-   vite.middlewares(req,res,()=>{res.statusCode=404;res.end();});
+   const asset=/^\/assets\/([A-Za-z0-9_.-]+\.(?:js|css))$/.exec(req.url??'');
+   if(req.method==='GET'&&asset){try{const data=readFileSync(join(out,'assets',asset[1]));res.setHeader('Content-Type',asset[1].endsWith('.css')?'text/css; charset=utf-8':'text/javascript; charset=utf-8');res.end(data);return;}catch{}}
+   res.statusCode=404;res.end();
   });
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   browser=await chromium.launch({headless:true,args:['--no-proxy-server','--host-resolver-rules=MAP kyrub-cid-emulator.vercel.app 127.0.0.1:'+server.address().port+', MAP * ~NOTFOUND']});
@@ -115,5 +119,5 @@ test('Chromium SOS: three private cookie jars, real WebAuthn ceremony and local 
   assert.equal((await root.collection('outbox').get()).size,2);
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
   console.info('CID_BROWSER: TLS loopback, independent cookie jars, virtual WebAuthn registration and authentication, contact confirmation, persisted messages and close/revoke; zero external requests.');
- }finally{await browser?.close();if(server)await new Promise(r=>server.close(r));await vite?.close();rmSync(folder,{recursive:true,force:true});for(const a of getApps().filter(a=>['cid-browser-fixtures','cid-sos-local-emulator','cid-chat-local-emulator'].includes(a.name)))await deleteApp(a);}
+ }finally{await browser?.close();if(server)await new Promise(r=>server.close(r));rmSync(folder,{recursive:true,force:true});for(const a of getApps().filter(a=>['cid-browser-fixtures','cid-sos-local-emulator','cid-chat-local-emulator'].includes(a.name)))await deleteApp(a);}
 });
