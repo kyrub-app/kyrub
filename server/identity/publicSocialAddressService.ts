@@ -1,5 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
-import { canReserveSocialAddress, isDocumentId, isSocialAddress, projectSocialAddress, type SocialAddressRecord, type SocialDestinationKind } from './publicSocialAddressPolicy.js';
+import { canReserveSocialAddress, isDocumentId, isSocialAddress, matchesSocialAddressRecord, projectSocialAddress, type SocialAddressRecord, type SocialDestinationKind } from './publicSocialAddressPolicy.js';
 
 // Server-owned indices: one immutable reservation per source and per namespace.
 // No duplication of user/community data. No client reads or writes to the index.
@@ -20,7 +20,8 @@ export async function reserveSocialAddress(actor: string, kind: SocialDestinatio
     const [sourceDoc,addressDoc,targetDoc] = await Promise.all([tx.get(source),tx.get(address),tx.get(target)]);
     if (!canReserveSocialAddress(kind,actor,targetId,sourceDoc.data())) throw Error('PUBLIC_ADDRESS_FORBIDDEN');
     if (addressDoc.exists || targetDoc.exists) {
-      if (addressDoc.data()?.targetId === targetId && targetDoc.data()?.identifier === identifier)
+      if (matchesSocialAddressRecord(addressDoc.data(),kind,identifier,targetId) &&
+          matchesSocialAddressRecord(targetDoc.data(),kind,identifier,targetId))
         return {kind,identifier};
       throw Error('PUBLIC_ADDRESS_CONFLICT');
     }
@@ -36,6 +37,8 @@ export async function resolveSocialAddress(kind: SocialDestinationKind, identifi
   return adminDb.runTransaction(async tx => {
     const mapping = (await tx.get(addresses().doc(addressKey(kind,identifier)))).data();
     if (!mapping || mapping.kind !== kind || mapping.identifier !== identifier || !isDocumentId(mapping.targetId)) return null;
+    const target = (await tx.get(reverse().doc(targetKey(kind,mapping.targetId)))).data();
+    if (!matchesSocialAddressRecord(target,kind,identifier,mapping.targetId)) return null;
     const ref = sourceRef(kind,mapping.targetId);
     const source = (await tx.get(ref)).data();
     if (!source) return null;
@@ -53,10 +56,14 @@ export async function getOwnedSocialAddress(actor: string, kind: SocialDestinati
     if (!source || (kind === 'profile' ? actor !== targetId : source.ownerId !== actor))
       throw Error('PUBLIC_ADDRESS_FORBIDDEN');
     const record = (await tx.get(reverse().doc(targetKey(kind,targetId)))).data();
-    return {
-      identifier: record && record.kind === kind && record.targetId === targetId &&
-        typeof record.identifier === 'string' && isSocialAddress(kind,record.identifier) ? record.identifier : null,
-      eligible: canReserveSocialAddress(kind,actor,targetId,source),
-    };
+    let identifier: string | null = null;
+    if (record) {
+      if (typeof record.identifier !== 'string' ||
+          !matchesSocialAddressRecord(record,kind,record.identifier,targetId)) throw Error('PUBLIC_ADDRESS_CONFLICT');
+      const forward = (await tx.get(addresses().doc(addressKey(kind,record.identifier)))).data();
+      if (!matchesSocialAddressRecord(forward,kind,record.identifier,targetId)) throw Error('PUBLIC_ADDRESS_CONFLICT');
+      identifier = record.identifier;
+    }
+    return {identifier, eligible: canReserveSocialAddress(kind,actor,targetId,source)};
   },{readOnly:true});
 }
