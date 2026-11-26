@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
 
 type DataStatus = 'complete' | 'partial';
@@ -133,12 +134,10 @@ const statusClass = (active: boolean): string =>
     ? 'border-emerald-400/40 bg-emerald-400/15 text-emerald-100'
     : 'border-slate-700 bg-slate-950 text-slate-400';
 
-async function authorizedJson<T extends { error?: string }>(url: string): Promise<T> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Faça login novamente.');
-  const token = await user.getIdToken();
+async function authorizedJson<T extends { error?: string }>(url: string, token: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('application/json')) {
@@ -151,19 +150,28 @@ async function authorizedJson<T extends { error?: string }>(url: string): Promis
   return payload;
 }
 
-async function loadProfitability(storeId: string): Promise<{
+async function loadProfitability(storeId: string, token: string, signal: AbortSignal): Promise<{
   orders: OrderOverview;
   products: ProductOverview;
 }> {
   const query = `storeId=${encodeURIComponent(storeId)}`;
   const [orders, products] = await Promise.all([
-    authorizedJson<OrderOverview>(`/api/store-finance/profitability?${query}`),
-    authorizedJson<ProductOverview>(`/api/store-finance/profitability/products?${query}`),
+    authorizedJson<OrderOverview>(`/api/store-finance/profitability?${query}`, token, signal),
+    authorizedJson<ProductOverview>(`/api/store-finance/profitability/products?${query}`, token, signal),
   ]);
+  if (orders.storeId !== storeId || products.storeId !== storeId) {
+    throw new Error('Resultados & Margens retornou dados de outra loja.');
+  }
   return { orders, products };
 }
 
 export default function StoreResultsMarginsWorkspace({ storeId }: { storeId: string }) {
+  const [user, setUser] = useState(() => auth.currentUser);
+  useEffect(() => onAuthStateChanged(auth, setUser), []);
+  return <StoreResultsMarginsScoped key={JSON.stringify([storeId, user?.uid ?? null])} storeId={storeId} />;
+}
+
+function StoreResultsMarginsScoped({ storeId }: { storeId: string }) {
   const [orders, setOrders] = useState<OrderOverview | null>(null);
   const [products, setProducts] = useState<ProductOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -171,25 +179,43 @@ export default function StoreResultsMarginsWorkspace({ storeId }: { storeId: str
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [orderFilter, setOrderFilter] = useState<OrderFilter>('all');
 
+  const activeRequest = useRef<AbortController | null>(null);
   const load = useCallback(async (silent = false) => {
+    activeRequest.current?.abort();
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const user = auth.currentUser;
+    const isCurrent = () => activeRequest.current === controller
+      && !controller.signal.aborted && auth.currentUser === user;
     if (!silent) setLoading(true);
     setError('');
     try {
-      const result = await loadProfitability(storeId);
+      if (!user) throw new Error('Faça login novamente.');
+      const token = await user.getIdToken();
+      if (!isCurrent()) return;
+      const result = await loadProfitability(storeId, token, controller.signal);
+      if (!isCurrent()) return;
       setOrders(result.orders);
       setProducts(result.products);
     } catch (caught) {
+      if (!isCurrent()) return;
       setError(
         caught instanceof Error
           ? caught.message
           : 'Não foi possível carregar Resultados & Margens.'
       );
     } finally {
-      if (!silent) setLoading(false);
+      if (isCurrent()) {
+        activeRequest.current = null;
+        setLoading(false);
+      }
     }
   }, [storeId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { activeRequest.current?.abort(); activeRequest.current = null; };
+  }, [load]);
 
   const filteredProducts = useMemo(() => {
     const rows = products?.products ?? [];
