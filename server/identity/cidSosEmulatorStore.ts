@@ -12,7 +12,7 @@ export const CID_EMULATOR_PROJECT='demo-kyrub-cid-sos';
 const APP='cid-sos-local-emulator';
 const deny=():never=>{throw Error('CID_SOS_EMULATOR_ONLY');};
 export function assertCidSosEmulator(env:NodeJS.ProcessEnv=process.env){
- if(env.KYRUB_CID_SOS_EMULATOR!=='true'||env.FIRESTORE_EMULATOR_HOST!=='127.0.0.1:8088'||env.GCLOUD_PROJECT!==CID_EMULATOR_PROJECT||env.FIREBASE_PROJECT_ID!==CID_EMULATOR_PROJECT||env.VERCEL||env.VERCEL_ENV||env.GOOGLE_APPLICATION_CREDENTIALS)return deny();
+ if(env.KYRUB_CID_SOS_EMULATOR!=='true'||env.FIRESTORE_EMULATOR_HOST!=='127.0.0.1:8088'||env.GCLOUD_PROJECT!==CID_EMULATOR_PROJECT||env.FIREBASE_PROJECT_ID!==CID_EMULATOR_PROJECT||env.VERCEL||env.VERCEL_ENV||env.GOOGLE_APPLICATION_CREDENTIALS||env.FIREBASE_SERVICE_ACCOUNT_JSON)return deny();
 }
 export function createCidSosEmulatorStore(tagId:string):PrivateSosStore{
  assertCidSosEmulator();if(!isTagId(tagId))return deny();
