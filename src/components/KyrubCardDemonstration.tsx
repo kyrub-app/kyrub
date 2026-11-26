@@ -6,9 +6,9 @@ const fields=[
  {key:'name',label:'Nome',placeholder:'Como deseja ser chamado?',max:80},
  {key:'occupation',label:'Título ou atividade',placeholder:'Sua atividade ou apresentação',max:90},
  {key:'about',label:'Informações adicionais',placeholder:'Conte um pouco sobre você',max:320},
- {key:'profile',label:'Perfil no Kyrub',placeholder:'@seu-perfil',max:120},
- {key:'store',label:'Loja no Kyrub',placeholder:'@sua-loja',max:120},
- {key:'community',label:'Comunidade no Kyrub',placeholder:'sua-comunidade',max:120},
+ {key:'profile',label:'Perfil no Kyrub',placeholder:'kyrub.com/seu-perfil',max:120},
+ {key:'store',label:'Loja no Kyrub',placeholder:'kyrub.com/@sua-loja',max:120},
+ {key:'community',label:'Comunidade no Kyrub',placeholder:'kyrub.com/comunidade/sua-comunidade',max:120},
 ] as const;
 const button='min-h-11 rounded-xl border border-[#34443B] px-3 py-2 text-sm font-semibold';
 export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,children,previewOnly=false}: {
@@ -38,7 +38,7 @@ export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,c
   {label:'Informações adicionais',value:saved?.about,example:'Conte um pouco mais sobre você',Icon:Info}
  ];
  return <section data-testid="kyrub-card-demo" className="space-y-4 rounded-2xl border border-[#34443B] bg-[#121A17] p-4 text-[#F5F5F3]">
-  <header className="flex justify-end"><a href="/" className="inline-flex min-h-11 items-center rounded-xl border border-[#F47825] px-3 text-sm font-bold text-[#F47825]">Kairub-se!</a></header>
+  <header className="flex flex-wrap items-center justify-between gap-2"><a href="/" className="font-black text-[#F47825]">KYRUB TAG</a><a href="/" className="inline-flex min-h-11 items-center rounded-xl border border-[#F47825] px-3 text-sm font-bold text-[#F47825]">Kairub-se!</a></header>
   <div className="space-y-2 text-center">
    <img src="/kyrub-logo.svg" alt="Kyrub" className="mx-auto h-24 w-24 object-contain"/>
    <p className="text-sm text-slate-300">{saved?'Prévia privada · não publicada':'Cartão demonstrativo'}</p>
@@ -51,6 +51,7 @@ export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,c
   </div>}
   {editing?<form className="space-y-3" onSubmit={e=>{e.preventDefault();save();}}>
    <p className="text-sm text-slate-300">Preencha apenas informações que você gostaria de tornar públicas depois. Não informe CPF, senhas, endereço residencial ou dados de saúde. O rascunho fica nesta aba até você apagá-lo ou fechar a sessão do navegador.</p>
+   <p className="text-xs text-slate-300">Nos campos de perfil, loja e comunidade, informe o identificador (trecho final do endereço).</p>
    {fields.map(field=><label key={field.key} className="block text-sm">{field.label} (opcional)
     {field.key==='about'?<textarea rows={3} maxLength={field.max} value={draft[field.key]} placeholder={field.placeholder} onChange={e=>setDraft(d=>({...d,[field.key]:e.target.value}))} className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3"/>:<input maxLength={field.max} value={draft[field.key]} placeholder={field.placeholder} onChange={e=>setDraft(d=>({...d,[field.key]:e.target.value}))} className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3"/>}
    </label>)}
