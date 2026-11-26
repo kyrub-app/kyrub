@@ -67,7 +67,7 @@ test('profile completion is triggered only after persisted profile save or confi
  const router=readFileSync('server/gamification/profileCompletionEmulatorRouter.ts','utf8');
  const server=readFileSync('server.ts','utf8');
  const api=readFileSync('api/health.ts','utf8');
- assert.match(editor,/await updateProfile\(user,[\s\S]*?setMessage\('Foto, nome e biografia sincronizados\.'\);\s*void reconcileProfileCompletionPilot\(user\)/);
+ assert.match(editor,/await batch.commit\(\);\s*if\(auth.currentUser!==user\)return;[\s\S]*?setMessage\('Foto, nome e biografia sincronizados\.'\);\s*void reconcileProfileCompletionPilot\(user\)/);
  assert.match(editor,/onReserved=\{\(\)=>void reconcileProfileCompletionPilot\(user\)\}/);
  assert.match(address,/if\(auth.currentUser===user\)[\s\S]*?onReserved\?\.\(\)/);
  assert.match(pilot,/import.meta.env\?\.DEV!==true/);
