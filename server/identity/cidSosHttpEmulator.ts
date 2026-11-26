@@ -7,6 +7,7 @@ import {assertCidSosEmulator,createCidSosEmulatorStore} from './cidSosEmulatorSt
 import {createCidChatEmulatorStore,CID_CHAT_EMULATOR_ORIGIN} from './cidChatEmulatorStore.js';
 import {createCidOwnerCentralEmulator} from './cidOwnerCentralEmulator.js';
 import type {CidEditorChannel} from '../../shared/cidSosConfigEditor.js';
+import {recordCidAccessEmulator} from './cidAccessObservationEmulator.js';
 import {normalizeCidSosRequest} from '../../shared/cidSosRequest.js';
 import {CID_CHAT_SESSION_TTL_MS} from './cidOccurrenceChatAccess.js';
 
@@ -61,6 +62,11 @@ export function createCidSosHttpEmulatorHandler(deliverSimulatedConfirmation:(en
    assertCidSosEmulator();
    // No CORS, no forwarded-origin trust, no GET state changes or credential-bearing query.
    if((req.socket as TLSSocket).encrypted!==true||req.socket.localAddress!=='127.0.0.1'||req.socket.remoteAddress!=='127.0.0.1'||req.method!=='POST'||req.headers.host!==host||req.headers.origin!==origin||req.headers['x-cid-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'CID_HTTP_DENIED'});
+   const accessMatch=/^\/cid-homologation\/api\/([a-f0-9]{32})\/access$/.exec(req.url??'');
+   if(accessMatch){
+    const input=await body(req);exact(input,[]);
+    return respond(res,200,await recordCidAccessEmulator(accessMatch[1],Date.now()));
+   }
    const centralMatch=/^\/cid-homologation\/api\/([a-f0-9]{32})\/central\/(begin|finish|read|editor|config-begin|config-finish|consent-request|revoke)$/.exec(req.url??'');
    const recipientMatch=/^\/cid-homologation\/api\/([a-f0-9]{32})\/consent\/(confirm|revoke)$/.exec(req.url??'');
    if(centralMatch){
