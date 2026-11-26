@@ -32,7 +32,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   batch.set(db.doc('users/'+actor.uid),{uid:actor.uid,email,name:'Titular fixture',isProfileVisible:false});
   for(let i=0;i<45;i++){
    const suffix=String(i).padStart(2,'0'),uid='social-browser-'+suffix;
-   batch.set(db.doc('users/'+uid),{uid,name:'Contato público '+suffix,isProfileVisible:true,photoUrl:'',email:'fixture-secret-'+suffix+'@example.invalid',cpf:'fixture'});
+   batch.set(db.doc('users/'+uid),{uid,name:'Contato público '+suffix,isProfileVisible:true,photoUrl:i===0?'https://example.invalid/author-photo':'',email:'fixture-secret-'+suffix+'@example.invalid',cpf:'fixture'});
   }
   batch.set(db.doc('users/'+privateId),{uid:privateId,name:'Nome reservado atual',isProfileVisible:false,email:'private@example.invalid',photoUrl:''});
   const connectionId=[actor.uid,privateId].sort().join('_');
@@ -57,6 +57,8 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await page.getByRole('button',{name:'Entrar na fixture'}).click();
   await page.waitForFunction(()=>document.querySelector('[data-testid="visible-author"]')?.textContent==='Contato público 00');
   assert.equal(await page.getByTestId('private-author').textContent(),'Autor histórico reservado');
+  assert.equal(await page.getByTestId('private-author-avatar').textContent(),'sem-foto');
+  assert.equal(await page.getByTestId('visible-author-avatar').textContent(),'https://example.invalid/author-photo');
   await page.getByRole('button',{name:'Abrir conectados na fixture'}).click();
   await page.getByText('Contato reservado histórico',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Abrir novas conexões'}).click();
@@ -79,6 +81,10 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await page.getByRole('button',{name:'Fechar novos contatos'}).click();
   await page.getByText('Contato reservado histórico',{exact:true}).waitFor();
   assert.equal((await connection.get()).get('status'),'accepted');
+  await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
+  await page.waitForFunction(()=>document.querySelector('[data-testid="visible-author-avatar"]')?.textContent==='sem-foto');
+  assert.equal(await page.getByTestId('visible-author').textContent(),'Autor histórico público');
+  assert.equal(await page.getByTestId('private-author-avatar').textContent(),'sem-foto');
   await context.close();
  }catch(error){
   console.error('[social-browser]',JSON.stringify({diagnostics:diagnostics.slice(-20),requests}));
