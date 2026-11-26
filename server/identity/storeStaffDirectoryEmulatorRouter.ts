@@ -31,8 +31,9 @@ export function createStaffDirectoryEmulatorRouter(db:Firestore,auth:Auth){
   let uid:string;
   try{
    const identity=await auth.verifyIdToken(token,true);
-   if(identity.aud!==PROJECT||!isDocumentId(identity.uid)||identity.email_verified!==true||
-     (await auth.getUser(identity.uid)).disabled)throw Error('AUTH_INVALID');
+   if(identity.aud!==PROJECT||!isDocumentId(identity.uid)||identity.email_verified!==true)throw Error('AUTH_INVALID');
+   const actor=await auth.getUser(identity.uid);
+   if(actor.disabled||!actor.emailVerified)throw Error('AUTH_INVALID');
    uid=identity.uid;
   }catch{res.sendStatus(401);return;}
   const now=Date.now();
