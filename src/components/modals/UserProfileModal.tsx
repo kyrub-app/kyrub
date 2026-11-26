@@ -8,6 +8,7 @@ import {
   Flag,
   Bookmark,
   CircleUserRound,
+  ContactRound,
   X,
 } from 'lucide-react';
 import {
@@ -362,6 +363,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   );
                 })}
               </div>
+              <a href="/?app=1&cardDraft=1" className="flex min-h-12 items-center gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 text-sm text-slate-100"><ContactRound className="h-5 w-5 shrink-0 text-orange-300" aria-hidden="true"/><span>Meu cartão de identificação digital</span></a>
               {personalPanel && (
                 <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4" id="personal-center-active-panel">
                   <h4 className="mb-2 text-base font-black text-white">

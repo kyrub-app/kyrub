@@ -32,6 +32,7 @@ import { ProfileVerificationBridge } from './components/ProfileVerificationBridg
 import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
 import { KyrubCardDemonstrationPage } from './components/KyrubCardDemonstration';
+import { CardRegistrationPage } from './components/CardRegistrationPage';
 import { PublicSocialDestinationPage } from './components/PublicSocialDestinationPage';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
@@ -332,6 +333,7 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
       onPromoted={()=>setIdentityMode('full')}
       onRetry={()=>setRetry(v=>v+1)}/>;
   if(operational)return <AuthenticatedKyrubApp operational />;
+  if(currentUser&&new URLSearchParams(window.location.search).get('cardDraft')==='1')return <CardRegistrationPage key={currentUser.uid} userId={currentUser.uid}/>;
   return currentUser ? <AuthenticatedKyrubApp operational={false} /> : <KyrubGuestWorkspace />;
 }
 

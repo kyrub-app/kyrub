@@ -25,3 +25,23 @@ test('demo never writes to server or authenticates visitors and keeps physical c
  assert.match(tag,/claim-promotional/);
  assert.match(tag,/data.activation==='setup'/);
 });
+
+import {normalizeVisitCardPresentation,readVisitCardPresentation,hasVisitCardPresentation} from '../shared/visitCardPresentation';
+test('independent presentation accepts text only and never private credentials',()=>{
+ const sample={name:' Ana ',occupation:'Pizzaria',about:'Olá'};
+ assert.deepEqual(normalizeVisitCardPresentation(sample),{...sample,name:'Ana'});
+ assert.equal(hasVisitCardPresentation(normalizeVisitCardPresentation(sample)),true);
+ assert.equal(readVisitCardPresentation({...sample,email:'private@example.test'}),undefined);
+ assert.equal(readVisitCardPresentation({...sample,about:'x'.repeat(321)}),undefined);
+ assert.equal(readVisitCardPresentation({...sample,occupation:42}),undefined);
+});
+test('independent card import requires explicit review and publication; preview cannot write presentation',()=>{
+ const editor=readFileSync('src/components/MultifunctionCardEditor.tsx','utf8'),api=readFileSync('api/health.ts','utf8'),service=readFileSync('server/identity/publicVisitCardService.ts','utf8');
+ assert.match(editor,/Aproveitar meu rascunho/);
+ assert.match(editor,/!consent/);
+ assert.match(editor,/clearCardDraft\(sessionStorage\)/);
+ assert.match(api,/CARD_PREVIEW_READ_ONLY/);
+ assert.match(api,/adminAuth.verifyIdToken\(bearer,true\)/);
+ assert.match(service,/normalizeVisitCardPresentation\(rawPresentation\)/);
+ assert.match(service,/tx.create\(ownerRef,\{id\}\)/);
+});

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { normalizeVisitCardPresentation, readVisitCardPresentation, hasVisitCardPresentation, type VisitCardPresentation } from '../../shared/visitCardPresentation.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { resolveSocialAddress } from './publicSocialAddressService.js';
 import { loadPublicStorefrontBySlug } from '../payments/marketplaceDiscoveryService.js';
@@ -27,10 +28,12 @@ export async function loadOwnedCard(actor:string){
   const card=(await cards().doc(owner.id).get()).data();
   if(!card||card.ownerId!==actor)return null;
   const targets=Array.isArray(card.targets)?card.targets.filter(isBoundTarget).slice(0,CARD_LIMIT):[];
-  return {id:owner.id,enabled:card.enabled===true,urls:targets.map(t=>cardLink(t,'Destino').url)};
+  const presentation=readVisitCardPresentation(card.presentation);
+  return {id:owner.id,enabled:card.enabled===true,urls:targets.map(t=>cardLink(t,'Destino').url),...(presentation?{presentation}:{})};
 }
-export async function saveOwnedCard(actor:string,urls:unknown){
-  const requested=parseCardTargets(urls);
+export async function saveOwnedCard(actor:string,urls:unknown,rawPresentation?:unknown){
+  const presentation=rawPresentation===undefined?undefined:normalizeVisitCardPresentation(rawPresentation);
+  const requested=Array.isArray(urls)&&urls.length===0&&hasVisitCardPresentation(presentation)?[]:parseCardTargets(urls);
   const resolved=await Promise.all(requested.map(t=>resolveTarget(actor,t)));
   if(resolved.some(t=>!t))throw Error('CARD_TARGET_UNAVAILABLE');
   const targets=resolved.flatMap(t=>t?[t.binding]:[]);
@@ -45,13 +48,13 @@ export async function saveOwnedCard(actor:string,urls:unknown){
     const card=await tx.get(cardRef);
     if(owner){
       if(!card.exists||card.data()?.ownerId!==actor)throw Error('CARD_UNAVAILABLE');
-      tx.update(cardRef,{targets,enabled:true});
+      tx.update(cardRef,{targets,enabled:true,...(presentation?{presentation}:{})});
     }else{
       if(card.exists)throw Error('CARD_UNAVAILABLE');
       tx.create(ownerRef,{id});
-      tx.create(cardRef,{ownerId:actor,targets,enabled:true});
+      tx.create(cardRef,{ownerId:actor,targets,enabled:true,...(presentation?{presentation}:{})});
     }
-    return {id,enabled:true,urls:requested.map(t=>cardLink(t,'Destino').url)};
+    return {id,enabled:true,urls:requested.map(t=>cardLink(t,'Destino').url),...(presentation?{presentation}:{})};
   });
 }
 export async function disableOwnedCard(actor:string){
@@ -65,7 +68,7 @@ export async function disableOwnedCard(actor:string){
     return {id:owner.id,enabled:false};
   });
 }
-export async function resolvePublicCard(id:string):Promise<{id:string;links:CardLink[]}|null>{
+export async function resolvePublicCard(id:string):Promise<{id:string;links:CardLink[];presentation?:VisitCardPresentation}|null>{
   if(!isCardId(id))return null;
   const ref=cards().doc(id);
   const snapshot=await ref.get();
@@ -76,5 +79,6 @@ export async function resolvePublicCard(id:string):Promise<{id:string;links:Card
   // Avoid returning a stale snapshot after a concurrent update/revocation.
   const current=await ref.get();
   if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
-  return {id,links:links.flatMap(t=>t?[t.link]:[])};
+  const presentation=readVisitCardPresentation(card.presentation);
+  return {id,links:links.flatMap(t=>t?[t.link]:[]),...(presentation?{presentation}:{})};
 }
