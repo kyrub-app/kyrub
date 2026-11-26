@@ -153,7 +153,10 @@ test('social directory client and author hydration use protected local transport
  assert.match(client,/method:'POST',cache:'no-store'/);
  assert.match(hook,/ids\.slice\(offset,offset\+40\)/);
  assert.match(hook,/controller\.abort\(\)/);
- assert.match(hook,/setProfiles\(\(\)=>\(\{\}\)\)/);
+ assert.match(hook,/setProfiles\(\(\)=>concealedAuthors\(ids\)\)/);
+ assert.match(hook,/const next=concealedAuthors\(ids\)/);
+ assert.match(hook,/ids.map\(uid=>\[uid,\{name:'',avatar:''\}\]\)/);
+ assert.match(hook,/const fallback=socialDirectoryPilotEnabled\(\)\?concealedAuthors\(ids\):\{\}/);
  assert.match(server,/KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
  assert.match(server,/socialRouterPromise\?\?=Promise\.all/);
 });
