@@ -25,6 +25,7 @@ test('Chromium: real administrative directory resolves Auth email, audits both o
  const password='fixture-only-password-2026',adminEmail='directory-admin@example.invalid',targetEmail='directory-target@example.invalid';
  let vite,server,browser,page;
  const requests=[],diagnostics=[];
+ let issuedBearer='';
  try{
   const actor=await auth.createUser({email:adminEmail,password,emailVerified:true});
   const target=await auth.createUser({email:targetEmail,password,emailVerified:true});
@@ -47,6 +48,7 @@ test('Chromium: real administrative directory resolves Auth email, audits both o
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   page=await context.newPage();
   page.on('pageerror',error=>diagnostics.push(error.message));
+  page.on('request',request=>{if(new URL(request.url()).pathname==='/api/admin-directory-pilot/identity')issuedBearer=request.headers().authorization||'';});
   page.on('response',response=>{if(new URL(response.url()).pathname==='/api/admin-directory-pilot/identity')requests.push(response.status());});
   await page.goto('http://127.0.0.1:'+server.address().port+'/admin');
   await page.getByLabel('Email de teste').fill(adminEmail);
@@ -72,8 +74,20 @@ test('Chromium: real administrative directory resolves Auth email, audits both o
   await section.getByText('Não existe usuário cadastrado para a busca exata',{exact:false}).waitFor();
   const all=await directoryAudits();assert.equal(all.length,2);assert.equal(all.filter(doc=>doc.get('outcome')==='not_found').length,1);
   assert.deepEqual(requests,[200,200]);
+  assert.ok(issuedBearer.startsWith('Bearer '));
+  const countUrl='http://127.0.0.1:'+server.address().port+'/api/admin-directory-pilot/count';
+  const countRequest=(bearer,body='{}')=>fetch(countUrl,{
+   method:'POST',headers:{Authorization:bearer,'Content-Type':'application/json'},body
+  });
+  const expected=(await db.collection('users').count().get()).data().count;
+  const result=await countRequest(issuedBearer);
+  assert.equal(result.status,200);
+  assert.deepEqual(await result.json(),{count:expected});
+  assert.equal((await countRequest('')).status,401);
+  assert.equal((await countRequest(issuedBearer,'{"term":"test"}')).status,400);
   await grant.update({role:'finance'});
   await panel.waitFor({state:'detached'});
+  assert.equal((await countRequest(issuedBearer)).status,403);
   assert.equal(await section.count(),0);
   assert.equal((await directoryAudits()).length,2);
   await context.close();
