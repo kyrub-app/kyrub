@@ -98,6 +98,9 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await page.getByRole('button',{name:'Confirmar alterações com chave de acesso'}).click();
   await page.getByRole('heading',{name:'Cartão atualizado',exact:true}).waitFor();
   await page.getByRole('button',{name:'Copiar Pix',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Exibir QR Code Pix',exact:true}).click();
+  await page.getByRole('img',{name:'QR Code Pix para pagamento'}).waitFor();
+  assert.ok((await page.getByRole('img',{name:'QR Code Pix para pagamento'}).locator('path').getAttribute('d')).length>100);
   await page.getByText('Exibir Pix Copia e Cola',{exact:true}).click();
   assert.equal(await page.getByLabel('Código Pix Copia e Cola').inputValue(),'00020126580014br.gov.bcb.pix0136123e4567-e12b-12d1-a456-4266554400005204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***63041D3D');
   await page.getByRole('button',{name:'Editar meu cartão'}).click();
@@ -112,6 +115,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await page.getByRole('button',{name:'Copiar Pix',exact:true}).waitFor({state:'hidden'});
   assert.equal(await page.getByRole('button',{name:'Copiar Pix',exact:true}).count(),0);
   assert.equal((await ref.get()).data().presentation.pix,null);
+  assert.equal(await page.getByRole('img',{name:'QR Code Pix para pagamento'}).count(),0);
   await page.screenshot({path:'passkey-browser-public-card.png',fullPage:true});
   await page.getByRole('button',{name:'Bloquear tag perdida'}).click();
   await page.getByText('Este cartão está bloqueado. As informações do titular não estão públicas.',{exact:true}).waitFor();
