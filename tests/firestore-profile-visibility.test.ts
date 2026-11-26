@@ -126,6 +126,20 @@ test('isolated root privacy candidate denies direct cross-account reads and pres
     await assertFails(getDoc(doc(other, publicPath)));
     await assertSucceeds(getDoc(doc(owner, publicPath)));
     await assertFails(getDoc(doc(other, PATH)));
+    // Quota counters are an internal server ledger, not a client privilege.
+    const quotaId = 'a'.repeat(64);
+    const quotaPath = 'directory_quota_private/' + quotaId;
+    const quotaData = {version: 1, scope: 'social', startedAtMs: 1800000000000, count: 12};
+    await isolated.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), quotaPath), quotaData);
+    });
+    for (const client of [owner, other, admin, anonymous]) {
+      await assertFails(getDoc(doc(client, quotaPath)));
+      await assertFails(getDocs(collection(client, 'directory_quota_private')));
+      await assertFails(updateDoc(doc(client, quotaPath), {count: 1}));
+      await assertFails(deleteDoc(doc(client, quotaPath)));
+      await assertFails(setDoc(doc(client, 'directory_quota_private/' + 'b'.repeat(64)), quotaData));
+    }
     // Subcollection grants remain independent of the account document.
     await isolated.withSecurityRulesDisabled(async context => {
       await setDoc(doc(context.firestore(), PATH + '/tasks/shared-note'), {
