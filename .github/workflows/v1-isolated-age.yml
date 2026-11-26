@@ -1,0 +1,42 @@
+name: V1 isolated age screening
+on:
+  pull_request:
+    branches: [release/kyrub-tag-permanent-stock]
+    paths:
+      - 'shared/ageEligibility.ts'
+      - 'server/identity/age*'
+      - 'src/utils/kyrubEmailAccess.ts'
+      - 'tests/age-*'
+      - '.github/workflows/v1-isolated-age.yml'
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run lint
+      - run: node --test --import tsx tests/age-eligibility-foundation.test.ts tests/age-screening-isolation.test.ts
+      - run: npm run firestore:compose
+      - name: Isolated HTTP and Auth / Firestore transaction test
+        env:
+          NODE_ENV: test
+          KYRUB_AGE_SCREENING_EMULATOR: 'true'
+          GCLOUD_PROJECT: demo-kyrub-onboarding
+          GOOGLE_CLOUD_PROJECT: demo-kyrub-onboarding
+          FIREBASE_PROJECT_ID: demo-kyrub-onboarding
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-onboarding --only auth,firestore "node --test --import tsx tests/age-screening-http-emulator.test.ts"
