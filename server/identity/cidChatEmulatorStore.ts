@@ -3,7 +3,7 @@
 // No public route, production adminDb, or real notification provider.
 import {getApps,initializeApp} from 'firebase-admin/app';
 import {getFirestore,type Transaction,type DocumentReference} from 'firebase-admin/firestore';
-import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
+import {createHash,randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
 import {assertCidSosEmulator,CID_EMULATOR_PROJECT} from './cidSosEmulatorStore.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {createCidOccurrenceChat,issueCidChatInvite,redeemCidChatInvite,openCidChatSession,authorizeCidChatSession,prepareCidChatMessage,closeCidChat,projectCidChat,type CidChat,type ChatInvite,type ChatSession,type ChatMessage} from './cidOccurrenceChatAccess.js';
@@ -12,6 +12,7 @@ import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} 
 import {assertSamePasskeyCredential} from './kyrubTagPasskeyState.js';
 import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import type {CidSosOccurrence,CidSosMessage} from './cidSosAlertPolicy.js';
+import {normalizeCidComplaint} from '../../shared/cidOccurrenceComplaint.js';
 import {prepareCidOccurrenceReport,formatCidConversationText} from './cidOccurrenceReport.js';
 import {requestCidEvidencePreservation,type PreservationRequest} from './cidEvidencePreservation.js';
 import {normalizeCidSosResolution,cidSosResolutionNotice} from '../../shared/cidSosResolution.js';
@@ -351,7 +352,31 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
      return {id:saved.id,status:saved.status,duplicate:true,simulated:true as const};
     }
     tx.create(prior.ref,{request,tagId,ownerId:chat.ownerId,simulation:true});
+    tx.create(db.collection('cid_sos_emulator_review_queue').doc(request.id),{id:request.id,kind:'preservation',tagId,occurrenceId,createdAt:now,status:'pending-review',simulation:true});
     return {id:request.id,status:request.status,duplicate:false,simulated:true as const};
+   });
+  },
+  async denounceOccurrence(credential:Credential,input:unknown,now:number){
+   checkNow(now);const complaint=normalizeCidComplaint(input);
+   return db.runTransaction(async tx=>{
+    checkNow(now);
+    const [chat,s,o]=await Promise.all([readChat(tx),readSession(tx,credential,now),tx.get(occurrence)]);
+    const member=authorizeCidChatSession(chat,s.session,credential.secret,now,'read');
+    const data=o.data() as CidSosOccurrence|undefined;
+    if(!data||data.id!==occurrenceId||data.tagId!==tagId||data.ownerId!==chat.ownerId||now<data.createdAt)return deny();
+    if(member.role==='owner')await ownerCredential(tx,chat);
+    const ref=root.collection('complaints').doc(digest(member.id)),prior=await tx.get(ref);
+    if(prior.exists){
+     const saved=prior.data();
+     if(!saved||saved.tagId!==tagId||saved.occurrenceId!==occurrenceId||saved.reporterId!==member.id||saved.category!==complaint.category||saved.reason!==complaint.reason||typeof saved.id!=='string')return deny();
+     return {id:saved.id,status:'pending-review' as const,duplicate:true,simulated:true as const};
+    }
+    // One report per participant and occurrence. A private allegation is not
+    // a finding, restriction, evidence hold, or disclosure authorization.
+    const id=randomUUID();
+    tx.create(ref,{id,tagId,occurrenceId,reporterId:member.id,reporterRole:member.role,category:complaint.category,reason:complaint.reason,createdAt:now,status:'pending-review',simulation:true});
+    tx.create(db.collection('cid_sos_emulator_review_queue').doc(id),{id,kind:'complaint',tagId,occurrenceId,createdAt:now,status:'pending-review',simulation:true});
+    return {id,status:'pending-review' as const,duplicate:false,simulated:true as const};
    });
   },
   async revokeOwnSession(credential:Credential,now:number){
