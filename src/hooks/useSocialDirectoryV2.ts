@@ -299,17 +299,20 @@ export function useSocialDirectoryV2({
           profileName ||
           currentUser.displayName ||
           'Usuário do Kyrub',
-        senderRole,
-        senderAvatar: profilePhotoUrl || currentUser.photoURL || '',
-        senderBio: '', // Never copy a legacy address or other ambiguous private field.
+        // The protected directory hydrates current presentation separately.
+        // Keep historical names for attribution, but never persist photos,
+        // biographies or account roles in new connection snapshots.
+        ...(protectedDirectory ? {} : {
+          senderRole,
+          senderAvatar: profilePhotoUrl || currentUser.photoURL || '',
+          senderBio: '',
+          receiverRole: getUserRole(targetUser),
+          receiverAvatar: targetUser.photoUrl || '',
+          receiverBio: targetUser.bio || '',
+        }),
         receiverName:
           targetUser.name ||
           'Usuário do Kyrub',
-        receiverRole: getUserRole(targetUser),
-        receiverAvatar: targetUser.photoUrl || '',
-        receiverBio:
-          targetUser.bio ||
-          '',
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
       });
