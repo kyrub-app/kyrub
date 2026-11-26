@@ -325,6 +325,22 @@ if(process.env.KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='te
   });
 }
 
+if(process.env.KYRUB_ADMIN_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'&&
+   process.env.GCLOUD_PROJECT==='demo-kyrub-welcome'&&process.env.GOOGLE_CLOUD_PROJECT==='demo-kyrub-welcome'&&
+   process.env.FIREBASE_PROJECT_ID==='demo-kyrub-welcome'&&process.env.FIRESTORE_EMULATOR_HOST==='127.0.0.1:8088'&&
+   process.env.FIREBASE_AUTH_EMULATOR_HOST==='127.0.0.1:9099'&&!process.env.VERCEL&&
+   !process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS){
+  let adminDirectoryRouterPromise:Promise<ReturnType<typeof import('./server/identity/adminDirectoryEmulatorRouter.js').createAdminDirectoryEmulatorRouter>>|undefined;
+  app.use('/api',async(req,res,next)=>{
+    if(!req.path.startsWith('/admin-directory-pilot/')){next();return;}
+    try{
+      adminDirectoryRouterPromise??=Promise.all([import('./server/firebaseAdmin.js'),import('./server/identity/adminDirectoryEmulatorRouter.js')])
+        .then(([{adminDb,adminAuth},{createAdminDirectoryEmulatorRouter}])=>createAdminDirectoryEmulatorRouter(adminDb,adminAuth));
+      (await adminDirectoryRouterPromise)(req,res,next);
+    }catch{adminDirectoryRouterPromise=undefined;res.set('Cache-Control','private, no-store').sendStatus(503);}
+  });
+}
+
 app.use(
   "/api/notifications",
   integrationRateLimiter,
