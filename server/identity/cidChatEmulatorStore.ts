@@ -115,9 +115,11 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
     checkNow(now);
     const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential)]);
     const view=projectCidChat(chat,s.session,credential.secret,now);
-    const snapshot=await tx.get(messages.orderBy('createdAt','desc').limit(100));
+    const [o,snapshot]=await Promise.all([tx.get(occurrence),tx.get(messages.orderBy('createdAt','desc').limit(101))]);
+    const data=o.data() as CidSosOccurrence|undefined;
+    if(!data||data.id!==chat.id||data.tagId!==tagId||data.ownerId!==chat.ownerId)return deny();
     const contacts=chat.members.filter(m=>m.role==='contact');
-    return {...view,messages:snapshot.docs.map(d=>{
+    return {...view,reason:data.reason,hasOlderMessages:snapshot.size>100,messages:snapshot.docs.slice(0,100).map(d=>{
      const m=d.data() as ChatMessage;
      if(m.chatId!==chat.id||m.id!==d.id)return deny();
      const member=chat.members.find(p=>p.id===m.authorId);
