@@ -30,7 +30,7 @@ export function SemeaduraJourneyPanel({
     const controller = new AbortController();
     setTotal(null);
     setError('');
-    if (!SEMEADURA_UI_ENABLED || !viewerId) return () => controller.abort();
+    if (!SEMEADURA_UI_ENABLED || !viewerId || communityId) return () => controller.abort();
     const read = async () => {
       const result = await requestSemeadura(
         communityId ? 'community-journey' : 'journey',
@@ -61,7 +61,7 @@ export function SemeaduraJourneyPanel({
     };
   }, [viewerId, communityId]);
 
-  if (!SEMEADURA_UI_ENABLED) return null;
+  if (!SEMEADURA_UI_ENABLED || communityId) return null;
   const journey = calculatePitangueiraJourney(total ?? 0);
   const remainingToBosque = SEEDS_PER_BOSQUE - journey.totalSeeds % SEEDS_PER_BOSQUE;
   const showCanonicalXp = !communityId && xp !== undefined;

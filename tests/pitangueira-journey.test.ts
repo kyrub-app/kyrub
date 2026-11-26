@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
+import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../shared/semeaduraDailyLimit';
 import {
   BOSQUES_PER_XP, SEEDS_PER_BOSQUE, SEEDS_PER_PITANGUEIRA,
   calculatePitangueiraJourney, planPostSemeadura, sumVerifiedPersonalSeeds,
@@ -75,4 +77,23 @@ test('community progress can display bosques, but only personal author may earn 
   assert.equal(authorB.pitangasEquivalent, 25);
   // No function in this module writes a wallet or XP ledger. Credit happens
   // only through trusted verified earning and voluntary conversion paths.
+});
+
+test('daily sending allowance is 100 across post types and resets at Sao Paulo midnight', () => {
+  assert.equal(SEMEADURA_DAILY_LIMIT, 100);
+  assert.equal(semeaduraDay(new Date('2026-11-26T02:59:59Z')), '2026-11-25');
+  assert.equal(semeaduraDay(new Date('2026-11-26T03:00:00Z')), '2026-11-26');
+  assert.equal(readSemeaduraDailyCount(undefined, 'actor', '2026-11-26'), 0);
+  const valid = { actorId: 'actor', day: '2026-11-26', schemaVersion: 1, count: 100 };
+  assert.equal(readSemeaduraDailyCount(valid, 'actor', '2026-11-26'), 100);
+  assert.throws(() => readSemeaduraDailyCount({ ...valid, count: 101 }, 'actor', valid.day), /INVALID/);
+  assert.throws(() => readSemeaduraDailyCount(valid, 'other', valid.day), /INVALID/);
+});
+test('accepted seeds alone consume quota in the receipt transaction and communities do not accumulate', () => {
+  const source = readFileSync('server/gamification/semeaduraService.ts', 'utf8');
+  assert.ok(source.indexOf("if (plan.status !== 'accepted')") < source.indexOf('const quotaRef'));
+  assert.ok(source.indexOf('if (used >= SEMEADURA_DAILY_LIMIT)') < source.indexOf('tx.create(receiptRef'));
+  assert.match(source, /tx\.set\(quotaRef,/);
+  assert.doesNotMatch(source, /communityProgressRef|nextCommunityTotal/);
+  assert.match(source, /tx\.create\(receiptRef,/);
 });

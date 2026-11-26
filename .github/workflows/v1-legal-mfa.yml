@@ -1,0 +1,27 @@
+name: V1 legal integrity and MFA foundation
+on:
+  pull_request:
+    branches: [release/kyrub-tag-permanent-stock]
+    paths:
+      - 'server/governance/**'
+      - 'shared/kyrubMfaPolicy.ts'
+      - 'src/utils/kyrubTotpAccess.ts'
+      - 'tests/v1-legal-mfa-foundation.test.ts'
+      - '.github/workflows/v1-legal-mfa.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: node --test --import tsx tests/v1-legal-mfa-foundation.test.ts
