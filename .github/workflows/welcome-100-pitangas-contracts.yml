@@ -2,7 +2,7 @@ name: Welcome 100 Pitangas isolated contracts
 
 on:
   pull_request:
-    branches: [main, test-gamification-transversal-browser]
+    branches: [main, test-gamification-transversal-browser, feat/finance-mobile-module-navigation-v1]
     paths:
       - 'server/gamification/pitangaAccount*.ts'
       - 'server/gamification/semeadura*.ts'
