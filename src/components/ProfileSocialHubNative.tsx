@@ -55,6 +55,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
+import { subscribeSocialDiscoveryDirectory } from '../utils/socialDiscoveryDirectory';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
@@ -136,16 +137,6 @@ const readStoredPosts = (rawValue: string | null): ExtendedSocialPost[] => {
   } catch {
     return [];
   }
-};
-
-const profileHandle = (email: string, name: string): string => {
-  const source = email.split('@')[0]?.trim() || name || 'usuario';
-  return source
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/[^a-z0-9._-]+/g, '')
-    .slice(0, 30);
 };
 
 const postTimestamp = (post: ExtendedSocialPost): number => {
@@ -752,11 +743,7 @@ export function ProfileSocialHubNative() {
 
   useEffect(() => {
     if (!user) return;
-    return onSnapshot(collection(db, 'users'), snapshot => {
-      directory.setDbUsers(
-        snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-      );
-    });
+    return subscribeSocialDiscoveryDirectory(directory.setDbUsers);
   }, [directory.setDbUsers, user]);
 
   useEffect(() => {
@@ -1426,9 +1413,6 @@ export function ProfileSocialHubNative() {
 
                 <div className="mt-4">
                   <h3 className="text-xl font-black text-white">{profile.name}</h3>
-                  <p className="mt-1 font-mono text-[10px] text-orange-300">
-                    @{profileHandle(profile.email, profile.name)}
-                  </p>
                   <p className="mt-3 max-w-xl text-[11px] leading-relaxed text-slate-400">
                     {profile.bio ||
                       'Adicione uma apresentação curta para transformar sua página no seu cartão de visita digital.'}
