@@ -95,7 +95,7 @@ export function createCidOwnerCentralEmulator(tagId:string){
   async read(credential:Credential,now:number){
    check(now);return db.runTransaction(async tx=>{
     check(now);const c=await authorize(tx,credential,now);
-    const [configDoc,grantDoc,list,access]=await Promise.all([tx.get(root.collection('private').doc('config')),tx.get(root.collection('private').doc('grants')),tx.get(root.collection('occurrences').orderBy('createdAt','desc').limit(51)),tx.get(root.collection('private').doc('last-access'))]);
+    const [configDoc,grantDoc,list,access,sharedPointer]=await Promise.all([tx.get(root.collection('private').doc('config')),tx.get(root.collection('private').doc('grants')),tx.get(root.collection('occurrences').orderBy('createdAt','desc').limit(51)),tx.get(root.collection('private').doc('last-access')),tx.get(root.collection('private').doc('last-shared'))]);
     const config=configDoc.get('config') as CidSosConfig|undefined,grants=grantDoc.get('grants') as ChannelGrant[]|undefined;
     if(config&&(config.tagId!==tagId||config.ownerId!==c.ownerId||config.owner.id!==c.ownerId))return deny();
     const entries=list.docs.slice(0,50).map(d=>{
@@ -104,6 +104,12 @@ export function createCidOwnerCentralEmulator(tagId:string){
      return o;
     });
     const observations:CidLocationObservation[]=entries.flatMap(o=>{const value=observeCidVoluntaryLocation(c.tag,o);return value?[value]:[];});
+    const sharedId=sharedPointer.get('occurrenceId'),sharedAt=sharedPointer.get('observedAt');
+    if(typeof sharedId==='string'&&/^[A-Za-z0-9_-]{22,80}$/.test(sharedId)&&time(sharedAt)&&sharedAt<=now&&!entries.some(o=>o.id===sharedId)){
+     const target=await tx.get(root.collection('occurrences').doc(sharedId)),o=target.data() as CidSosOccurrence|undefined;
+     // Missing/retired occurrences never resurrect coordinates from a pointer.
+     if(o&&o.id===sharedId&&o.tagId===tagId&&o.ownerId===c.ownerId&&o.createdAt===sharedAt){const obs=observeCidVoluntaryLocation(c.tag,o);if(obs)observations.push(obs);}
+    }
     const last=access.get('observation') as CidLocationObservation|undefined;
     if(last?.kind==='cid-access'&&last.tagId===tagId)observations.push(last);
     const profile=config&&Array.isArray(grants)?buildTrustedCidSosProfile(c.tag,config,grants,now):null;
