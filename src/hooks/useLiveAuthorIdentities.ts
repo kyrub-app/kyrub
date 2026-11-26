@@ -7,6 +7,7 @@ import {socialDirectoryPilotEnabled,readAuthorIdentitiesPilot} from '../utils/so
 export type LiveAuthorIdentity = AuthorDisplayIdentity;
 
 const validAuthorId = (id: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(id);
+const concealedAuthors=(ids:string[]):Record<string,LiveAuthorIdentity>=>Object.fromEntries(ids.map(uid=>[uid,{name:'',avatar:''}]));
 
 /**
  * A post keeps its immutable authorId and historical name snapshot for
@@ -47,7 +48,7 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
         if(pending||!active||auth.currentUser!==session||document.hidden)return;
         pending=true;
         try{
-          const next:Record<string,LiveAuthorIdentity>={};
+          const next=concealedAuthors(ids);
           for(let offset=0;offset<ids.length;offset+=40){
             const entries=await readAuthorIdentitiesPilot(session,ids.slice(offset,offset+40),controller.signal);
             if(!active||auth.currentUser!==session)return;
@@ -56,7 +57,7 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
           setProfiles(()=>next);
         }catch{
           // Never bypass protected transport with a raw account read.
-          setProfiles(()=>({}));
+          setProfiles(()=>concealedAuthors(ids));
         }finally{pending=false;}
       };
       void refresh();
@@ -106,8 +107,10 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
   }, [idsKey,session]);
 
   return useMemo(() => {
-    if(!session||auth.currentUser!==session)return {};
-    const permitted = new Set(idsKey ? idsKey.split('|') : []);
-    return Object.fromEntries(Object.entries(profiles).filter(([uid]) => permitted.has(uid)));
+    const ids=idsKey?idsKey.split('|'):[];
+    const fallback=socialDirectoryPilotEnabled()?concealedAuthors(ids):{};
+    if(!session||auth.currentUser!==session)return fallback;
+    const permitted = new Set(ids);
+    return {...fallback,...Object.fromEntries(Object.entries(profiles).filter(([uid]) => permitted.has(uid)))};
   }, [idsKey, profiles,session]);
 }
