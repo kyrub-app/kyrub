@@ -23,8 +23,9 @@ class FakeDb {
     get: (ref: FakeDoc) => Promise<{ exists: boolean; data: () => RecordValue | undefined }>;
     create: (ref: FakeDoc, data: RecordValue) => void;
     update: (ref: FakeDoc, data: RecordValue) => void;
+    set: (ref: FakeDoc, data: RecordValue) => void;
   }) => Promise<T>): Promise<T> {
-    const writes: Array<{ action: 'create' | 'update'; path: string; data: RecordValue }> = [];
+    const writes: Array<{ action: 'create' | 'update' | 'set'; path: string; data: RecordValue }> = [];
     const result = await run({
       get: async ref => ({
         exists: this.records.has(ref.path),
@@ -32,11 +33,12 @@ class FakeDb {
       }),
       create: (ref, data) => writes.push({ action: 'create', path: ref.path, data }),
       update: (ref, data) => writes.push({ action: 'update', path: ref.path, data }),
+      set: (ref, data) => writes.push({ action: 'set', path: ref.path, data }),
     });
     for (const write of writes) {
       if (write.action === 'create' && this.records.has(write.path)) throw Error('ALREADY_EXISTS');
       if (write.action === 'update' && !this.records.has(write.path)) throw Error('NOT_FOUND');
-      this.records.set(write.path, { ...this.records.get(write.path), ...write.data });
+      this.records.set(write.path, write.action === 'set' ? { ...write.data } : { ...this.records.get(write.path), ...write.data });
     }
     return result;
   }
@@ -92,23 +94,25 @@ test('authenticated status reads canonical receipts and increments the personal 
   assert.equal([...db.records.keys()].filter(k => /rewardLedger|xpLedger|pitangaBalance/.test(k)).length, 0);
 });
 
-test('community projections accrue only visually and do not credit community owner', async () => {
+test('community seeds progress only the author; historical community projection is untouched and hidden', async () => {
   const db = new FakeDb(); community(db, 'post-collective');
   join(db, 'active-voter');
+  const oldProjection = { communityId: 'community-a', acceptedSeeds: 12, bosques: 0 };
+  db.records.set('communities/community-a/semeaduraProgress/summary', oldProjection);
   await seedVerifiedPost(db.asFirestore(), {
     kind: 'community', postId: 'post-collective', authenticatedUserId: 'active-voter',
   });
   const journey = await readCommunitySemeaduraJourney(db.asFirestore(), 'owner-a', 'community-a');
-  assert.equal(journey.totalSeeds, 1);
+  assert.equal(journey.totalSeeds, 0);
   assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'author-a')).totalSeeds, 1);
   assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'owner-a')).totalSeeds, 0);
-  assert.equal(db.records.get('communities/community-a/semeaduraProgress/summary')?.acceptedSeeds, 1);
+  assert.deepEqual(db.records.get('communities/community-a/semeaduraProgress/summary'), oldProjection);
   db.records.set('communities/community-a', { ownerId: 'owner-a', visibility: 'private' });
   await assert.rejects(readCommunitySemeaduraJourney(db.asFirestore(), 'outsider', 'community-a'),
     /SEMEADURA_COMMUNITY_ACCESS_DENIED/);
 });
 
-test('server rejects edited personal/collective progress instead of minting another tree', async () => {
+test('server rejects edited author progress instead of minting another tree', async () => {
   const db = new FakeDb(); community(db, 'post-corrupt'); join(db, 'member');
   await seedVerifiedPost(db.asFirestore(), { kind: 'community', postId: 'post-corrupt', authenticatedUserId: 'member' });
   db.records.set('users/author-a/semeaduraProgress/summary', {
@@ -210,4 +214,27 @@ test('transport is explicitly OFF by default, does not create a serverless funct
   assert.match(router, /import\('\.\.\/server\/gamification\/semeaduraHandler\.js'\)/);
   const service = readFileSync('server/gamification/semeaduraService.ts', 'utf8');
   assert.doesNotMatch(service, /applyPitangaEarnInTransaction|applyVerifiedPitangaXpConversionInTransaction|xpLedger/);
+});
+
+test('one hundred accepted seeds share a daily quota across personal and community posts', async () => {
+  const db = new FakeDb();
+  const actor = 'daily-actor';
+  join(db, actor);
+  for (let i = 0; i < 100; i++) {
+    const kind = i % 2 === 0 ? 'personal' as const : 'community' as const;
+    const postId = 'quota-' + i;
+    if (kind === 'personal') personal(db, postId); else community(db, postId);
+    assert.equal((await seedVerifiedPost(db.asFirestore(), { kind, postId, authenticatedUserId: actor })).status, 'accepted');
+  }
+  personal(db, 'quota-over');
+  const target = { kind: 'personal' as const, postId: 'quota-over', authenticatedUserId: actor };
+  assert.equal((await readVerifiedPostSemeadura(db.asFirestore(), target)).canSemear, false);
+  const before = [...db.records.entries()];
+  await assert.rejects(seedVerifiedPost(db.asFirestore(), target), /SEMEADURA_DAILY_LIMIT_REACHED/);
+  assert.deepEqual([...db.records.entries()], before);
+  assert.equal((await seedVerifiedPost(db.asFirestore(), { ...target, postId: 'quota-0' })).status, 'already_seeded');
+  assert.equal([...db.records.keys()].filter(key => key.includes('/receipts/')).length, 100);
+  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'author-a')).totalSeeds, 100);
+  assert.equal(db.records.has('communities/community-a/semeaduraProgress/summary'), false);
+  assert.equal((await seedVerifiedPost(db.asFirestore(), { ...target, authenticatedUserId: 'another-actor' })).status, 'accepted');
 });
