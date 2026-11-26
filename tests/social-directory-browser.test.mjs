@@ -151,9 +151,13 @@ test('transactional directory quota shares capacity across independent SDK insta
   assert.deepEqual(await consumeDirectoryQuota(b,uid,'staff',now),{allowed:true});
   assert.deepEqual(await consumeDirectoryQuota(a,'quota-fixture-other','social',now),{allowed:true});
   assert.deepEqual(await consumeDirectoryQuota(b,uid,'social',now+60_000),{allowed:true});
-  const records=await a.collection('directory_quota_private').get();
-  assert.equal(records.size,3);
-  for(const record of records.docs){
+  const {createHash}=await import('node:crypto');
+  const fixtures=[['social',uid],['staff',uid],['social','quota-fixture-other']];
+  const records=await a.getAll(...fixtures.map(([scope,actor])=>a.doc(
+   'directory_quota_private/'+createHash('sha256').update(scope+'\0'+actor).digest('hex')
+  )));
+  assert.equal(records.filter(record=>record.exists).length,3);
+  for(const record of records){
    assert.match(record.id,/^[a-f0-9]{64}$/);
    assert.deepEqual(Object.keys(record.data()).sort(),['count','scope','startedAtMs','version']);
   }
