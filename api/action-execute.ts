@@ -421,10 +421,13 @@ export default async function handler(
       const inventoryRef = firebaseAdmin.adminDb.doc(
         `users/${storeId}/private_store/inventory`
       );
-      const [tenantSnapshot, inventorySnapshot] = await Promise.all([
-        tenantRef.get(),
-        inventoryRef.get(),
-      ]);
+      const { createHash } = await import('node:crypto');
+      const reservationStateId = createHash('sha256').update(inventoryRef.path).digest('hex');
+      const stateRef = firebaseAdmin.adminDb.doc(`inventoryReservationStates/${reservationStateId}`);
+      const [tenantSnapshot, inventorySnapshot, stateSnapshot] = await firebaseAdmin.adminDb.runTransaction(
+        transaction => transaction.getAll(tenantRef, inventoryRef, stateRef),
+        { readOnly: true }
+      );
 
       if (!tenantSnapshot.exists) {
         response.status(404).json({
@@ -442,8 +445,12 @@ export default async function handler(
       const stockByProductId: Record<string, number> = {};
 
       if (inventorySnapshot.exists && publicProducts.length > 0) {
-        const catalog = inventory.parseInventoryCatalogRecords(
+        const physicalCatalog = inventory.parseInventoryCatalogRecords(
           inventoryData?.inventoryCatalog ?? inventoryData?.catalog
+        );
+        const catalog = inventory.availableCatalogAfterReservations(
+          physicalCatalog,
+          inventory.reservedQuantities(stateSnapshot.data()?.reservedByItem)
         );
         const compositions = inventory.parseInventoryCompositionRecords(
           inventoryData?.compositions ?? inventoryData?.productCompositions
