@@ -9,6 +9,8 @@ on:
       - 'src/utils/productInventory.ts'
       - 'src/utils/productCompositionMutation.ts'
       - 'tests/incremental-product-composition.test.ts'
+      - 'tests/product-inventory-composition.test.ts'
+      - 'tests/product-inventory-cost-preservation.test.ts'
       - '.github/workflows/v1-incremental-composition.yml'
 permissions:
   contents: read
@@ -26,5 +28,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: node --test --import tsx tests/incremental-product-composition.test.ts tests/incremental-finance-history.test.ts tests/store-economic-ledger.test.ts tests/finance-results-margins-ui.test.ts tests/public-visit-card.test.ts
+      - run: node --test --import tsx tests/incremental-product-composition.test.ts tests/product-inventory-composition.test.ts tests/product-inventory-cost-preservation.test.ts tests/incremental-finance-history.test.ts tests/store-economic-ledger.test.ts tests/finance-results-margins-ui.test.ts tests/public-visit-card.test.ts
       - run: npm run build --ignore-scripts
