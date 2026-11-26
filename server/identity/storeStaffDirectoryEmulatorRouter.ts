@@ -37,7 +37,7 @@ export function createStaffDirectoryEmulatorRouter(db:Firestore,auth:Auth){
   }catch{res.sendStatus(401);return;}
   try{
    const quota=await consumeDirectoryQuota(db,uid,'staff');
-   if(!quota.allowed){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
+   if(quota.allowed===false){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
   }catch{res.status(503).json({error:'STAFF_DIRECTORY_UNAVAILABLE'});return;}
   const body=req.body;
   const allowed=operation==='search'?['storeId','term','role']:['storeId','term','role','targetUid'];
