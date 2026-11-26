@@ -105,3 +105,11 @@ test('both social discovery consumers use an opt-in query and minimized projecti
  assert.match(legacy,/subscribeSocialDiscoveryDirectory\(setDbUsers\)/);
  assert.doesNotMatch(legacy,/listenCollection\('users'/);
 });
+
+test('legacy connected and mobile social bridges cannot enumerate unfiltered accounts',()=>{
+ for(const file of ['ProfileConnectedGroupsBridge','ProfileSocialHubBridge','ProfileSocialMobileFirstBridge','ProfileConnectedCardsPolishBridge']){
+  const source=readFileSync('src/components/'+file+'.tsx','utf8');
+  assert.match(source,/subscribeSocialDiscoveryDirectory\(/,file);
+  assert.doesNotMatch(source,/collection\(db,\s*['"]users['"]\)/,file);
+ }
+});
