@@ -141,3 +141,19 @@ test('staff directory pilot is isolated and does not fall back after protected r
  assert.match(server,/KYRUB_STAFF_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
  assert.match(server,/routerPromise\?\?=Promise\.all/);
 });
+
+test('social directory client and author hydration use protected local transport without fallback',()=>{
+ const client=readFileSync('src/utils/socialDirectoryPilot.ts','utf8');
+ const hook=readFileSync('src/hooks/useLiveAuthorIdentities.ts','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(client,/import\.meta\.env\?\.DEV===true/);
+ assert.match(client,/VITE_KYRUB_SOCIAL_DIRECTORY_PILOT==='true'/);
+ assert.match(client,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(client,/auth\.currentUser!==user/);
+ assert.match(client,/method:'POST',cache:'no-store'/);
+ assert.match(hook,/ids\.slice\(offset,offset\+40\)/);
+ assert.match(hook,/controller\.abort\(\)/);
+ assert.match(hook,/setProfiles\(\(\)=>\(\{\}\)\)/);
+ assert.match(server,/KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&process\.env\.NODE_ENV==='test'/);
+ assert.match(server,/socialRouterPromise\?\?=Promise\.all/);
+});
