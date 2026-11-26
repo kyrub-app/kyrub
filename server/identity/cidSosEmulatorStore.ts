@@ -78,7 +78,12 @@ export function createCidSosEmulatorStore(tagId:string){
      const observation=observeCidVoluntaryLocation(trusted,record);
      // Atomically retain a pointer to the most recent committed voluntary fix.
      // No duplicate coordinate store, and unrelated later alerts cannot erase it.
-     if(observation)tx.set(root.collection('private').doc('last-shared'),{occurrenceId:record.id,observedAt:observation.observedAt});
+     if(observation){
+      const ref=root.collection('private').doc('last-shared'),prior=await tx.get(ref);
+      const previous=prior.get('observedAt');
+      if(prior.exists&&!Number.isSafeInteger(previous))return deny();
+      if(!prior.exists||previous<=observation.observedAt)tx.set(ref,{occurrenceId:record.id,observedAt:observation.observedAt});
+     }
      if(!Number.isSafeInteger(revision)||revision<0||!Number.isSafeInteger(revision+1))return deny();
      tx.create(records.doc(record.id),record);tx.create(index.doc(record.id),{tagId});
      tx.update(root,{revision:revision+1});created=true;
