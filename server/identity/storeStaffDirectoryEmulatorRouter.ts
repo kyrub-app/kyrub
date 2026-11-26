@@ -50,8 +50,8 @@ export function createStaffDirectoryEmulatorRouter(db:Firestore,auth:Auth){
    res.status(400).json({error:'STAFF_DIRECTORY_INVALID'});return;
   }
   try{
-   if(operation==='search'){res.json({entries:await searchStoreStaffDirectory(db,uid,body.storeId,body.term,body.role)});return;}
-   res.status(201).json(await createStoreStaffInvitation(db,uid,body.storeId,body.targetUid,body.term,body.role));
+   if(operation==='search'){res.json({entries:await searchStoreStaffDirectory(db,auth,uid,body.storeId,body.term,body.role)});return;}
+   res.status(201).json(await createStoreStaffInvitation(db,auth,uid,body.storeId,body.targetUid,body.term,body.role));
   }catch(error){
    const code=error instanceof Error?error.message:'';
    if(code==='STAFF_DIRECTORY_INVALID'){res.status(400).json({error:code});return;}
