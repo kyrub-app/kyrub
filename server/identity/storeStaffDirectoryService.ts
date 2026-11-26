@@ -65,7 +65,7 @@ async function requireStaffInviteAuthority(db:Firestore,tx:Transaction,actorUid:
  return {storeRef,store};
 }
 
-/** Internal trusted invitation writer. No HTTP route or client activation.
+/** Trusted invitation writer. Release is controlled by the transport.
  * Caller authenticates actor with revocation check and applies quota controls.
  * Revalidate the original exact lookup and role inside the creation transaction.
  * No contact data or private profile presentation is copied to the membership. */
@@ -86,13 +86,14 @@ export async function createStoreStaffInvitation(db:Firestore,auth:StaffIdentity
   if(!target||target.uid!==targetUid||
      (!byEmail&&(target.name!==search||target.isProfileVisible!==true)))
    throw Error('STAFF_DIRECTORY_FORBIDDEN');
-  if(control.exists){
-   const config=control.data();
-   if(config?.schemaVersion!==1||config.mode!=='verified_adult_only')throw Error('STAFF_DIRECTORY_AGE_REQUIRED');
-   const ages=await Promise.all([actorUid,targetUid].map(uid=>tx.get(db.doc('age_eligibility_private/'+uid))));
-   if(ages.some((snapshot,index)=>snapshot.data()?.uid!==[actorUid,targetUid][index]||snapshot.data()?.status!=='verified_adult'))
-    throw Error('STAFF_DIRECTORY_AGE_REQUIRED');
-  }
+  // The protected writer never inherits the legacy permissive default.
+  // Both the explicit release and the two current private records are mandatory.
+  const config=control.data();
+  if(!control.exists||config?.schemaVersion!==1||config.mode!=='verified_adult_only')
+   throw Error('STAFF_DIRECTORY_AGE_REQUIRED');
+  const ages=await Promise.all([actorUid,targetUid].map(uid=>tx.get(db.doc('age_eligibility_private/'+uid))));
+  if(ages.some((snapshot,index)=>snapshot.data()?.uid!==[actorUid,targetUid][index]||snapshot.data()?.status!=='verified_adult'))
+   throw Error('STAFF_DIRECTORY_AGE_REQUIRED');
   if(member.exists)throw Error('STAFF_INVITATION_EXISTS');
   const visible=target.isProfileVisible===true;
   const photo=clean(target.photoUrl,2048);

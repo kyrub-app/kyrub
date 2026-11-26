@@ -35,11 +35,22 @@ test('isolated professional and administrative directory: scope, minimum project
   assert.deepEqual(await search(owner.uid,'target@example.invalid'),[{uid:target.uid,name:'Conta Kyrub',photoUrl:''}]);
   assert.deepEqual(await search(manager.uid,'target@example.invalid'),[{uid:target.uid,name:'Conta Kyrub',photoUrl:''}]);
   const control=db.doc('erp_age_release_private/current');
-  await control.set({schemaVersion:1,mode:'verified_adult_only'});
   const invite=()=>createStoreStaffInvitation(db,auth,owner.uid,'store',target.uid,'target@example.invalid','seller');
+  // Missing release, malformed release, and missing eligibility fail closed.
+  await assert.rejects(invite(),/STAFF_DIRECTORY_AGE_REQUIRED/);
+  await control.set({schemaVersion:1,mode:'unknown'});
+  await assert.rejects(invite(),/STAFF_DIRECTORY_AGE_REQUIRED/);
+  await control.set({schemaVersion:1,mode:'verified_adult_only'});
   await assert.rejects(invite(),/STAFF_DIRECTORY_AGE_REQUIRED/);
   await db.doc('age_eligibility_private/'+owner.uid).set({uid:owner.uid,status:'verified_adult'});
+  await db.doc('age_eligibility_private/'+target.uid).set({uid:target.uid,status:'declared_adult'});
+  await assert.rejects(invite(),/STAFF_DIRECTORY_AGE_REQUIRED/);
+  await db.doc('age_eligibility_private/'+target.uid).set({uid:target.uid,status:'verified_underage'});
+  await assert.rejects(invite(),/STAFF_DIRECTORY_AGE_REQUIRED/);
+  assert.equal((await store.collection('members').doc(target.uid).get()).exists,false);
   await db.doc('age_eligibility_private/'+target.uid).set({uid:target.uid,status:'verified_adult'});
+  await assert.rejects(createStoreStaffInvitation(db,auth,owner.uid,'store',target.uid,'fake@example.invalid','seller'),/STAFF_DIRECTORY_FORBIDDEN/);
+  await assert.rejects(createStoreStaffInvitation(db,auth,manager.uid,'store',target.uid,'target@example.invalid','manager'),/STAFF_DIRECTORY_FORBIDDEN/);
   const results=await Promise.allSettled([invite(),invite()]);
   assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
   assert.equal(results.filter(x=>x.status==='rejected').length,1);
