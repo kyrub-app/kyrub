@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {observeCidAccess,observeCidVoluntaryLocation,observeVerifiedDeviceGps,projectOwnerAssistedLocation} from '../server/identity/cidAssistedLocation';
+import {planCidSosAlert} from '../server/identity/cidSosAlertPolicy';
+const now=Date.UTC(2026,10,26,12);
+const tag={tagId:'a'.repeat(32),ownerId:'owner-test',active:true};
+const participant=(id:string)=>({id,channels:[{channel:'email' as const,address:id+'@example.invalid',consent:true,verifiedAt:now-1000}]});
+const profile={...tag,enabled:true,displayName:'Teste',owner:participant(tag.ownerId),contacts:[participant('contact-test')]};
+const input={id:'b'.repeat(32),confirmed:true,reason:'Animal encontrado',sms:false};
+const point={latitude:0,longitude:0,accuracy:25};
+test('access timestamp contains no visitor data and is not physical NFC proof',()=>{
+ const access=observeCidAccess(tag,now);
+ assert.deepEqual(access,{kind:'cid-access',tagId:tag.tagId,observedAt:now});
+ assert.throws(()=>observeCidAccess({...tag,active:false},now));
+ const view=projectOwnerAssistedLocation(tag,tag.ownerId,[access],now);
+ assert.deepEqual(view.access,{observedAt:now});
+ assert.equal(view.shared,null);assert.equal(view.device,null);
+ assert.match(view.labels.accessNote,/não comprova leitura NFC/);
+ assert.throws(()=>projectOwnerAssistedLocation(tag,'stranger',[access],now));
+});
+test('voluntary location derives from the committed consented occurrence, not access alone',()=>{
+ const none=planCidSosAlert(profile,input,now,[]).occurrence;
+ assert.equal(observeCidVoluntaryLocation(tag,none),null);
+ const occurrence=planCidSosAlert(profile,{...input,location:{...point,consent:true}},now,[]).occurrence;
+ const record=observeCidVoluntaryLocation(tag,occurrence)!;
+ assert.equal(record.kind,'visitor-shared');
+ assert.deepEqual(record.point,point);
+ assert.throws(()=>observeCidVoluntaryLocation({...tag,ownerId:'other'},occurrence));
+ assert.throws(()=>observeCidVoluntaryLocation(tag,{...occurrence,tagId:'c'.repeat(32)}));
+ assert.throws(()=>observeCidVoluntaryLocation(tag,{...occurrence,location:{...point,latitude:91,consent:true}}));
+ assert.match(projectOwnerAssistedLocation(tag,tag.ownerId,[record],now).labels.sharedNote,/Não comprova/);
+});
+test('device telemetry is separate from access and visitor coordinates; reject foreign and future records',()=>{
+ const access=observeCidAccess(tag,now);
+ const oldAccess=observeCidAccess(tag,now-5000);
+ const fix=observeVerifiedDeviceGps(tag,{tagId:tag.tagId,deviceId:'device-test',observedAt:now-1000,point},now);
+ assert.throws(()=>observeVerifiedDeviceGps(tag,{tagId:'c'.repeat(32),deviceId:'device-test',observedAt:now,point},now));
+ assert.throws(()=>observeVerifiedDeviceGps(tag,{tagId:tag.tagId,deviceId:'device-test',observedAt:now+1,point},now));
+ const view=projectOwnerAssistedLocation(tag,tag.ownerId,[oldAccess,access,fix,{...access,tagId:'c'.repeat(32),observedAt:now+100},{...access,observedAt:now+100}],now);
+ assert.equal(view.access?.observedAt,now);
+ assert.equal(view.device?.observedAt,now-1000);
+ assert.equal(view.shared,null);
+ assert.ok(!JSON.stringify(view).includes('device-test'));
+});
