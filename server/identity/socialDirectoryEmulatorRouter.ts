@@ -37,7 +37,7 @@ export function createSocialDirectoryEmulatorRouter(db:Firestore,auth:Auth){
   }catch{res.sendStatus(401);return;}
   try{
    const quota=await consumeDirectoryQuota(db,uid,'social');
-   if(!quota.allowed){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
+   if(quota.allowed===false){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
   }catch{res.status(503).json({error:'DIRECTORY_UNAVAILABLE'});return;}
   const body=req.body;
   if(Object.keys(req.query).length||!body||typeof body!=='object'||Array.isArray(body)||
