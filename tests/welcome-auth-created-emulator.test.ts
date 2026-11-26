@@ -1317,11 +1317,27 @@ test('isolated saved profile award authenticates actor, credits once under concu
  const receipt=account.collection('challengeRewards').doc(challenge),award=ledger(uid).doc('earn_'+challenge);
  const savedDefinition=await definition.get(),prior=process.env.KYRUB_PROFILE_COMPLETION_PILOT;
  const run=()=>reconcileIsolatedProfileCompletionAfterSave(db,auth,person.idToken);
+ const express=(await import('express')).default;
+ const {createProfileCompletionEmulatorRouter}=await import('../server/gamification/profileCompletionEmulatorRouter.js');
+ const http=express();
+ http.use(express.json());
+ http.use('/api',createProfileCompletionEmulatorRouter(db,auth));
+ const listener=http.listen(0,'127.0.0.1');
+ await new Promise<void>((resolve,reject)=>{listener.once('listening',resolve);listener.once('error',reject);});
+ const address=listener.address();
+ assert.ok(address&&typeof address!=='string');
+ const url='http://127.0.0.1:'+address.port+'/api/profile-completion-pilot';
+ const request=(body:unknown={},token=person.idToken)=>fetch(url,{method:'POST',
+  headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)});
  try{
   delete process.env.KYRUB_PROFILE_COMPLETION_PILOT;
   await assert.rejects(run(),/RELEASE_UNAVAILABLE/);
+  assert.equal((await request()).status,404);
   process.env.KYRUB_PROFILE_COMPLETION_PILOT='true';
   await assert.rejects(reconcileIsolatedProfileCompletionAfterSave(db,auth,'invalid'),/AUTH_INVALID/);
+  assert.equal((await request({},'invalid')).status,401);
+  assert.equal((await request({uid:'other',amount:1000})).status,400);
+  assert.equal((await fetch(url)).status,405);
   await definition.set({...PROFILE_COMPLETION_CHALLENGE,status:'active'});
   await age.set({uid,status:'verified_adult'});
   await account.set({name:'Perfil de teste',isProfileVisible:false},{merge:true});
@@ -1330,6 +1346,7 @@ test('isolated saved profile award authenticates actor, credits once under concu
   assert.equal(before.challenges.find(c=>c.id===challenge)?.status,'available');
   assert.equal((await balance(uid).get()).get('availableKCoins'),100);
   await assert.rejects(run(),/NOT_ELIGIBLE/);
+  assert.deepEqual(await (await request()).json(),{status:'pending'});
   const reservation={kind:'profile',identifier,targetId:uid};
   // Deliberately corrupt indices to prove rejection, then remove them and reserve via the canonical transaction.
   await reverse.set(reservation);
@@ -1343,9 +1360,10 @@ test('isolated saved profile award authenticates actor, credits once under concu
   await assert.rejects(reserveSocialAddressInDatabase(db,uid,'profile','another-identifier'),/PUBLIC_ADDRESS_CONFLICT/);
   assert.deepEqual(await getOwnedSocialAddressInDatabase(db,uid,'profile'),{identifier,eligible:true,publiclyVisible:false});
   assert.equal(await resolveSocialAddressInDatabase(db,'profile',identifier),null);
-  const results=await Promise.all([run(),run()]);
-  assert.equal(results.filter(r=>!r.replay).length,1);
-  assert.equal(results.filter(r=>r.replay).length,1);
+  const responses=await Promise.all([request(),request()]);
+  assert.ok(responses.every(r=>r.ok));
+  const results=await Promise.all(responses.map(r=>r.json()));
+  assert.deepEqual(results.map(r=>r.status).sort(),['already_completed','completed']);
   assert.equal((await balance(uid).get()).get('availableKCoins'),200);
   assert.equal((await award.get()).get('deltaKCoins'),100);
   assert.equal((await receipt.get()).get('xp'),0);
@@ -1361,6 +1379,7 @@ test('isolated saved profile award authenticates actor, credits once under concu
   await auth.updateUser(uid,{disabled:true});
   await assert.rejects(run(),/AUTH_INVALID/);
  }finally{
+  await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
   await Promise.all([profile.delete(),age.delete(),forward.delete(),reverse.delete(),receipt.delete(),award.delete(),
    balance(uid).update({availableKCoins:100}),auth.updateUser(uid,{disabled:false})]);
   if(savedDefinition.exists)await definition.set(savedDefinition.data()!);else await definition.delete();
