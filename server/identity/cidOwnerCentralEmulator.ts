@@ -85,6 +85,7 @@ export function createCidOwnerCentralEmulator(tagId:string){
     check(now);const c=await authorize(tx,credential,now);
     const [configDoc,grantDoc,list,access]=await Promise.all([tx.get(root.collection('private').doc('config')),tx.get(root.collection('private').doc('grants')),tx.get(root.collection('occurrences').orderBy('createdAt','desc').limit(51)),tx.get(root.collection('private').doc('last-access'))]);
     const config=configDoc.get('config') as CidSosConfig|undefined,grants=grantDoc.get('grants') as ChannelGrant[]|undefined;
+    if(config&&(config.tagId!==tagId||config.ownerId!==c.ownerId||config.owner.id!==c.ownerId))return deny();
     const entries=list.docs.slice(0,50).map(d=>{
      const o=d.data() as CidSosOccurrence;
      if(o.id!==d.id||o.tagId!==tagId||o.ownerId!==c.ownerId||!time(o.createdAt)||o.createdAt>now)return deny();
