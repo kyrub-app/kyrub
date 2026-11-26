@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {setTimeout as delay} from 'node:timers/promises';
 import {initializeApp,deleteApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore,FieldValue} from 'firebase-admin/firestore';
@@ -87,14 +88,25 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await suggestion.getByRole('button',{name:'Conectar',exact:true}).click();
   const suggestionRef=db.doc('connections/'+[actor.uid,'social-browser-03'].sort().join('_'));
   await suggestion.getByRole('button',{name:'Cancelar',exact:true}).waitFor();
-  assert.equal((await suggestionRef.get()).get('status'),'pending');
+  // The local Firestore listener can render a pending write before the
+  // emulator has acknowledged it. Verify persistence on the Admin SDK.
+  const awaitPersisted=async(predicate)=>{
+   const deadline=Date.now()+10000;
+   while(Date.now()<deadline){
+    const snapshot=await suggestionRef.get();
+    if(predicate(snapshot))return snapshot;
+    await delay(100);
+   }
+   throw Error('Connection write did not reach the emulator');
+  };
+  assert.equal((await awaitPersisted(snapshot=>snapshot.get('status')==='pending')).get('status'),'pending');
   assert.equal(await page.getByRole('dialog',{name:'Confirmar remoção de contato'}).count(),0);
   await suggestion.getByRole('button',{name:'Cancelar',exact:true}).click();
   const cancelDialog=page.getByRole('dialog',{name:'Confirmar cancelamento de solicitação'});
   await cancelDialog.waitFor();
   await cancelDialog.getByRole('button',{name:'Cancelar solicitação',exact:true}).click();
   await suggestion.getByRole('button',{name:'Conectar',exact:true}).waitFor();
-  assert.equal((await suggestionRef.get()).exists,false);
+  assert.equal((await awaitPersisted(snapshot=>!snapshot.exists)).exists,false);
 
   assert.equal(await page.getByText('Nome reservado atual',{exact:true}).count(),0);
   assert.equal(await page.getByText('fixture-secret-00@example.invalid',{exact:true}).count(),0);
