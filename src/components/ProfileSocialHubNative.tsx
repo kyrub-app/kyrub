@@ -1815,7 +1815,7 @@ export function ProfileSocialHubNative() {
                       aria-label="Abrir novas conexões"
                     >
                       <strong className="block text-sm text-white">
-                        {newConnectionsCount}
+                        {newConnectionsCount}{socialDirectoryPilotEnabled()&&directoryPage.hasMore?'+':''}
                       </strong>
                       <span className="mt-1 block truncate text-[8px] font-black uppercase text-slate-500">
                         Novos
@@ -2102,7 +2102,7 @@ export function ProfileSocialHubNative() {
                     : 'border-slate-800 bg-slate-900 text-slate-500'
                 }`}
               >
-                Sugestões {socialDirectoryPilotEnabled()&&directoryPage.hasMore?'':suggestionCount}
+                Sugestões {suggestionCount}{socialDirectoryPilotEnabled()&&directoryPage.hasMore?'+':''}
               </button>
             </nav>
 
