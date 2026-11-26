@@ -5,7 +5,7 @@ import {planCidSosAlert,planCidSosOwnerSafe,publicCidSosCapability,CID_SOS_MIN_I
 const now=Date.UTC(2026,10,26,12);
 const owner={phone:'+5511999990001',verifiedAt:now-1000,consent:true};
 const contact={phone:'+5511999990002',verifiedAt:now-1000,consent:true};
-const profile={tagId:'a'.repeat(32),ownerId:'owner-test',active:true,enabled:true,owner,contacts:[contact]};
+const profile={tagId:'a'.repeat(32),ownerId:'owner-test',displayName:'Pessoa de teste',active:true,enabled:true,owner,contacts:[contact]};
 const request={id:'b'.repeat(32),confirmed:true};
 
 test('confirmed alert plans one private owner copy and every verified contact',()=>{
@@ -14,6 +14,8 @@ test('confirmed alert plans one private owner copy and every verified contact',(
  assert.deepEqual(result.messages.map(m=>m.phone),[owner.phone,contact.phone]);
  assert.equal(new Set(result.messages.map(m=>m.key)).size,2);
  assert.ok(result.messages.every(m=>m.kind==='alert'));
+ assert.ok(result.messages.every(m=>m.text.includes('26/11/2026')&&m.text.includes('09:00')));
+ assert.ok(result.messages[1].text.includes('Pessoa de teste'));
  assert.deepEqual(publicCidSosCapability(profile,now),{available:true});
 });
 test('unconfirmed, inactive, unverified, nonconsenting and duplicate recipients fail closed',()=>{
