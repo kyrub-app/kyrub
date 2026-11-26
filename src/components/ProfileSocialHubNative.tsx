@@ -55,7 +55,8 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
-import { subscribeSocialDiscoveryDirectory } from '../utils/socialDiscoveryDirectory';
+import { subscribeSocialDiscoveryDirectory,loadMoreSocialDiscoveryDirectory,refreshSocialDiscoveryDirectory,type SocialDirectoryPageState } from '../utils/socialDiscoveryDirectory';
+import {socialDirectoryPilotEnabled} from '../utils/socialDirectoryPilot';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
@@ -470,6 +471,8 @@ export function ProfileSocialHubNative() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
+  const [directoryPage,setDirectoryPage]=useState<SocialDirectoryPageState>({loading:false,hasMore:false,error:false});
+  const directoryEndRef=useRef<HTMLDivElement|null>(null);
   const [newConnectionsTab, setNewConnectionsTab] =
     useState<NewConnectionsTab>('requests');
   const [activeTab, setActiveTab] = useState<ProfileTab>('publications');
@@ -742,9 +745,24 @@ export function ProfileSocialHubNative() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    return subscribeSocialDiscoveryDirectory(directory.setDbUsers);
+    directory.setDbUsers([]);
+    if (!user || auth.currentUser!==user) return;
+    return subscribeSocialDiscoveryDirectory(directory.setDbUsers,setDirectoryPage);
   }, [directory.setDbUsers, user]);
+
+  useEffect(()=>{
+    if(newConnectionsOpen&&socialDirectoryPilotEnabled())refreshSocialDiscoveryDirectory();
+  },[newConnectionsOpen,user]);
+
+  useEffect(()=>{
+    if(!newConnectionsOpen||newConnectionsTab!=='suggestions'||!directoryPage.hasMore||directoryPage.loading||directoryPage.error||
+       !directoryEndRef.current||typeof IntersectionObserver==='undefined')return;
+    const observer=new IntersectionObserver(entries=>{
+      if(entries.some(entry=>entry.isIntersecting))loadMoreSocialDiscoveryDirectory();
+    },{rootMargin:'120px'});
+    observer.observe(directoryEndRef.current);
+    return ()=>observer.disconnect();
+  },[newConnectionsOpen,newConnectionsTab,directoryPage]);
 
   useEffect(() => {
     if (!user) return;
@@ -2084,7 +2102,7 @@ export function ProfileSocialHubNative() {
                     : 'border-slate-800 bg-slate-900 text-slate-500'
                 }`}
               >
-                Sugestões {suggestionCount}
+                Sugestões {socialDirectoryPilotEnabled()&&directoryPage.hasMore?'':suggestionCount}
               </button>
             </nav>
 
@@ -2180,7 +2198,7 @@ export function ProfileSocialHubNative() {
                       </button>
                     </article>
                   ))}
-                  {directory.getSuggestions().length === 0 && (
+                  {directory.getSuggestions().length === 0 && !directoryPage.loading && !directoryPage.hasMore && !directoryPage.error && (
                     <div className="col-span-2">
                       <EmptyState
                         title="Sem sugestões"
@@ -2189,6 +2207,11 @@ export function ProfileSocialHubNative() {
                       />
                     </div>
                   )}
+                  {directoryPage.loading&&<p role="status" className="col-span-2 py-3 text-center text-xs text-slate-400">Carregando sugestões…</p>}
+                  {directoryPage.error&&<button type="button" onClick={refreshSocialDiscoveryDirectory} className="col-span-2 rounded-xl border border-slate-700 py-3 text-xs text-slate-200">Não foi possível carregar. Tentar novamente</button>}
+                  {directoryPage.hasMore&&!directoryPage.error&&<div ref={directoryEndRef} className="col-span-2">
+                    <button type="button" onClick={loadMoreSocialDiscoveryDirectory} disabled={directoryPage.loading} className="w-full rounded-xl border border-slate-800 py-3 text-xs text-slate-400 disabled:opacity-50">Carregar mais sugestões</button>
+                  </div>}
                 </div>
               )}
             </div>
