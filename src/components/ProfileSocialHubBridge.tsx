@@ -46,6 +46,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
+import { subscribeSocialDiscoveryDirectory } from '../utils/socialDiscoveryDirectory';
 import { auth, db, storage } from '../utils/firebase';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { MediaCarousel } from './MediaCarousel';
@@ -499,12 +500,9 @@ export function ProfileSocialHubBridge() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    return onSnapshot(collection(db, 'users'), snapshot => {
-      directory.setDbUsers(
-        snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
-      );
-    });
+    directory.setDbUsers([]);
+    if (!user || auth.currentUser!==user) return;
+    return subscribeSocialDiscoveryDirectory(directory.setDbUsers);
   }, [directory.setDbUsers, user]);
 
   useEffect(() => {

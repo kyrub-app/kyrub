@@ -1,0 +1,27 @@
+name: V1 social directory consumers
+on:
+  pull_request:
+    paths:
+      - 'src/LegacyApp.tsx'
+      - 'src/components/ProfileSocialHub*.tsx'
+      - 'src/hooks/useSocialDirectoryV2.ts'
+      - 'src/utils/socialDiscoveryDirectory.ts'
+      - 'tests/v1-social-directory-consumers.test.ts'
+      - '.github/workflows/v1-social-directory-consumers.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: node --test --import tsx tests/v1-social-directory-consumers.test.ts
