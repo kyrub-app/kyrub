@@ -28,7 +28,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
  const diagnostics=[],requests=[],privateAvatarRequests=[];
  let issuedBearer='';
  try{
-  const actor=await auth.createUser({email,password,emailVerified:true,displayName:'Titular fixture'});
+  const actor=await auth.createUser({email,password,emailVerified:true,displayName:'Titular fixture',photoURL:'https://example.invalid/private-sender-photo'});
   const privateId='social-browser-private';
   const batch=db.batch();
   batch.set(db.doc('users/'+actor.uid),{uid:actor.uid,email,name:'Titular fixture',isProfileVisible:false});
@@ -108,6 +108,14 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await revokedCard.waitFor();
   assert.equal(await revokedCard.locator('img').count(),0);
   assert.equal((await distantConnection.get()).get('status'),'accepted');
+  await page.getByRole('button',{name:'Solicitar conexão pela publicação fixture'}).click();
+  await page.waitForFunction(()=>document.querySelector('[data-testid="community-connection-result"]')?.textContent==='enviada');
+  const newConnection=(await db.doc('connections/'+[actor.uid,'social-browser-02'].sort().join('_')).get()).data();
+  assert.equal(newConnection.status,'pending');
+  assert.equal(newConnection.senderId,actor.uid);
+  assert.equal(newConnection.receiverId,'social-browser-02');
+  for(const field of ['senderAvatar','senderBio','senderRole','receiverAvatar','receiverBio','receiverRole'])assert.equal(Object.hasOwn(newConnection,field),false,field);
+
   assert.ok(issuedBearer.startsWith('Bearer '));
   // A token issued before email verification was removed must not grant
   // directory access even if its cached email_verified claim is still true.
