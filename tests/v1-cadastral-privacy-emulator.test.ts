@@ -4,7 +4,8 @@ import {after,before,beforeEach,test} from 'node:test';
 import {initializeApp,deleteApp,type App} from 'firebase-admin/app';
 import {getFirestore,type Firestore} from 'firebase-admin/firestore';
 import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
-import {collection,doc,getDoc,getDocs,setDoc,updateDoc,query,where} from 'firebase/firestore';
+import {collection,doc,getDoc,getDocs,setDoc,updateDoc,deleteDoc,serverTimestamp,query,where} from 'firebase/firestore';
+import {createStoreStaffInvitation} from '../server/identity/storeStaffDirectoryService';
 import {readVisibleSocialDirectoryPage,readVisibleAuthorIdentities} from '../server/identity/socialDiscoveryDirectoryService';
 import {consumeDirectoryQuota} from '../server/identity/directoryQuotaService';
 
@@ -25,6 +26,27 @@ before(async()=>{
  (request.auth.uid == userId || (exists(/databases/$(database)/documents/users/$(userId)) &&
  get(/databases/$(database)/documents/users/$(userId)).data.isProfileVisible == true));
  allow list: if false;`+rules.slice(end+'allow read: if isSignedIn();'.length);
+ // Simulate the coordinated cutover only in this emulator process.
+ const memberStart=rules.indexOf('match /members/{userId} {');
+ assert.ok(memberStart>=0);
+ const memberCreate=rules.indexOf('allow create: if isSignedIn()',memberStart);
+ assert.ok(memberCreate>=0&&memberCreate-memberStart<1000);
+ const memberEnd=rules.indexOf(';',memberCreate);
+ assert.ok(memberEnd>memberCreate&&memberEnd-memberCreate<1500);
+ const original=rules.slice(memberCreate,memberEnd+1);
+ assert.ok(original.includes("incoming().status == 'invited'")&&original.includes('storeSecActorCanManageRole'));
+ rules=rules.slice(0,memberCreate)+'allow create: if false;'+rules.slice(memberEnd+1);
+ // New social connections must target a currently public profile. Existing
+ // participant reads and responses must not depend on discovery visibility.
+ const connectionStart=rules.indexOf('match /connections/{connectionId} {');
+ assert.ok(connectionStart>=0);
+ const connectionCreate=rules.indexOf('allow create: if isSignedIn()',connectionStart);
+ assert.ok(connectionCreate>=0&&connectionCreate-connectionStart<2500);
+ const createPrefix='allow create: if isSignedIn()';
+ rules=rules.slice(0,connectionCreate)+createPrefix+
+  '\n    && exists(/databases/$(database)/documents/users/$(incoming().receiverId))'+
+  '\n    && get(/databases/$(database)/documents/users/$(incoming().receiverId)).data.isProfileVisible == true'+
+  rules.slice(connectionCreate+createPrefix.length);
  app=initializeApp({projectId},'isolated-privacy-candidate');
  db=getFirestore(app);
  env=await initializeTestEnvironment({projectId,firestore:{rules,host:'127.0.0.1',port:8088}});
@@ -87,4 +109,72 @@ test('shared quota is atomic and clients cannot access or manipulate it',async()
  await assertFails(updateDoc(ref,{count:1}));
  await assertFails(setDoc(doc(viewer,'directory_quota_private/forged'),{count:1}));
  assert.equal((await consumeDirectoryQuota(db,'viewer','social',now+60000)).allowed,true);
+});
+
+test('coordinated candidate denies direct professional creation but preserves authorized server invitation and recipient response',async()=>{
+ const store=db.doc('stores/store-cutover');
+ await store.set({id:'store-cutover',ownerId:'owner',name:'Loja de teste',publicationStatus:'paused'});
+ await db.doc('users/recipient').set({uid:'recipient',name:'Reservado',email:'private@example.test',isProfileVisible:false});
+ await db.doc('erp_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only'});
+ for(const uid of ['owner','recipient'])await db.doc('age_eligibility_private/'+uid).set({uid,status:'verified_adult'});
+ const owner=env.authenticatedContext('owner').firestore();
+ const recipient=env.authenticatedContext('recipient').firestore();
+ const stranger=env.authenticatedContext('stranger').firestore();
+ const memberPath='stores/store-cutover/members/recipient';
+ await assertFails(setDoc(doc(owner,memberPath),{
+  storeId:'store-cutover',userId:'recipient',role:'seller',status:'invited',invitedBy:'owner',
+  invitedAt:serverTimestamp(),createdAt:serverTimestamp(),updatedAt:serverTimestamp()
+ }));
+ const authority={
+  async getUserByEmail(email:string){
+   if(email!=='recipient@example.test')throw Object.assign(Error('not found'),{code:'auth/user-not-found'});
+   return {uid:'recipient',emailVerified:true,disabled:false};
+  },
+  async getUser(uid:string){return {uid,emailVerified:true,disabled:false};}
+ };
+ const result=await createStoreStaffInvitation(db,authority,'owner','store-cutover','recipient','recipient@example.test','seller');
+ assert.deepEqual(result,{status:'invited',userId:'recipient'});
+ assert.equal((await assertSucceeds(getDoc(doc(recipient,memberPath)))).get('email'),'');
+ await assertSucceeds(getDoc(doc(owner,memberPath)));
+ await assertFails(getDoc(doc(stranger,memberPath)));
+ await assertFails(getDoc(doc(owner,'users/recipient')));
+ await assertFails(updateDoc(doc(stranger,memberPath),{status:'active',acceptedAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+ await assertSucceeds(updateDoc(doc(recipient,memberPath),{status:'active',acceptedAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+ assert.equal((await store.collection('members').doc('recipient').get()).get('status'),'active');
+});
+test('new social connections honor visibility while existing participants retain scoped access',async()=>{
+ await db.doc('users/target').set({uid:'target',name:'Target',isProfileVisible:false});
+ const actor=env.authenticatedContext('actor').firestore();
+ const target=env.authenticatedContext('target').firestore();
+ const other=env.authenticatedContext('other').firestore();
+ const path='connections/actor_target';
+ const payload=()=>({senderId:'actor',receiverId:'target',participantIds:['actor','target'],status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+ await assertFails(setDoc(doc(actor,path),payload()));
+ await db.doc('users/target').update({isProfileVisible:true});
+ await assertSucceeds(setDoc(doc(actor,path),payload()));
+ await db.doc('users/target').update({isProfileVisible:false});
+ await assertFails(getDoc(doc(actor,'users/target')));
+ await assertSucceeds(getDoc(doc(actor,path)));
+ await assertSucceeds(getDoc(doc(target,path)));
+ await assertFails(getDoc(doc(other,path)));
+ await assertSucceeds(updateDoc(doc(target,path),{status:'accepted',acceptedAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+ assert.equal((await db.doc(path).get()).get('status'),'accepted');
+});
+test('private age and quota records cannot be read, altered or forged directly by any client',async()=>{
+ const age='age_eligibility_private/owner';
+ const quota='users/owner/semeaduraDailyUsage/2026-11-26';
+ await db.doc(age).set({uid:'owner',status:'declared_underage'});
+ await db.doc(quota).set({actorId:'owner',day:'2026-11-26',schemaVersion:1,count:100});
+ for(const client of [env.authenticatedContext('owner').firestore(),env.authenticatedContext('other').firestore(),env.authenticatedContext('admin',{role:'admin'}).firestore(),env.unauthenticatedContext().firestore()]){
+  for(const path of [age,quota]){
+   const ref=doc(client,path);
+   await assertFails(getDoc(ref));
+   await assertFails(updateDoc(ref,{status:'verified_adult',count:1}));
+   await assertFails(deleteDoc(ref));
+  }
+  await assertFails(setDoc(doc(client,'age_eligibility_private/forged'),{uid:'forged',status:'verified_adult'}));
+  await assertFails(setDoc(doc(client,'users/owner/semeaduraDailyUsage/2026-11-27'),{actorId:'owner',count:1}));
+ }
+ assert.equal((await db.doc(age).get()).get('status'),'declared_underage');
+ assert.equal((await db.doc(quota).get()).get('count'),100);
 });
