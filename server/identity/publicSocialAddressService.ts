@@ -64,6 +64,7 @@ export async function getOwnedSocialAddress(actor: string, kind: SocialDestinati
       if (!matchesSocialAddressRecord(forward,kind,record.identifier,targetId)) throw Error('PUBLIC_ADDRESS_CONFLICT');
       identifier = record.identifier;
     }
-    return {identifier, eligible: canReserveSocialAddress(kind,actor,targetId,source)};
+    return {identifier, eligible: canReserveSocialAddress(kind,actor,targetId,source),
+      publiclyVisible: kind === 'profile' ? source.isProfileVisible === true : source.visibility === 'public' || source.visibility === 'moderated'};
   },{readOnly:true});
 }
