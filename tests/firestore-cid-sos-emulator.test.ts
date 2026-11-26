@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test,after} from 'node:test';
 import {readFileSync} from 'node:fs';
-import {initializeApp,deleteApp} from 'firebase-admin/app';
+import {initializeApp,deleteApp,getApps} from 'firebase-admin/app';
 import {getFirestore} from 'firebase-admin/firestore';
 import {initializeTestEnvironment,assertFails} from '@firebase/rules-unit-testing';
 import {doc,getDoc,setDoc,collection,getDocs} from 'firebase/firestore';
@@ -19,7 +19,7 @@ const person=(id:string)=>({id,name:id,channels:[{channel:'email',address:id+'@e
 const config=prepareCidSosConfig(tag,tag.ownerId,null,{expectedRevision:0,enabled:true,owner:person(tag.ownerId),contacts:[person('contact-test')]});
 const grants:ChannelGrant[]=[config.owner,...config.contacts].flatMap(p=>p.channels.map(c=>({...c,tagId:tag.tagId,ownerId:tag.ownerId,participantId:p.id,verifiedAt:now-1000,consent:true})));
 const input={id:'b'.repeat(32),confirmed:true,reason:'Animal encontrado',sms:false};
-after(async()=>{await deleteApp(app);});
+after(async()=>{for(const candidate of getApps().filter(a=>a.name==='cid-sos-emulator-fixtures'||a.name==='cid-sos-local-emulator'))await deleteApp(candidate);});
 
 test('emulator guard rejects production, missing flag, remote hosts and explicit credentials',()=>{
  for(const override of [{VERCEL_ENV:'production'},{VERCEL_ENV:'preview'},{KYRUB_CID_SOS_EMULATOR:'false'},{GCLOUD_PROJECT:'kyrub-b8d0e'},{FIRESTORE_EMULATOR_HOST:'example.com:8088'},{GOOGLE_APPLICATION_CREDENTIALS:'/tmp/key'}]){
@@ -40,9 +40,14 @@ test('real emulator transaction serializes concurrent submissions, rejects dupli
  await recordSimulatedCidSos(store,tag.tagId,{...input,id:actual},now);
  assert.equal((await root.collection('outbox').get()).size,2);
  await assert.rejects(store.transaction(async tx=>{
-  await tx.readTag(tag.tagId);throw Error('simulated rollback');
+  await tx.readTag(tag.tagId);
+  const existing=await tx.readOccurrence(actual);assert.ok(existing);
+  await tx.createOccurrence({...existing,id:'d'.repeat(32)});
+  throw Error('simulated rollback');
  }));
  assert.equal((await root.get()).get('revision'),1);
+ assert.equal((await root.collection('occurrences').get()).size,1);
+ assert.equal((await db.collection('cid_sos_emulator_request_index').doc('d'.repeat(32)).get()).exists,false);
  const env=await initializeTestEnvironment({projectId:CID_EMULATOR_PROJECT,firestore:{host:'127.0.0.1',port:8088,rules:readFileSync('.firebase/firestore.combined.rules','utf8')}});
  try{
   for(const context of [env.unauthenticatedContext(),env.authenticatedContext(tag.ownerId),env.authenticatedContext('stranger')]){
