@@ -1,0 +1,23 @@
+name: CID occurrence deterministic guidance
+on:
+  pull_request:
+    paths:
+      - 'server/identity/cidOccurrenceGuidance.ts'
+      - 'tests/cid-occurrence-guidance.test.ts'
+      - '.github/workflows/cid-occurrence-guidance.yml'
+permissions:
+  contents: read
+jobs:
+  guidance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx --test tests/cid-occurrence-guidance.test.ts

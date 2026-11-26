@@ -7,6 +7,7 @@ import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {KyrubCardDemonstration} from './KyrubCardDemonstration';
 import {Pencil,HeartPulse} from 'lucide-react';
 import {KyrubCidShare} from './KyrubCidShare';
+import {KyrubCidPixPublic} from './KyrubCidPix';
 import {KyrubTagPasskeyActions} from './KyrubTagPasskeyActions';
 import {clearCardDraft,loadCardDraft,cardDraftUrls,type CardDraft} from '../utils/cardDemonstrationDraft';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
@@ -169,7 +170,8 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
     {data.presentation.about&&<p className="whitespace-pre-wrap break-words text-slate-200">{data.presentation.about}</p>}
     {data.links.map(link=>{const dest=parsePublicDestinationUrl(link.url);if(!dest||dest.kind==='card')return null;return <a key={link.url} href={buildPublicDestinationPath(dest.kind,dest.identifier)??'/'} className="block rounded-xl border border-[#34443B] p-3 text-sm"><span className="block text-xs text-[#F47825]">{dest.kind==='profile'?'Perfil':dest.kind==='store'?'Loja':'Comunidade'}</span>{link.name}</a>;})}
-    {data.passkeyManaged?<KyrubTagPasskeyActions key={identifier} tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links} sosAction={sosAction}/>:<>
+    {data.presentation.pix&&<KyrubCidPixPublic pix={data.presentation.pix}/>}
+    {data.passkeyManaged?<KyrubTagPasskeyActions key={identifier} tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about,...(data.presentation.pix?{pix:data.presentation.pix}:{})}} links={data.links} sosAction={sosAction}/>:<>
      <div className="grid grid-cols-2 gap-2">{publicOwnerView?<button type="button" className={actionButton+' flex items-center justify-center gap-2 text-[#F47825]'} onClick={()=>setShowEdit(true)}><Pencil aria-hidden="true" className="h-5 w-5"/>Editar</button>:<KyrubCidShare tagId={identifier} className={actionButton}/>} {sosAction}</div>
      {!publicOwnerView&&<button type="button" className="text-sm text-[#F47825] underline" onClick={()=>setShowEdit(v=>!v)}>Acessar meu CID</button>}
     </>}
