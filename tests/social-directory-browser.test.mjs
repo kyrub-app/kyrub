@@ -38,6 +38,10 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   const connectionId=[actor.uid,privateId].sort().join('_');
   const connection=db.doc('connections/'+connectionId);
   batch.set(connection,{senderId:actor.uid,receiverId:privateId,participantIds:[actor.uid,privateId].sort(),status:'accepted',senderName:'Titular fixture',receiverName:'Contato reservado histórico',senderRole:'Cliente',receiverRole:'Cliente',senderAvatar:'',receiverAvatar:'https://example.invalid/reserved-contact-avatar',senderBio:'',receiverBio:'Biografia histórica reservada fixture',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  const distantId='social-browser-zcontact';
+  batch.set(db.doc('users/'+distantId),{uid:distantId,name:'Contato público atualizado fora da página',isProfileVisible:true,photoUrl:'https://example.invalid/current-contact-photo',email:'outside-secret@example.invalid'});
+  const distantConnection=db.doc('connections/'+[actor.uid,distantId].sort().join('_'));
+  batch.set(distantConnection,{senderId:actor.uid,receiverId:distantId,participantIds:[actor.uid,distantId].sort(),status:'accepted',senderName:'Titular fixture',receiverName:'Contato público histórico fora da página',receiverAvatar:'https://example.invalid/old-contact-photo',receiverBio:'Biografia pública legada',receiverRole:'Função pública legada',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   await batch.commit();
   const local=express();local.use(express.json({limit:'8kb'}));local.use('/api',createSocialDirectoryEmulatorRouter(db,auth));
   vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
@@ -62,6 +66,11 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   assert.equal(await page.getByTestId('visible-author-avatar').textContent(),'https://example.invalid/author-photo');
   await page.getByRole('button',{name:'Abrir conectados na fixture'}).click();
   await page.getByText('Contato reservado histórico',{exact:true}).waitFor();
+  const publicCard=page.locator('article').filter({has:page.getByRole('heading',{name:'Contato público atualizado fora da página',exact:true})});
+  await publicCard.waitFor();
+  await publicCard.locator('img[src="https://example.invalid/current-contact-photo"]').waitFor({state:'attached'});
+  assert.equal(await publicCard.locator('img[src="https://example.invalid/old-contact-photo"]').count(),0);
+  assert.equal(await publicCard.getByText('Biografia pública legada',{exact:true}).count(),0);
   await page.getByRole('button',{name:'Abrir novas conexões'}).click();
   await page.getByRole('button',{name:/Sugestões/}).click();
   await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).waitFor();
@@ -74,6 +83,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   assert.equal(await page.getByText('fixture-secret-00@example.invalid',{exact:true}).count(),0);
   await page.screenshot({path:'gamification-admin-isolated-social-directory.png',fullPage:true});
   await db.doc('users/social-browser-00').update({isProfileVisible:false});
+  await db.doc('users/'+distantId).update({isProfileVisible:false});
   await page.getByRole('button',{name:'Fechar novos contatos'}).click();
   await page.getByRole('button',{name:'Abrir novas conexões'}).click();
   await page.getByRole('heading',{name:'Contato público 01',exact:true}).waitFor();
@@ -91,6 +101,10 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await page.waitForFunction(()=>document.querySelector('[data-testid="visible-author-avatar"]')?.textContent==='sem-foto');
   assert.equal(await page.getByTestId('visible-author').textContent(),'Autor histórico público');
   assert.equal(await page.getByTestId('private-author-avatar').textContent(),'sem-foto');
+  const revokedCard=page.locator('article').filter({has:page.getByRole('heading',{name:'Contato público histórico fora da página',exact:true})});
+  await revokedCard.waitFor();
+  assert.equal(await revokedCard.locator('img').count(),0);
+  assert.equal((await distantConnection.get()).get('status'),'accepted');
   await context.close();
  }catch(error){
   console.error('[social-browser]',JSON.stringify({diagnostics:diagnostics.slice(-20),requests}));
