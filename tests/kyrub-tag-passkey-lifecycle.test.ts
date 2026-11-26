@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement} from '../server/identity/kyrubTagPasskeyState';
+import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement,assertTagAccountLink} from '../server/identity/kyrubTagPasskeyState';
 const virgin={distribution:'promotional',model:'adesivo',ownerId:null,activationHash:null,enabled:false,manufacturingState:'released'};
 const owned={...virgin,ownerAuthMode:'passkey',ownerId:'tagpk_'+'x'.repeat(43),enabled:true};
 test('only open stock may register and only passkey-owned stock may mutate',()=>{
@@ -12,7 +12,7 @@ test('only open stock may register and only passkey-owned stock may mutate',()=>
  assert.throws(()=>assertPasskeyTagState({...owned,blocked:true},'edit'));
  assert.doesNotThrow(()=>assertPasskeyTagState({...owned,blocked:true},'unblock'));
  assert.throws(()=>assertPasskeyTagState(owned,'unblock'));
- assert.equal(isPasskeyMutation('link-account'),false);
+ assert.equal(isPasskeyMutation('link-account'),true);
 });
 test('payload is bounded to the authenticated operation and public text',()=>{
  const card={name:'Ana',occupation:'Autônoma',about:'Olá'};
@@ -76,4 +76,20 @@ test('recovery requires the secret twice, counts failed starts and atomically re
  assert.doesNotMatch(svc,/tx\.(?:create|set|update)\([^\n]*recoverySecret/);
  const ui=readFileSync('src/components/KyrubTagPasskeyActions.tsx','utf8');
  assert.match(ui,/Recuperar com nova chave de acesso/);assert.match(ui,/setSecret\(''\)/);
+});
+
+test('account link is voluntary, bound to one real account and never changes the tag owner',()=>{
+ assert.doesNotThrow(()=>assertTagAccountLink(owned,'account-123'));
+ assert.doesNotThrow(()=>assertTagAccountLink({...owned,linkedAccountId:'account-123'},'account-123'));
+ for(const actor of [undefined,'tagpk_'+'x'.repeat(43),'other/account'])assert.throws(()=>assertTagAccountLink(owned,actor));
+ assert.throws(()=>assertTagAccountLink({...owned,linkedAccountId:'account-123'},'account-456'));
+ assert.throws(()=>assertTagAccountLink(virgin,'account-123'));
+ const svc=readFileSync('server/identity/kyrubTagPasskeyLifecycle.ts','utf8');
+ assert.match(svc,/record.linkedAccountActor!==accountActor/);assert.match(svc,/live.linkedAccountActor!==accountActor/);
+ assert.match(svc,/!linkedAccount.exists/);
+ assert.match(svc,/tx.update\(tagRef,\{linkedAccountId:accountActor,linkedAccountAt:/);
+ const list=readFileSync('server/identity/kyrubTagPasskeyAccountLinks.ts','utf8');
+ assert.match(list,/where\('linkedAccountId','==',actor\)/);assert.match(list,/data.linkedAccountId!==actor/);
+ assert.doesNotMatch(list,/passkeyRecoveryHash|publicKey|credential:/);
+ const api=readFileSync('api/health.ts','utf8');assert.match(api,/adminAuth.verifyIdToken\(bearer,true\)/);assert.match(api,/decoded.email_verified!==true/);
 });

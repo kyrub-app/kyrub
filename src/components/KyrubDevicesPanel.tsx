@@ -1,4 +1,5 @@
 import { OfficialKyrubTagPanel } from './OfficialKyrubTagPanel';
+import { KyrubLinkedPasskeyTags } from './KyrubLinkedPasskeyTags';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bluetooth, CheckCircle2, CircleHelp, Nfc, RadioTower, ScanLine, Smartphone, Trash2, WifiOff } from 'lucide-react';
 import { KyrubBusinessCard } from './KyrubBusinessCard';
@@ -216,6 +217,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
         <p className="text-sm text-slate-300">Personalize seus acessórios oficiais ou compartilhe seu cartão digital.</p>
       </header>
       <OfficialKyrubTagPanel key={'official-'+userId} userId={userId} />
+      <KyrubLinkedPasskeyTags key={'passkey-'+userId} userId={userId} />
 
       <details className="rounded-xl border border-[#34443B] bg-[#121A17] p-3">
         <summary className="cursor-pointer text-base font-bold text-white">Meu cartão digital e vitrines</summary>

@@ -12,12 +12,12 @@ export async function confirmKyrubTagPasskey(optionsJSON:AuthenticationOptions){
  return startAuthentication({optionsJSON});
 }
 
-export type TagPasskeyAction='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover';
-export async function runKyrubTagPasskey(tagId:string,purpose:TagPasskeyAction,presentation?:unknown,recoveryCode?:string){
+export type TagPasskeyAction='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account';
+export async function runKyrubTagPasskey(tagId:string,purpose:TagPasskeyAction,presentation?:unknown,recoveryCode?:string,accountToken?:string){
  if(!/^[a-f0-9]{32}$/.test(tagId)||!supportsKyrubTagPasskey())throw Error('TAG_PASSKEY_UNSUPPORTED');
  const url='/api/health?transport=kyrub-tag-passkey&id='+encodeURIComponent(tagId);
  async function call(body:Record<string,unknown>){
-  const res=await fetch(url,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res=await fetch(url,{method:'POST',cache:'no-store',credentials:'same-origin',headers:{'Content-Type':'application/json',...(accountToken?{Authorization:'Bearer '+accountToken}:{})},body:JSON.stringify(body)});
   const value=await res.json();
   if(!res.ok)throw Error(typeof value?.error==='string'?value.error:'TAG_PASSKEY_FORBIDDEN');
   return value;

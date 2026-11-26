@@ -304,7 +304,7 @@ export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubT
  if(data.ownerAuthMode==='passkey'&&data.distribution==='promotional'&&data.blocked===true){const origin=tagPasskeyPilotOrigin();return {id,model:data.model,status:'blocked',links:[],passkeyManaged:true,...(origin?{passkeyOrigin:origin}:{})};}
  if(data.enabled!==true||data.blocked===true||typeof data.ownerId!=='string'||!Array.isArray(data.targets)||data.targets.length+externalLinks(data.externalUrls).length>CARD_LIMIT)return null;
  const targets=data.targets.filter(isBoundTarget);
- const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);
+ const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerAuthMode==='passkey'&&typeof data.linkedAccountId==='string'?data.linkedAccountId:data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);
  const current=await ref.get();
  if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
  const origin=data.ownerAuthMode==='passkey'?tagPasskeyPilotOrigin():null;

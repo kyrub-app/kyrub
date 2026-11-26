@@ -1,4 +1,6 @@
-import {useRef,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
+import {onAuthStateChanged,type User} from 'firebase/auth';
+import {auth} from '../utils/firebase';
 import {Fingerprint} from 'lucide-react';
 import {runKyrubTagPasskey,supportsKyrubTagPasskey,type TagPasskeyAction} from '../utils/kyrubTagPasskeyClient';
 import {buildPublicDestinationUrl,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
@@ -11,6 +13,9 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
  const [recovering,setRecovering]=useState(false),[secret,setSecret]=useState('');
  const [draft,setDraft]=useState(initial??{name:'',occupation:'',about:''});
  const [destinations,setDestinations]=useState(()=>Object.fromEntries(links.flatMap(l=>{const p=parsePublicDestinationUrl(l.url);return p&&p.kind!=='card'?[[p.kind,p.identifier]]:[];})) as Partial<Record<'profile'|'store'|'community',string>>);
+ const [account,setAccount]=useState<User|null>(auth.currentUser);
+ const [linked,setLinked]=useState(false);
+ useEffect(()=>onAuthStateChanged(auth,user=>{setAccount(user);setLinked(false);}),[]);
  const lock=useRef(false);
  const available=!!origin&&origin===window.location.origin&&supportsKyrubTagPasskey();
  function refresh(){window.location.reload();}
@@ -19,13 +24,19 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
   if((purpose==='register'||purpose==='edit')&&!presentation?.name.trim()){setNotice('Preencha seu nome de apresentação antes de publicar.');return;}
   lock.current=true;setBusy(true);setNotice('');
   try{
-   const result=await runKyrubTagPasskey(tagId,purpose,presentation,recoverySecret);
+   const linking=purpose==='link-account';
+   const current=auth.currentUser;
+   if(linking&&(!current?.emailVerified||current.uid!==account?.uid))throw Error('TAG_ACCOUNT_REQUIRED');
+   const token=linking?await current!.getIdToken(true):undefined;
+   if(linking&&auth.currentUser?.uid!==current!.uid)throw Error('TAG_ACCOUNT_REQUIRED');
+   const result=await runKyrubTagPasskey(tagId,purpose,presentation,recoverySecret,token);
+   if(linking){setLinked(true);setNotice('Tag vinculada à conta confirmada. A edição continua protegida pela chave de acesso.');return;}
    if(purpose==='recover'){setSecret('');setRecovering(false);}
    if(purpose==='register'){try{sessionStorage.removeItem('kyrub.tag.draft.'+tagId);sessionStorage.removeItem('kyrub.card.demo.tag.'+tagId);}catch{}}
    if(result.recoveryCode){setRecovery(result.recoveryCode);setNotice('Operação concluída. Guarde o código de recuperação em local seguro.');}
    else refresh();
   }catch(e){const code=e instanceof Error?e.message:'';
-   setNotice(code==='TAG_PASSKEY_RATE_LIMIT'?'Muitas tentativas. Aguarde um minuto.':code==='CARD_TARGET_UNAVAILABLE'?'Um dos destinos não está disponível. Confira os links.':code==='TAG_CHANGED'?'A unidade foi alterada. Atualize a página e tente novamente.':purpose==='recover'?'Não foi possível recuperar. Confira o código secreto e tente novamente.':'Não foi possível confirmar a operação. Use a chave de acesso autorizada e tente novamente.');
+   setNotice(code==='TAG_PASSKEY_RATE_LIMIT'?'Muitas tentativas. Aguarde um minuto.':code==='CARD_TARGET_UNAVAILABLE'?'Um dos destinos não está disponível. Confira os links.':code==='TAG_ACCOUNT_REQUIRED'?'Entre em uma conta Kyrub com e-mail verificado e conclua o cadastro inicial.':code==='TAG_CHANGED'?'A unidade foi alterada. Atualize a página e tente novamente.':purpose==='recover'?'Não foi possível recuperar. Confira o código secreto e tente novamente.':'Não foi possível confirmar a operação. Use a chave de acesso autorizada e tente novamente.');
   }finally{setBusy(false);lock.current=false;}
  }
  if(recovery)return <section className="space-y-3 rounded-xl border border-amber-500/60 p-3" role="status">
@@ -52,6 +63,10 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
    </form>}
    <button type="button" disabled={busy} className={button+' w-full'} onClick={()=>{if(window.confirm(mode==='blocked'?'Republicar seu cartão?':'Bloquear a publicação deste cartão?'))void execute(mode==='blocked'?'unblock':'block');}}>{mode==='blocked'?'Desbloquear minha tag':'Bloquear tag perdida'}</button>
    <button type="button" disabled={busy} className={button+' w-full'} onClick={()=>{if(window.confirm('Gerar novo código e invalidar o anterior?'))void execute('rotate-recovery');}}>Gerar novo código de recuperação</button>
+   <section className="space-y-2 border-t border-[#34443B] pt-3"><h3 className="font-semibold">Minha Central Pessoal</h3>
+    <p className="text-sm text-slate-300">Vincule voluntariamente esta tag a uma conta Kyrub. O cartão, seu endereço e sua chave de acesso permanecem os mesmos.</p>
+    {account?.emailVerified?<><p className="text-sm break-all">Conta: {account.email}</p><button type="button" className={button+' w-full'} disabled={busy||linked} onClick={()=>{if(window.confirm('Vincular esta tag à conta '+account.email+'? O vínculo é definitivo nesta versão.'))void execute('link-account');}}>{linked?'Vínculo confirmado':'Vincular à minha conta com chave de acesso'}</button></>:<a className="block text-center underline text-sm" href={'/?app=1&tagActivation='+encodeURIComponent(tagId)}>Kairub-se · Entrar ou criar conta</a>}
+   </section>
    <button type="button" disabled={busy} className={button+' w-full'} onClick={()=>{setRecovering(v=>!v);setSecret('');}}>Perdi minha chave de acesso</button>
    {recovering&&<form className="space-y-3 border-t border-[#34443B] pt-3" onSubmit={e=>{e.preventDefault();if(/^[A-Za-z0-9_-]{43}$/.test(secret.trim())&&window.confirm('Substituir a chave antiga e bloquear o cartão até você desbloqueá-lo?'))void execute('recover',undefined,secret.trim());}}>
     <p className="text-sm text-slate-300">Use o código secreto recebido na ativação. Você criará uma nova chave de acesso. A chave e o código anteriores perderão a validade; o endereço e o titular da tag serão preservados.</p>

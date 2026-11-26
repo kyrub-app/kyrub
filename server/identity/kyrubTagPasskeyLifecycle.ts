@@ -7,7 +7,7 @@ import {isBoundTarget,parseCardTargets} from './publicCardPolicy.js';
 import {resolveTarget} from './publicVisitCardService.js';
 import {isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyChallenge,newTagPasskeyRecoveryCode,tagPasskeyRecoveryHash,matchesTagPasskeyRecovery,type TagPasskeyChallenge} from './kyrubTagPasskeyPolicy.js';
 import {tagRegistrationOptions,tagAuthenticationOptions,verifyTagRegistration,verifyTagAuthentication,type StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
-import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement,type PasskeyMutation} from './kyrubTagPasskeyState.js';
+import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement,assertTagAccountLink,type PasskeyMutation} from './kyrubTagPasskeyState.js';
 import type {PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import type {RegistrationResponseJSON,AuthenticationResponseJSON} from '@simplewebauthn/server';
 
@@ -18,7 +18,7 @@ const credentials=()=>adminDb.collection('kyrub_tag_passkey_credentials');
 const challenges=()=>adminDb.collection('kyrub_tag_passkey_challenges');
 const indexes=()=>adminDb.collection('kyrub_tag_passkey_credential_index');
 const quotas=()=>adminDb.collection('kyrub_tag_passkey_quotas');
-type RecordData=TagPasskeyChallenge&{presentation:PromotionalTagPresentation|null;tagVersion:string;credentialVersion:string|null};
+type RecordData=TagPasskeyChallenge&{presentation:PromotionalTagPresentation|null;tagVersion:string;credentialVersion:string|null;linkedAccountActor?:string};
 function scope(origin:string){
  assertTagPilotWriteIsolated();
  if(process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')throw Error('TAG_PASSKEY_DISABLED');
@@ -42,16 +42,22 @@ function requireRecoveryInput(purpose:PasskeyMutation,secret:unknown){
  if(purpose==='recover'?typeof secret!=='string'||!validChallengeId(secret):secret!==undefined)throw Error('TAG_INVALID');
 }
 
-export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose:PasskeyMutation,input?:unknown,recoverySecret?:unknown){
+export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose:PasskeyMutation,input?:unknown,recoverySecret?:unknown,accountActor?:string){
  const rp=scope(origin);
  if(!isTagId(tagId)||!isPasskeyMutation(purpose))throw Error('TAG_INVALID');
  requireRecoveryInput(purpose,recoverySecret);
+ if((purpose==='link-account')!==!!accountActor)throw Error('TAG_FORBIDDEN');
  const presentation=normalizePasskeyMutation(purpose,input);
  const issued=await adminDb.runTransaction(async tx=>{
   const tagRef=tags().doc(tagId),credentialRef=credentials().doc(tagId),quotaRef=quotas().doc(purpose==='recover'?tagId+'-recover':tagId);
   const [tag,credential,quota]=await Promise.all([tx.get(tagRef),tx.get(credentialRef),tx.get(quotaRef)]);
   const data=tag.data();
   assertPasskeyTagState(data,purpose);
+  if(purpose==='link-account'){
+   assertTagAccountLink(data,accountActor);
+   const [account,marker]=await Promise.all([tx.get(adminDb.doc('users/'+accountActor)),tx.get(adminDb.doc('kyrub_tag_minimal_identities/'+accountActor))]);
+   if(!account.exists||marker.get('mode')==='tag_only')throw Error('TAG_ACCOUNT_REQUIRED');
+  }
   if(purpose==='register'&&credential.exists)throw Error('TAG_FORBIDDEN');
   const stored=purpose==='register'?null:readCredential(credential.data(),data!.ownerId);
   const now=Date.now(),bucket=Math.floor(now/60000);
@@ -62,7 +68,7 @@ export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose
   tx.set(quotaRef,{bucket,count:count+1,deleteAfter:Timestamp.fromMillis(now+120000)});
   if(purpose==='recover'&&!recoveryMatches(tagId,data,recoverySecret))return null;
   const record=issueTagPasskeyChallenge({tagId,purpose,ownerId:purpose==='register'?null:data!.ownerId as string,credentialId:stored?.id??null,scope:rp},now);
-  const privateRecord:RecordData={...record,presentation,tagVersion:version(tag.updateTime),credentialVersion:credential.exists?version(credential.updateTime):null};
+  const privateRecord:RecordData={...record,presentation,tagVersion:version(tag.updateTime),credentialVersion:credential.exists?version(credential.updateTime):null,...(accountActor?{linkedAccountActor:accountActor}:{})};
   tx.create(challenges().doc(record.id),{...privateRecord,deleteAfter:Timestamp.fromMillis(record.expiresAt+600000)});
   return {record,stored};
  });
@@ -71,7 +77,7 @@ export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose
  return {challengeId:issued.record.id,options};
 }
 
-export async function finishTagPasskeyMutation(origin:string,tagId:string,challengeId:string,response:RegistrationResponseJSON|AuthenticationResponseJSON,recoverySecret?:unknown){
+export async function finishTagPasskeyMutation(origin:string,tagId:string,challengeId:string,response:RegistrationResponseJSON|AuthenticationResponseJSON,recoverySecret?:unknown,accountActor?:string){
  const rp=scope(origin);
  if(!isTagId(tagId)||!validChallengeId(challengeId))throw Error('TAG_INVALID');
  const tagRef=tags().doc(tagId),challengeRef=challenges().doc(challengeId),credentialRef=credentials().doc(tagId);
@@ -92,6 +98,8 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
  if(!record||record.id!==challengeId||!isPasskeyMutation(record.purpose))throw Error('TAG_PASSKEY_CHALLENGE_INVALID');
  assertPasskeyTagState(data,record.purpose);
  requireRecoveryInput(record.purpose,recoverySecret);
+ if(record.purpose==='link-account'){assertTagAccountLink(data,accountActor);if(record.linkedAccountActor!==accountActor)throw Error('TAG_FORBIDDEN');}
+ else if(accountActor!==undefined)throw Error('TAG_FORBIDDEN');
  const registering=record.purpose==='register',recovering=record.purpose==='recover';
  if(recovering&&!recoveryMatches(tagId,data,recoverySecret))throw Error('TAG_FORBIDDEN');
  const stored=registering?null:readCredential(credential.data(),data!.ownerId);
@@ -104,7 +112,7 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
  const marker=adminDb.doc('kyrub_tag_minimal_identities/'+ownerId),account=adminDb.doc('users/'+ownerId),index=indexes().doc(credentialIndexId(nextCredential.id));
  const presentation=normalizePasskeyMutation(record.purpose,record.presentation);
  const existing=Array.isArray(data!.targets)?data!.targets.filter(isBoundTarget):[];
- const targets=presentation?.destinations!==undefined?await Promise.all((presentation.destinations.length?parseCardTargets(presentation.destinations):[]).map(t=>resolveTarget(ownerId,t,existing.find(e=>e.kind===t.kind&&e.identifier===t.identifier)?.bindingId))):null;
+ const targets=presentation?.destinations!==undefined?await Promise.all((presentation.destinations.length?parseCardTargets(presentation.destinations):[]).map(t=>resolveTarget(typeof data!.linkedAccountId==='string'?data!.linkedAccountId:ownerId,t,existing.find(e=>e.kind===t.kind&&e.identifier===t.identifier)?.bindingId))):null;
  if(targets?.some(t=>!t))throw Error('CARD_TARGET_UNAVAILABLE');
  const bound=targets===null?existing:targets.flatMap(t=>t?[t.binding]:[]);
  const recoveryCode=registering||recovering||record.purpose==='rotate-recovery'?newTagPasskeyRecoveryCode():null;
@@ -115,6 +123,12 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
   if(!live||live.id!==challengeId||live.challenge!==record.challenge||!challenge.updateTime?.isEqual(currentChallenge.updateTime!)||
    record.tagVersion!==version(tag.updateTime)||record.credentialVersion!==(currentCredential.exists?version(currentCredential.updateTime):null))throw Error('TAG_CHANGED');
   assertPasskeyTagState(current,record.purpose);
+  if(record.purpose==='link-account'){
+   assertTagAccountLink(current,accountActor);
+   if(live.linkedAccountActor!==accountActor)throw Error('TAG_FORBIDDEN');
+   const [linkedAccount,linkedMarker]=await Promise.all([tx.get(adminDb.doc('users/'+accountActor)),tx.get(adminDb.doc('kyrub_tag_minimal_identities/'+accountActor))]);
+   if(!linkedAccount.exists||linkedMarker.get('mode')==='tag_only')throw Error('TAG_ACCOUNT_REQUIRED');
+  }
   assertUnusedTagPasskeyChallenge(live,expected);
   const now=Date.now(),stamp=new Date(now).toISOString();
   if(registering){
@@ -141,6 +155,7 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
    if(record.purpose==='edit'&&presentation)tx.update(tagRef,{presentation,targets:bound,enabled:true,updatedAt:stamp});
    else if(record.purpose==='block')tx.update(tagRef,{blocked:true,enabled:false,blockedAt:stamp,updatedAt:stamp});
    else if(record.purpose==='unblock')tx.update(tagRef,{blocked:false,enabled:true,blockedAt:null,updatedAt:stamp});
+   else if(record.purpose==='link-account'&&accountActor)tx.update(tagRef,{linkedAccountId:accountActor,linkedAccountAt:current!.linkedAccountAt??stamp,updatedAt:stamp});
    else if(record.purpose==='rotate-recovery'&&recoveryCode)tx.update(tagRef,{passkeyRecoveryHash:tagPasskeyRecoveryHash(tagId,recoveryCode),recoveryRotatedAt:stamp});
    else throw Error('TAG_INVALID');
   }

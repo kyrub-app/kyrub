@@ -1,7 +1,7 @@
 import {isOpenPromotionalTag,normalizePromotionalPresentation,type PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import type {TagPasskeyPurpose} from './kyrubTagPasskeyPolicy.js';
 import type {StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
-export type PasskeyMutation='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover';
+export type PasskeyMutation='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account';
 export type PasskeyTagState=Record<string,unknown>;
 export function assertPasskeyTagState(data:PasskeyTagState|undefined,purpose:TagPasskeyPurpose){
  if(purpose==='register'){
@@ -16,7 +16,7 @@ export function assertPasskeyTagState(data:PasskeyTagState|undefined,purpose:Tag
  if(purpose==='unblock'&&data.blocked!==true)throw Error('TAG_FORBIDDEN');
 }
 export function isPasskeyMutation(value:unknown):value is PasskeyMutation{
- return typeof value==='string'&&['register','edit','block','unblock','rotate-recovery','recover'].includes(value);
+ return typeof value==='string'&&['register','edit','block','unblock','rotate-recovery','recover','link-account'].includes(value);
 }
 // In the first pilot, only textual presentation and validated public destinations.
 // No uploads, SOS contacts, account linkage or legacy auth bypass.
@@ -38,4 +38,10 @@ export function assertSamePasskeyCredential(before:StoredTagPasskey,current:Stor
 // Recovery authorizes a new credential, never the public tag identifier alone.
 export function assertRecoveryCredentialReplacement(oldCredential:StoredTagPasskey,newCredential:StoredTagPasskey){
  if(oldCredential.id===newCredential.id||oldCredential.publicKey===newCredential.publicKey||oldCredential.userHandle===newCredential.userHandle)throw Error('TAG_FORBIDDEN');
+}
+
+export function assertTagAccountLink(data:PasskeyTagState|undefined,actor:unknown){
+ assertPasskeyTagState(data,'link-account');
+ if(typeof actor!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(actor)||actor.startsWith('tagpk_')||
+  (data?.linkedAccountId!=null&&data.linkedAccountId!==actor))throw Error('TAG_FORBIDDEN');
 }
