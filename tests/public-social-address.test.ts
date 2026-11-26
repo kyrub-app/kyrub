@@ -91,3 +91,17 @@ test('social identity and collaborator picker do not display private contact dat
  assert.doesNotMatch(picker,/searchableEmail\.includes|data.email.split|E-mail não informado/);
  // This is a presentation regression, not proof of database-level privacy.
 });
+
+test('both social discovery consumers use an opt-in query and minimized projection',()=>{
+ const directory=readFileSync('src/utils/socialDiscoveryDirectory.ts','utf8');
+ const hub=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ const legacy=readFileSync('src/LegacyApp.tsx','utf8');
+ assert.match(directory,/where\('isProfileVisible','==',true\)/);
+ assert.match(directory,/data.isProfileVisible!==true/);
+ assert.match(directory,/auth.currentUser!==session/);
+ assert.doesNotMatch(directory,/data\.email|data\.whatsapp|\.\.\.data/);
+ assert.match(hub,/subscribeSocialDiscoveryDirectory\(directory.setDbUsers\)/);
+ assert.doesNotMatch(hub,/profileHandle\(profile.email/);
+ assert.match(legacy,/subscribeSocialDiscoveryDirectory\(setDbUsers\)/);
+ assert.doesNotMatch(legacy,/listenCollection\('users'/);
+});
