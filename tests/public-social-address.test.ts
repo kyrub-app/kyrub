@@ -172,3 +172,13 @@ test('social suggestions use a shared session-scoped paged pilot and progressive
  assert.match(hub,/Carregar mais sugestões/);
  assert.match(hub,/directoryPage\.error/);
 });
+
+test('community post connection pilot uses only visible identity projection and rechecks session',()=>{
+ const source=readFileSync('src/utils/communityPostConnections.ts','utf8');
+ const pilot=source.slice(source.indexOf('if(socialDirectoryPilotEnabled())'),source.indexOf("const snapshot = await getDoc(doc(db, 'users', userId))"));
+ assert.match(pilot,/readAuthorIdentitiesPilot\(actor,\[userId\]\)/);
+ assert.match(pilot,/auth\.currentUser!==actor/);
+ assert.match(pilot,/visible:Boolean\(entry\)/);
+ assert.doesNotMatch(pilot,/getDoc|email|phone/);
+ assert.match(source,/await readCommunityPostPublicProfile\(userId\);\s*if\(auth.currentUser!==user\)/);
+});
