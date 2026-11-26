@@ -1,7 +1,7 @@
 import {isOpenPromotionalTag,normalizePromotionalPresentation,type PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import type {TagPasskeyPurpose} from './kyrubTagPasskeyPolicy.js';
 import type {StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
-export type PasskeyMutation='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account';
+export type PasskeyMutation='register'|'edit'|'block'|'unblock'|'rotate-recovery'|'recover'|'link-account'|'set-recovery-email'|'remove-recovery-email'|'recover-email';
 export type PasskeyTagState=Record<string,unknown>;
 export function assertPasskeyTagState(data:PasskeyTagState|undefined,purpose:TagPasskeyPurpose){
  if(purpose==='register'){
@@ -16,7 +16,7 @@ export function assertPasskeyTagState(data:PasskeyTagState|undefined,purpose:Tag
  if(purpose==='unblock'&&data.blocked!==true)throw Error('TAG_FORBIDDEN');
 }
 export function isPasskeyMutation(value:unknown):value is PasskeyMutation{
- return typeof value==='string'&&['register','edit','block','unblock','rotate-recovery','recover','link-account'].includes(value);
+ return typeof value==='string'&&['register','edit','block','unblock','rotate-recovery','recover','link-account','set-recovery-email','remove-recovery-email','recover-email'].includes(value);
 }
 // In the first pilot, only textual presentation and validated public destinations.
 // No uploads, SOS contacts, account linkage or legacy auth bypass.

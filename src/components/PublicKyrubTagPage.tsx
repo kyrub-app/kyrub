@@ -14,7 +14,7 @@ import {parsePublicDestinationUrl,buildPublicDestinationPath} from '../../shared
 
 type Payload={
  id:string;model:KyrubTagModel;status:'unclaimed'|'active'|'blocked';
- passkeyManaged?:boolean;passkeyOrigin?:string;
+ passkeyManaged?:boolean;passkeyOrigin?:string;emailRecoveryAvailable?:boolean;
  activation?:'account'|'code'|'email'|'setup';
  links:{name:string;url:string}[];
  presentation?:PublicPromotionalTagPresentation;
@@ -178,9 +178,9 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
       </div>)}
      </div>}
     </div>}
-    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
+    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} emailRecoveryAvailable={data.emailRecoveryAvailable} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
    </section>:
-   data?.status==='blocked'&&data.passkeyManaged?<section className="space-y-3"><p role="status">Este cartão está bloqueado. As informações do titular não estão públicas.</p><KyrubTagPasskeyActions tagId={identifier} mode="blocked" origin={data.passkeyOrigin}/></section>:
+   data?.status==='blocked'&&data.passkeyManaged?<section className="space-y-3"><p role="status">Este cartão está bloqueado. As informações do titular não estão públicas.</p><KyrubTagPasskeyActions tagId={identifier} mode="blocked" origin={data.passkeyOrigin} emailRecoveryAvailable={data.emailRecoveryAvailable}/></section>:
    promotional?
    <KyrubCardDemonstration key={identifier} draftKey={'kyrub.card.demo.tag.'+identifier}
     onSave={savePresentation}
@@ -188,7 +188,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
      <h2 className="text-base font-bold">Cadastrar meu cartão</h2>
      <p className="text-sm text-slate-300">Publique seu cartão nesta unidade, sem criar um perfil completo no Kyrub. A primeira pessoa que confirmar a titularidade poderá gerenciá-la. Os dados preenchidos ficarão públicos neste endereço; links serão verificados pelo Kyrub.</p>
-     {data.passkeyOrigin&&<KyrubTagPasskeyActions tagId={identifier} mode="register" origin={data.passkeyOrigin} getDraft={currentPresentation}/>}
+     {data.passkeyOrigin&&<KyrubTagPasskeyActions tagId={identifier} mode="register" origin={data.passkeyOrigin} emailRecoveryAvailable={data.emailRecoveryAvailable} getDraft={currentPresentation}/>}
      {data.passkeyOrigin&&data.activation==='email'&&<p className="text-xs text-slate-300">Alternativa: confirmar por e-mail.</p>}
      {data.activation==='setup'&&data.passkeyOrigin?null:data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
       <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>

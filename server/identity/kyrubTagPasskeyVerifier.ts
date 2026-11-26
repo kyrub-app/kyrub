@@ -10,11 +10,11 @@ function assertFresh(record:TagPasskeyChallenge,now:number){
 }
 function registrationOnly(record:TagPasskeyChallenge,now:number){
  assertFresh(record,now);
- if(record.purpose!=='register'&&record.purpose!=='recover')throw Error('TAG_PASSKEY_SCOPE');
+ if(record.purpose!=='register'&&record.purpose!=='recover'&&record.purpose!=='recover-email')throw Error('TAG_PASSKEY_SCOPE');
 }
 function authenticationOnly(record:TagPasskeyChallenge,credential:StoredTagPasskey,now:number){
  assertFresh(record,now);
- if(record.purpose==='register'||record.purpose==='recover'||record.credentialId!==credential.id||!credential.id||
+ if(record.purpose==='register'||record.purpose==='recover'||record.purpose==='recover-email'||record.credentialId!==credential.id||!credential.id||
  !/^[A-Za-z0-9_-]+$/.test(credential.publicKey)||!Number.isSafeInteger(credential.counter)||credential.counter<0||
  !/^[A-Za-z0-9_-]{43}$/.test(credential.userHandle))throw Error('TAG_PASSKEY_SCOPE');
 }
@@ -25,7 +25,7 @@ export async function tagRegistrationOptions(record:TagPasskeyChallenge,now=Date
  // but is not the secret handle or the credential identifier.
  userID:Buffer.from(record.id,'base64url'),userName:'Kyrub Tag '+record.tagId.slice(0,8),
  userDisplayName:'Minha Kyrub Tag',challenge:Buffer.from(record.challenge,'base64url'),
- attestationType:'none',...(record.purpose==='recover'&&record.credentialId?{excludeCredentials:[{id:record.credentialId}]}:{}),timeout:Math.min(120000,record.expiresAt-now),
+ attestationType:'none',...((record.purpose==='recover'||record.purpose==='recover-email')&&record.credentialId?{excludeCredentials:[{id:record.credentialId}]}:{}),timeout:Math.min(120000,record.expiresAt-now),
  authenticatorSelection:{residentKey:'required',userVerification:TAG_PASSKEY_USER_VERIFICATION},
  supportedAlgorithmIDs:[-7,-257]});
 }
