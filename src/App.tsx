@@ -32,7 +32,6 @@ import { ProfileVerificationBridge } from './components/ProfileVerificationBridg
 import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
 import { KyrubCardDemonstrationPage } from './components/KyrubCardDemonstration';
-import { CardRegistrationPage } from './components/CardRegistrationPage';
 import { PublicSocialDestinationPage } from './components/PublicSocialDestinationPage';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
 import { SocialPublishingBridge } from './components/SocialPublishingBridge';
@@ -333,7 +332,6 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
       onPromoted={()=>setIdentityMode('full')}
       onRetry={()=>setRetry(v=>v+1)}/>;
   if(operational)return <AuthenticatedKyrubApp operational />;
-  if(currentUser&&new URLSearchParams(window.location.search).get('cardDraft')==='1')return <CardRegistrationPage key={currentUser.uid} userId={currentUser.uid}/>;
   return currentUser ? <AuthenticatedKyrubApp operational={false} /> : <KyrubGuestWorkspace />;
 }
 
@@ -369,9 +367,8 @@ export default function App() {
 
   const searchParams = new URLSearchParams(window.location.search);
   const entry = searchParams.get('entry');
-
-  // Explicit design preview: root, staff, public routes and existing sessions stay unchanged.
-  if (route.kind === 'default' && entry === 'card-demo') return <KyrubCardDemonstrationPage />;
+  // Layout-only preview; the homepage and existing workspace are not replaced.
+  if (route.kind === 'default' && entry === 'card-demo' && import.meta.env.VERCEL_ENV !== 'production' && window.location.hostname.endsWith('.vercel.app')) return <KyrubCardDemonstrationPage />;
 
   // The former "Meu Kyrub / Comece por aqui" landing remains deliberately
   // accessible for the separately planned onboarding change, never the default.

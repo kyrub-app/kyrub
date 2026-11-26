@@ -148,12 +148,21 @@ export async function configurePromotionalKyrubTag(actor:string,id:string,input:
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  const presentation=normalizePromotionalPresentation(input);
+ const ref=tags().doc(id),initial=await ref.get(),before=initial.data();
+ if(before?.distribution!=='promotional'||before.ownerId!==actor||before.blocked===true)throw Error('TAG_FORBIDDEN');
  await validatePromotionalMediaReferences(actor,id,presentation);
+ const existing=Array.isArray(before.targets)?before.targets.filter(isBoundTarget):[];
+ const requested=presentation.destinations;
+ const resolved=requested===undefined?null:await Promise.all((requested.length?parseCardTargets(requested):[]).map(target=>resolveTarget(actor,target,existing.find(t=>t.kind===target.kind&&t.identifier===target.identifier)?.bindingId)));
+ if(resolved?.some(target=>!target))throw Error('CARD_TARGET_UNAVAILABLE');
+ const targets=resolved===null?existing:resolved.flatMap(target=>target?[target.binding]:[]);
+ // Destination bindings are authoritative, not arbitrary URLs in public presentation.
  return adminDb.runTransaction(async tx=>{
-  const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
+  const snap=await tx.get(ref),data=snap.data();
   if(data?.distribution!=='promotional'||data.ownerId!==actor||data.blocked===true)throw Error('TAG_FORBIDDEN');
-  tx.update(ref,{presentation,enabled:true,updatedAt:new Date().toISOString()});
-  return owned(id,{...data,presentation,enabled:true});
+  if(!initial.updateTime||!snap.updateTime?.isEqual(initial.updateTime))throw Error('TAG_CHANGED');
+  tx.update(ref,{presentation,targets,enabled:true,updatedAt:new Date().toISOString()});
+  return owned(id,{...data,presentation,targets,enabled:true});
  });
 }
 

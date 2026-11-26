@@ -246,22 +246,6 @@ export default async function handler(
       if(method==='DELETE'){response.status(200).json({card:await service.disableOwnedCard(actor)});return;}
       const body=request.body;
       const urls=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).urls:null;
-      const hasPresentation=!!body&&typeof body==='object'&&!Array.isArray(body)&&Object.prototype.hasOwnProperty.call(body,'presentation');
-      if(hasPresentation){
-        // A visual preview must never publish a new presentation into the live database.
-        if(process.env.VERCEL_ENV==='preview'){response.status(403).json({error:'CARD_PREVIEW_READ_ONLY'});return;}
-        const input=body as Record<string,unknown>;
-        if(Object.keys(input).some(k=>k!=='urls'&&k!=='presentation')||input.presentation===undefined){response.status(400).json({error:'INVALID_CARD'});return;}
-        try{
-          const {adminAuth}=await import('../server/firebaseAdmin.js');
-          const bearer=/^Bearer\s+(.+)$/i.exec(headerValue(request.headers.authorization??request.headers.Authorization)??'')?.[1];
-          if(!bearer)throw Error('AUTH_REQUIRED');
-          const decoded=await adminAuth.verifyIdToken(bearer,true);
-          const live=await adminAuth.getUser(actor);
-          if(decoded.uid!==actor||decoded.email_verified!==true||live.disabled||!live.emailVerified)throw Error('AUTH_REQUIRED');
-        }catch{response.status(403).json({error:'CARD_VERIFIED_ACCOUNT_REQUIRED'});return;}
-        response.status(200).json({card:await service.saveOwnedCard(actor,urls,input.presentation)});return;
-      }
       response.status(200).json({card:await service.saveOwnedCard(actor,urls)});
     }catch(error){
       const code=error instanceof Error?error.message:'';

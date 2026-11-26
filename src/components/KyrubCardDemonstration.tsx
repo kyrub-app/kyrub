@@ -11,8 +11,8 @@ const fields=[
  {key:'community',label:'Comunidade no Kyrub',placeholder:'sua-comunidade',max:120},
 ] as const;
 const button='min-h-11 rounded-xl border border-[#34443B] px-3 py-2 text-sm font-semibold';
-export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,children}:{
- draftKey?:string;onSave?:(draft:CardDraft)=>void;onClear?:()=>void;children?:React.ReactNode
+export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,children,previewOnly=false}: {
+ draftKey?:string;onSave?:(draft:CardDraft)=>void;onClear?:()=>void;children?:React.ReactNode;previewOnly?:boolean
 }){
  const [saved,setSaved]=useState<CardDraft|null>(()=>{try{return loadCardDraft(sessionStorage,draftKey);}catch{return null;}});
  const [editing,setEditing]=useState(false);
@@ -25,19 +25,11 @@ export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,c
   try{if(!saveCardDraft(sessionStorage,clean,draftKey)){setNotice('Não foi possível guardar o rascunho neste navegador.');return;}}
   catch{setNotice('Armazenamento local indisponível.');return;}
   setSaved(clean);setDraft(clean);setEditing(false);onSave?.(clean);
-  setNotice('Rascunho salvo nesta aba. Nada foi publicado ou enviado ao Kyrub.');
+  setNotice(previewOnly?'Rascunho salvo nesta aba. Nada foi publicado.':'Rascunho salvo. Confirme seu e-mail para publicar neste adesivo.');
  }
  function clear(){
   try{if(!clearCardDraft(sessionStorage,draftKey)){setNotice('Não foi possível apagar o rascunho.');return;}}catch{setNotice('Armazenamento local indisponível.');return;}
   setSaved(null);setDraft({...EMPTY_CARD_DRAFT});setEditing(false);onClear?.();setNotice('Rascunho apagado.');
- }
- function continueRegistration(){
-  if(editing){setNotice('Salve ou cancele as alterações antes de cadastrar.');return;}
-  if(saved&&draftKey!==CARD_DRAFT_KEY){
-   try{if(!saveCardDraft(sessionStorage,saved)){setNotice('Não foi possível preparar o rascunho para cadastro.');return;}}
-   catch{setNotice('Armazenamento local indisponível.');return;}
-  }
-  window.location.assign('/?app=1&cardDraft=1');
  }
  const rows=[
   {label:'Perfil no Kyrub',value:saved?.profile,example:'Seu perfil no Kyrub',Icon:UserRound},
@@ -68,14 +60,12 @@ export function KyrubCardDemonstration({draftKey=CARD_DRAFT_KEY,onSave,onClear,c
    <button type="button" className={button+' flex items-center justify-center gap-2 text-rose-300'} aria-expanded={sos} onClick={()=>setSos(v=>!v)}><HeartPulse aria-hidden="true" className="h-5 w-5"/>SOS</button>
   </div>}
   {sos&&<section className="space-y-2 rounded-xl border border-rose-500/50 p-3"><h2 className="font-bold text-rose-200">Emergência no Brasil</h2><p className="text-xs text-slate-300">Números públicos. Ao tocar, você abre o discador; nenhum alerta é enviado automaticamente. Não há contatos particulares neste cartão demonstrativo.</p>{[{name:'Polícia Militar',number:'190'},{name:'SAMU',number:'192'},{name:'Bombeiros',number:'193'}].map(service=><a key={service.number} href={'tel:'+service.number} className="flex min-h-11 items-center justify-between rounded-lg border border-[#34443B] p-2 text-sm"><span>{service.name}</span><strong>{service.number}</strong></a>)}</section>}
-  <button type="button" onClick={continueRegistration} className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 text-sm font-bold text-[#121A17]">Cadastrar meu cartão</button>
-  <p className="text-xs text-slate-300">Gratuito. Não exige comprar ou ativar uma tag. O cadastro será confirmado na sua conta.</p>
+  {previewOnly?<p className="text-xs text-slate-300">Demonstração visual. Nenhuma unidade física será ativada nesta página.</p>:!editing&&children}
   {saved&&!editing&&<button type="button" className="text-sm text-slate-300 underline" onClick={clear}>Apagar rascunho</button>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
-  {children}
  </section>;
 }
 
 export function KyrubCardDemonstrationPage(){
- return <main className="min-h-screen bg-[#121A17] p-4"><div className="mx-auto max-w-md py-4"><KyrubCardDemonstration/></div></main>;
+ return <main className="min-h-screen bg-[#121A17] p-4"><div className="mx-auto max-w-md py-4"><KyrubCardDemonstration previewOnly/></div></main>;
 }

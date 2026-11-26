@@ -16,32 +16,30 @@ test('local demo draft is bounded, canonical and excludes unrelated fields',()=>
 test('demo never writes to server or authenticates visitors and keeps physical claim separate',()=>{
  const read=(p:string)=>readFileSync(p,'utf8');
  const demo=read('src/components/KyrubCardDemonstration.tsx'),app=read('src/App.tsx'),tag=read('src/components/PublicKyrubTagPage.tsx');
- assert.match(demo,/Cadastrar meu cartão/);
+ assert.match(tag,/Cadastrar meu cartão/);
  assert.match(demo,/Kairub-se!/);
  assert.match(demo,/sessionStorage/);
  assert.doesNotMatch(demo,/fetch\(|setDoc\(|signInWith/);
  assert.match(app,/entry === 'card-demo'/);
- assert.match(tag,/Vincular esta tag física/);
+ assert.match(tag,/sem criar um perfil completo no Kyrub/);
+ assert.doesNotMatch(demo,/cardDraft=1/);
  assert.match(tag,/claim-promotional/);
  assert.match(tag,/data.activation==='setup'/);
 });
 
-import {normalizeVisitCardPresentation,readVisitCardPresentation,hasVisitCardPresentation} from '../shared/visitCardPresentation';
-test('independent presentation accepts text only and never private credentials',()=>{
- const sample={name:' Ana ',occupation:'Pizzaria',about:'Olá'};
- assert.deepEqual(normalizeVisitCardPresentation(sample),{...sample,name:'Ana'});
- assert.equal(hasVisitCardPresentation(normalizeVisitCardPresentation(sample)),true);
- assert.equal(readVisitCardPresentation({...sample,email:'private@example.test'}),undefined);
- assert.equal(readVisitCardPresentation({...sample,about:'x'.repeat(321)}),undefined);
- assert.equal(readVisitCardPresentation({...sample,occupation:42}),undefined);
+import {normalizePromotionalPresentation,publicPromotionalPresentation} from '../shared/kyrubTagPromotional';
+test('promotional card destinations are optional canonical public routes, never serialized as raw links',()=>{
+ const base={name:'Ana',occupation:'Autônoma',about:'Apresentação'};
+ const destinations=['https://kyrub.com/kairubido/ana','https://kyrub.com/@pizzaria','https://kyrub.com/comunidade/bairro'];
+ assert.deepEqual(normalizePromotionalPresentation({...base,destinations}).destinations,destinations);
+ assert.equal('destinations' in publicPromotionalPresentation({...base,destinations}),false);
+ for(const invalid of [['https://evil.example/@loja'],['https://kyrub.com/cartao/abc'],[destinations[0],destinations[0]],['https://kyrub.com/@a','https://kyrub.com/@b']])assert.throws(()=>normalizePromotionalPresentation({...base,destinations:invalid}),/TAG_PRESENTATION_INVALID/);
 });
-test('independent card import requires explicit review and publication; preview cannot write presentation',()=>{
- const editor=readFileSync('src/components/MultifunctionCardEditor.tsx','utf8'),api=readFileSync('api/health.ts','utf8'),service=readFileSync('server/identity/publicVisitCardService.ts','utf8');
- assert.match(editor,/Aproveitar meu rascunho/);
- assert.match(editor,/!consent/);
- assert.match(editor,/clearCardDraft\(sessionStorage\)/);
- assert.match(api,/CARD_PREVIEW_READ_ONLY/);
- assert.match(api,/adminAuth.verifyIdToken\(bearer,true\)/);
- assert.match(service,/normalizeVisitCardPresentation\(rawPresentation\)/);
- assert.match(service,/tx.create\(ownerRef,\{id\}\)/);
+test('publication reuses verified ownership and bound public destinations without creating a full account',()=>{
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8'),page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ assert.match(service,/assertTagPilotWriteIsolated/);
+ assert.match(service,/resolveTarget\(actor,target,existing.find/);
+ assert.match(service,/tx.update\(ref,\{presentation,targets,enabled:true/);
+ assert.match(page,/presentation:currentPresentation\(\)/);
+ assert.match(page,/data.links.map/);
 });

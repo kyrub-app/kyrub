@@ -1,0 +1,15 @@
+# Kyrub Tags — decisão comercial e escopo imediato (26/11/2026)
+
+## Campanha inicial
+46 adesivos físicos já confeccionados. Cada unidade oficial tem endereço permanente /tag/ID, gravado em NFC; o QR individual, quando utilizado, deve representar exatamente a mesma URL. Não substituir a homepage do ecossistema por formulário apropriável. QR/NFC de publicidade coletiva apontam para entrada pública sem apropriação da unidade.
+
+O cartão promocional de uma unidade virgem exibe demonstração com logo, edição, rascunho local, SOS público e confirmação de e-mail. A publicação pertence à identidade mínima verificada, sem criar perfil completo, loja ou conceder recompensa. Ingresso Kairubido é voluntário; conservar dados e titularidade. Não alterar a titularidade por conhecer a URL. Destinos opcionais seguem validação de perfil próprio e resolução de lojas/comunidades públicas. O cartão multifuncional já existente dos Kairubidos e NFC genérica continuam disponíveis. Contatos particulares SOS protegidos continuam uma etapa separada; não adicionar coleta de selfie.
+
+## Rede futura — não ativar nesta PR
+Loja Oficial fornece etiquetas registradas em lotes a fabricantes autorizados. Fabricante com loja Kyrub vende varejo e atacado; revendedor autorizado com loja recebe condições de atacado, negocia localmente e pode encomendar personalizados. Adesivo, anel, colar, chaveiro etc. Produtos oficiais podem ter marca do cliente; linha de marca própria Kyrub na Loja Oficial. Produção e entrega regional, sem exclusividade territorial rígida definida. Cadastro voluntário em Catu (Renda): Quero fabricar / Quero revender, aprovação Control Plane. Free permanece; descontos Pro/Business para parceiros a definir. Não exigir compra de plano ou recrutamento. Procedência, qualidade, pagamentos e responsabilidades comerciais ainda requerem especificação.
+
+## Fidelização futura — não ativar nesta PR
+Uma Pitanga ao consumidor por compra elegível concluída via unidade comercial oficial, financiada pelo Kyrub. Compra de produto oficial também discutida como elegível; não duplicar recompensa se ambas condições coincidirem. Benefício não atribuído ao lojista por adquirir identificadores de mesa. Semear permanece benefício do autor e limite de 100 ações diárias do semeador. 10 semeaduras = 1 broto; 10 brotos = 1 muda; 10 mudas = 1 Pitanga; 10 Pitangas = 1 Bosque; 100 Bosques = 1 Cocar (1000 Pitangas). Cocar substitui XP na experiência, permanente e colecionável. Recompensas em dispositivos e cupons por marcos; catálogo, custos, disponibilidade e regras de elegibilidade ainda indefinidos. Proteger contra fracionamento, cancelamento, duplicação e fraude. Não alterar emissão de recompensas nem gamificação agora.
+
+## Gates
+Não habilitar produção, alterar Firebase, criar lotes reais ou anunciar brindes nesta PR. A proteção de isolamento de ativação por e-mail permanece. Homologar fluxo em ambiente isolado antes de solicitar liberação comercial.

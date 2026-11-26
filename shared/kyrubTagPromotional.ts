@@ -1,3 +1,5 @@
+import {parsePublicDestinationUrl} from './publicDestinationRoutes.js';
+
 /**
  * Promotional Kyrub Tags are not pre-reserved to a recipient.
  * The first successfully verified e-mail identity may claim one.
@@ -17,6 +19,7 @@ export type PromotionalTagPresentation={
   name:string;
   occupation:string;
   about:string;
+  destinations?:string[];
   emergencyContacts?:PromotionalSosContact[];
   coverPath?:string;
   avatarPath?:string;
@@ -110,7 +113,7 @@ export function publicPromotionalPresentation(input:PromotionalTagPresentation):
 export function normalizePromotionalPresentation(input:unknown):PromotionalTagPresentation{
   if(!input||typeof input!=='object'||Array.isArray(input))throw Error('TAG_PRESENTATION_INVALID');
   const entry=input as Record<string,unknown>;
-  if(Object.keys(entry).some(key=>!['name','occupation','about','emergencyContacts','coverPath','avatarPath'].includes(key)))
+  if(Object.keys(entry).some(key=>!['name','occupation','about','emergencyContacts','coverPath','avatarPath','destinations'].includes(key)))
    throw Error('TAG_PRESENTATION_INVALID');
   const mediaField=(slot:'cover'|'avatar')=>{
    const key=slot==='cover'?'coverPath':'avatarPath',value=entry[key];
@@ -119,7 +122,11 @@ export function normalizePromotionalPresentation(input:unknown):PromotionalTagPr
    if(mediaPathRegex.exec(value)?.[2]!==slot)throw Error('TAG_PRESENTATION_INVALID');
    return value;
   };
+  const destinations=entry.destinations;
+  if(destinations!==undefined&&(!Array.isArray(destinations)||destinations.length>3||new Set(destinations).size!==destinations.length||destinations.some(url=>{const target=typeof url==='string'&&url.length<=180?parsePublicDestinationUrl(url):null;return !target||target.kind==='card';})))throw Error('TAG_PRESENTATION_INVALID');
+  if(Array.isArray(destinations)&&new Set(destinations.map(url=>parsePublicDestinationUrl(url)!.kind)).size!==destinations.length)throw Error('TAG_PRESENTATION_INVALID');
   return {name:clean(entry.name,80),occupation:clean(entry.occupation,90),about:clean(entry.about,320),
+   ...(Array.isArray(destinations)?{destinations:destinations as string[]}:{}),
    ...(entry.emergencyContacts!==undefined?{emergencyContacts:normalizePromotionalSosContacts(entry.emergencyContacts)}:{}),
    ...(entry.coverPath!==undefined?{coverPath:mediaField('cover')}:{}),
    ...(entry.avatarPath!==undefined?{avatarPath:mediaField('avatar')}:{})};
