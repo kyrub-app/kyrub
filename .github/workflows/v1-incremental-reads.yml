@@ -1,0 +1,31 @@
+name: Incremental V1 read isolation
+on:
+  push:
+    branches: [release/v1-incremental-reads-02]
+  pull_request:
+    branches: [release/kyrub-tag-permanent-stock]
+    paths:
+      - 'src/utils/publicProducts.ts'
+      - 'src/utils/canonicalPaymentReads.ts'
+      - 'src/utils/customerOrders.ts'
+      - 'tests/canonical-read-cutover.test.ts'
+      - 'tests/customer-orders.test.ts'
+      - '.github/workflows/v1-incremental-reads.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: node --test --import tsx tests/canonical-read-cutover.test.ts tests/customer-orders.test.ts tests/public-visit-card.test.ts tests/public-storefront-hero.test.ts
+      - run: npm run build --ignore-scripts
