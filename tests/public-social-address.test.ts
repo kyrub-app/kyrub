@@ -202,3 +202,17 @@ test('admin directory identity transport is isolated and does not bypass mandato
  assert.match(server,/KYRUB_ADMIN_DIRECTORY_PILOT==='true'&&process.env.NODE_ENV==='test'/);
  assert.match(server,/adminDirectoryRouterPromise\?\?=Promise\.all/);
 });
+
+test('social connection state is session scoped and never copies an ambiguous private address',()=>{
+ const source=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ assert.match(source,/onAuthStateChanged\(auth,setSession\)/);
+ assert.match(source,/state\.session===session\?state\.items:EMPTY_DIRECTORY/);
+ assert.match(source,/useSessionDirectoryState<Friend>\(session\)/);
+ assert.match(source,/useSessionDirectoryState<ConnectionDocument>\(session\)/);
+ assert.match(source,/useSessionDirectoryState<any>\(session\)/);
+ assert.match(source,/if\(!active\|\|auth\.currentUser!==currentUser\)return/);
+ assert.match(source,/item\.senderId===currentUser\.uid\|\|item\.receiverId===currentUser\.uid/);
+ assert.match(source,/senderBio: '',/);
+ assert.doesNotMatch(source,/senderBio:\s*profileAddress/);
+ assert.match(source,/!targetUser \|\| targetUser\.isProfileVisible!==true/);
+});
