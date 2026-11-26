@@ -2,6 +2,7 @@ import express from 'express';
 import type {Auth} from 'firebase-admin/auth';
 import type {Firestore} from 'firebase-admin/firestore';
 import {isDocumentId} from './publicSocialAddressPolicy.js';
+import {consumeDirectoryQuota} from './directoryQuotaService.js';
 import {readVisibleSocialDirectoryPage,readVisibleAuthorIdentities,searchVisibleNoteCollaborators} from './socialDiscoveryDirectoryService.js';
 
 const PROJECT='demo-kyrub-welcome';
@@ -13,10 +14,9 @@ export function socialDirectoryPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv=p
  !env.VERCEL&&!env.FIREBASE_SERVICE_ACCOUNT_JSON&&!env.GOOGLE_APPLICATION_CREDENTIALS;
 }
 
-/** Local-only pilot. One instance per listener; quota is not distributed. */
+/** Local-only pilot. Shared transactional quota, no production route. */
 export function createSocialDirectoryEmulatorRouter(db:Firestore,auth:Auth){
  const router=express.Router();
- const usage=new Map<string,{expires:number;count:number}>();
  router.all('/social-directory-pilot/:operation',async(req,res)=>{
   res.set('Cache-Control','private, no-store');
   if(!socialDirectoryPilotEnabled(db)||auth.app.options.projectId!==PROJECT||
@@ -35,13 +35,10 @@ export function createSocialDirectoryEmulatorRouter(db:Firestore,auth:Auth){
    if(actor.disabled||!actor.emailVerified)throw Error('AUTH_INVALID');
    uid=identity.uid;
   }catch{res.sendStatus(401);return;}
-  const now=Date.now();
-  for(const [key,item] of usage)if(item.expires<=now)usage.delete(key);
-  const item=usage.get(uid);
-  if((item&&item.count>=12)||(!item&&usage.size>=5000)){
-   res.set('Retry-After',String(item?Math.max(1,Math.ceil((item.expires-now)/1000)):60)).sendStatus(429);return;
-  }
-  usage.set(uid,{expires:item?.expires??now+60000,count:(item?.count??0)+1});
+  try{
+   const quota=await consumeDirectoryQuota(db,uid,'social');
+   if(!quota.allowed){res.set('Retry-After',String(quota.retryAfterSeconds)).sendStatus(429);return;}
+  }catch{res.status(503).json({error:'DIRECTORY_UNAVAILABLE'});return;}
   const body=req.body;
   if(Object.keys(req.query).length||!body||typeof body!=='object'||Array.isArray(body)||
    (op==='page'?(Object.keys(body).some(k=>k!=='after')||('after' in body&&!isDocumentId(body.after))):
