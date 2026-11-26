@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { canReserveSocialAddress, isSocialAddress, matchesSocialAddressRecord, projectSocialAddress } from '../server/identity/publicSocialAddressPolicy';
@@ -41,4 +42,20 @@ test('address ownership proof rejects mismatched namespace, identifier and targe
  assert.equal(matchesSocialAddressRecord(profile,'profile','maufco','uid-1'),true);
  for(const record of [undefined,{...profile,kind:'community'},{...profile,identifier:'other'},{...profile,targetId:'uid-2'}])
   assert.equal(matchesSocialAddressRecord(record,'profile','maufco','uid-1'),false);
+});
+
+
+test('unified editor reserves a personal identifier without publishing it or deriving it from email',()=>{
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const address=readFileSync('src/components/PublicSocialAddressEditor.tsx','utf8');
+ const center=readFileSync('src/components/modals/UserProfileModal.tsx','utf8');
+ const service=readFileSync('server/identity/publicSocialAddressService.ts','utf8');
+ assert.match(editor,/<PublicSocialAddressEditor key=\{user.uid\} kind="profile" ownerId=\{user.uid\}/);
+ assert.match(service,/publiclyVisible: kind === 'profile' \? source.isProfileVisible === true/);
+ assert.match(address,/Reservar não torna seu perfil público/);
+ assert.match(address,/disabled=\{!status\?\.publiclyVisible\}/);
+ assert.match(center,/transport=manage-public-social-address&kind=profile/);
+ assert.match(center,/auth\.currentUser===user/);
+ assert.match(center,/Identificador ainda não definido/);
+ assert.doesNotMatch(center,/getProfileHandle|@\{profileHandle\}/);
 });
