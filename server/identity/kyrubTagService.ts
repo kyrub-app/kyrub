@@ -1,6 +1,6 @@
 import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {adminDb} from '../firebaseAdmin.js';
-import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,tagPasskeyUnitOrigin} from './kyrubTagPilotIsolation.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION,isOpenPromotionalTag,normalizePromotionalPresentation,publicPromotionalPresentation,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import {validatePromotionalMediaReferences} from './kyrubTagMediaService.js';
 import {isTagId,isTagModel,tagUrl,normalizeTagRecipientEmail,parseTagExternalUrl,type TagExternalLink,type TagDestinationCatalog,type TagDestinationOption,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract.js';
@@ -77,6 +77,7 @@ export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEm
    tx.get(ref),tx.get(adminDb.doc('users/'+actor)),tx.get(identity)
   ]);
   const data=snap.data();
+  if(data?.ownerAuthMode==='passkey')throw Error('TAG_FORBIDDEN');
   if(data?.ownerId===actor&&data.distribution==='promotional')return {tag:owned(id,data),recoveryCode:null};
   if(!isOpenPromotionalTag(data))throw Error('TAG_FORBIDDEN');
   // A verified email identity can own a tag without becoming a Kyrub user.
@@ -112,7 +113,7 @@ export async function recoverPromotionalKyrubTag(actor:string,id:string,verified
   const data=snap.data();
   const oldHash=typeof data?.recoveryHash==='string'?data.recoveryHash:'';
   const requestedHash=promotionalRecoveryHash(id,code);
-  if(data?.distribution!=='promotional'||typeof data.ownerId!=='string'||data.ownerId===actor||
+  if(data?.distribution!=='promotional'||data.ownerAuthMode==='passkey'||typeof data.ownerId!=='string'||data.ownerId===actor||
     !/^[a-f0-9]{64}$/.test(oldHash)||!timingSafeEqual(Buffer.from(oldHash,'hex'),Buffer.from(requestedHash,'hex')))throw Error('TAG_FORBIDDEN');
   const update={ownerId:actor,ownerEmailHash:hashTagRecipient(id,email),recoveryHash:promotionalRecoveryHash(id,nextRecoveryCode),
     recoveryCount:typeof data.recoveryCount==='number'?data.recoveryCount+1:1,lastRecoveredAt:new Date().toISOString(),
@@ -137,7 +138,7 @@ export async function rotatePromotionalRecoveryCode(actor:string,id:string){
  const recoveryCode=randomBytes(24).toString('hex');
  return adminDb.runTransaction(async tx=>{
   const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
-  if(data?.distribution!=='promotional'||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+  if(data?.distribution!=='promotional'||data.ownerAuthMode==='passkey'||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
   tx.update(ref,{recoveryHash:promotionalRecoveryHash(id,recoveryCode),recoveryRotatedAt:new Date().toISOString()});
   return {tag:owned(id,data),recoveryCode};
  });
@@ -148,12 +149,21 @@ export async function configurePromotionalKyrubTag(actor:string,id:string,input:
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  const presentation=normalizePromotionalPresentation(input);
+ const ref=tags().doc(id),initial=await ref.get(),before=initial.data();
+ if(before?.distribution!=='promotional'||before.ownerAuthMode==='passkey'||before.ownerId!==actor||before.blocked===true)throw Error('TAG_FORBIDDEN');
  await validatePromotionalMediaReferences(actor,id,presentation);
+ const existing=Array.isArray(before.targets)?before.targets.filter(isBoundTarget):[];
+ const requested=presentation.destinations;
+ const resolved=requested===undefined?null:await Promise.all((requested.length?parseCardTargets(requested):[]).map(target=>resolveTarget(actor,target,existing.find(t=>t.kind===target.kind&&t.identifier===target.identifier)?.bindingId)));
+ if(resolved?.some(target=>!target))throw Error('CARD_TARGET_UNAVAILABLE');
+ const targets=resolved===null?existing:resolved.flatMap(target=>target?[target.binding]:[]);
+ // Destination bindings are authoritative, not arbitrary URLs in public presentation.
  return adminDb.runTransaction(async tx=>{
-  const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
-  if(data?.distribution!=='promotional'||data.ownerId!==actor||data.blocked===true)throw Error('TAG_FORBIDDEN');
-  tx.update(ref,{presentation,enabled:true,updatedAt:new Date().toISOString()});
-  return owned(id,{...data,presentation,enabled:true});
+  const snap=await tx.get(ref),data=snap.data();
+  if(data?.distribution!=='promotional'||data.ownerAuthMode==='passkey'||data.ownerId!==actor||data.blocked===true)throw Error('TAG_FORBIDDEN');
+  if(!initial.updateTime||!snap.updateTime?.isEqual(initial.updateTime))throw Error('TAG_CHANGED');
+  tx.update(ref,{presentation,targets,enabled:true,updatedAt:new Date().toISOString()});
+  return owned(id,{...data,presentation,targets,enabled:true});
  });
 }
 
@@ -163,7 +173,7 @@ export async function setPromotionalBlock(actor:string,id:string,blocked:boolean
  if(!isTagId(id))throw Error('TAG_INVALID');
  return adminDb.runTransaction(async tx=>{
   const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
-  if(data?.distribution!=='promotional'||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+  if(data?.distribution!=='promotional'||data.ownerAuthMode==='passkey'||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
   tx.update(ref,{blocked,enabled:false,blockedAt:blocked?new Date().toISOString():null});
   return owned(id,{...data,blocked,enabled:false});
  });
@@ -277,24 +287,26 @@ export async function disableKyrubTag(actor:string,id:string){
  return adminDb.runTransaction(async tx=>{
   const ref=tags().doc(id);
   const data=(await tx.get(ref)).data();
-  if(!data||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+  if(!data||data.ownerId!==actor||data.ownerAuthMode==='passkey')throw Error('TAG_FORBIDDEN');
   tx.update(ref,{enabled:false});
   return owned(id,{...data,enabled:false});
  });
 }
-export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubTagModel;status:'unclaimed'|'active';activation?:'account'|'code'|'email'|'setup';links:(CardLink|TagExternalLink)[];presentation?:PublicPromotionalTagPresentation}|null>{
+export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubTagModel;status:'unclaimed'|'active'|'blocked';activation?:'account'|'code'|'email'|'setup';passkeyManaged?:boolean;passkeyOrigin?:string;links:(CardLink|TagExternalLink)[];presentation?:PublicPromotionalTagPresentation}|null>{
  if(!isTagId(id))return null;
  const ref=tags().doc(id),snapshot=await ref.get(),data=snapshot.data();
  if(!data||!isTagModel(data.model))return null;
  if(data.manufacturingState!==undefined&&data.manufacturingState!=='released')return {id,model:data.model,status:'unclaimed',activation:'setup',links:[]};
  if(data.ownerId===null){
-  if(isOpenPromotionalTag(data))return {id,model:data.model,status:'unclaimed',activation:promotionalEnabled()?'email':'setup',links:[]};
+  if(isOpenPromotionalTag(data)){const origin=tagPasskeyUnitOrigin(id,data);return {id,model:data.model,status:'unclaimed',activation:promotionalEnabled()?'email':'setup',links:[],...(origin?{passkeyOrigin:origin}:{})};}
   return {id,model:data.model,status:'unclaimed',activation:typeof data.reservedEmailHash==='string'?'account':'code',links:[]};
  }
+ if(data.ownerAuthMode==='passkey'&&data.distribution==='promotional'&&data.blocked===true){const origin=tagPasskeyUnitOrigin(id,data);return {id,model:data.model,status:'blocked',links:[],passkeyManaged:true,...(origin?{passkeyOrigin:origin}:{})};}
  if(data.enabled!==true||data.blocked===true||typeof data.ownerId!=='string'||!Array.isArray(data.targets)||data.targets.length+externalLinks(data.externalUrls).length>CARD_LIMIT)return null;
  const targets=data.targets.filter(isBoundTarget);
- const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);
+ const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerAuthMode==='passkey'&&typeof data.linkedAccountId==='string'?data.linkedAccountId:data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);
  const current=await ref.get();
  if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
- return {id,model:data.model,status:'active',links:[...links,...externalLinks(data.externalUrls)],...(data.distribution==='promotional'?{presentation:publicPromotionalPresentation(normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION))}:{})};
+ const origin=data.ownerAuthMode==='passkey'?tagPasskeyUnitOrigin(id,data):null;
+ return {id,model:data.model,status:'active',links:[...links,...externalLinks(data.externalUrls)],...(data.ownerAuthMode==='passkey'?{passkeyManaged:true,...(origin?{passkeyOrigin:origin}:{})}:{}),...(data.distribution==='promotional'?{presentation:publicPromotionalPresentation(normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION))}:{})};
 }

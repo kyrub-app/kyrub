@@ -4,13 +4,17 @@ import {auth} from '../utils/firebase';
 import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
+import {KyrubCardDemonstration} from './KyrubCardDemonstration';
+import {KyrubTagPasskeyActions} from './KyrubTagPasskeyActions';
+import {clearCardDraft,loadCardDraft,cardDraftUrls,type CardDraft} from '../utils/cardDemonstrationDraft';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
 import {KYRUB_TAG_MODEL_LABELS,isTagModel,parseTagExternalUrl,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import {parsePublicDestinationUrl,buildPublicDestinationPath} from '../../shared/publicDestinationRoutes';
 
 type Payload={
- id:string;model:KyrubTagModel;status:'unclaimed'|'active';
+ id:string;model:KyrubTagModel;status:'unclaimed'|'active'|'blocked';
+ passkeyManaged?:boolean;passkeyOrigin?:string;
  activation?:'account'|'code'|'email'|'setup';
  links:{name:string;url:string}[];
  presentation?:PublicPromotionalTagPresentation;
@@ -71,18 +75,20 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   }).then(async res=>{
    if(!res.ok)throw Error(res.status===404?'Dispositivo indisponível.':'Não foi possível consultar o dispositivo.');
    const value=await res.json() as Payload;
-   if(value.id!==identifier||!isTagModel(value.model)||!Array.isArray(value.links)||!['unclaimed','active'].includes(value.status))
+   if(value.id!==identifier||!isTagModel(value.model)||!Array.isArray(value.links)||!['unclaimed','active','blocked'].includes(value.status))
     throw Error('Dispositivo indisponível.');
    if(!ctrl.signal.aborted)setData(value);
   }).catch(e=>{if(!ctrl.signal.aborted)setError(e instanceof Error?e.message:'Dispositivo indisponível.');});
   return()=>ctrl.abort();
  },[identifier]);
- function setPresentation(key:keyof PromotionalTagPresentation,value:string){
-  setDraft(current=>{
-   const next={...current,[key]:value};
-   try{sessionStorage.setItem('kyrub.tag.draft.'+identifier,JSON.stringify(next));}catch{}
-   return next;
-  });
+ function savePresentation(value:CardDraft){
+  const next={name:value.name,occupation:value.occupation,about:value.about,destinations:cardDraftUrls(value)};
+  setDraft(next);
+  try{sessionStorage.setItem('kyrub.tag.draft.'+identifier,JSON.stringify(next));}catch{}
+ }
+ function currentPresentation():PromotionalTagPresentation{
+  try{const saved=loadCardDraft(sessionStorage,'kyrub.card.demo.tag.'+identifier);if(saved)return {name:saved.name,occupation:saved.occupation,about:saved.about,destinations:cardDraftUrls(saved)};}catch{}
+  return draft;
  }
  async function request(action:string,extra:Record<string,unknown>={}):Promise<unknown>{
   const active=auth.currentUser;
@@ -112,9 +118,11 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
    setRecoveryCode(result.recoveryCode??'');
    let record=result.tag;
    try{
-    const configured=await request('configure-promotional',{presentation:draft}) as OwnedKyrubTag;
-    if(configured.id===identifier&&configured.distribution==='promotional')record=configured;
+    const configured=await request('configure-promotional',{presentation:currentPresentation()}) as OwnedKyrubTag;
+    if(configured.id!==identifier||configured.distribution!=='promotional'||!configured.enabled)throw Error('TAG_INVALID');
+    record=configured;
     sessionStorage.removeItem('kyrub.tag.draft.'+identifier);
+    clearCardDraft(sessionStorage,'kyrub.card.demo.tag.'+identifier);
    }catch{setNotice('A unidade já pertence a você. Confira sua apresentação e toque em Salvar para publicá-la.');}
    setOwnerRecord(record);setOwner(true);
   }catch{setNotice('Não foi possível ativar. Esta unidade pode ter sido ativada por outra pessoa ou a campanha ainda não foi liberada.');}
@@ -133,30 +141,27 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
 
  if(authReady&&owner&&user)return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-3 py-5">
   {ownerRecord?.distribution==='promotional'?
-   <PromotionalKyrubTagEditor initial={ownerRecord} oneTimeRecoveryCode={recoveryCode}/>:
+   <PromotionalKyrubTagEditor initial={ownerRecord} oneTimeRecoveryCode={recoveryCode} initialDraft={!ownerRecord.enabled?currentPresentation():undefined}/>:
    <OfficialKyrubTagPanel key={user.uid+identifier} userId={user.uid} initialTagId={identifier}/>}
-  <a href={ownerRecord?.distribution==='promotional'?'/?entry=welcome':'/'} className="block p-3 text-center text-sm text-slate-300 underline">Conhecer o Kyrub</a>
+  <a href="/" className="block p-3 text-center text-sm text-slate-300 underline">Kairub-se!</a>
  </div></main>;
 
  const promotional=data?.status==='unclaimed'&&(data.activation==='email'||data.activation==='setup');
  return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-4 py-6">
   <header className="flex items-center justify-between gap-2">
    <a href="/" className="font-black text-[#F47825]">KYRUB TAG</a>
-   <a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>
+   <a href="/" className="text-sm text-slate-300 underline">Kairub-se!</a>
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
-    <div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C] text-sm text-slate-300">
-     {data.presentation.hasCover?<img className="h-full w-full object-cover" alt="Foto de capa do cartão digital"
-       src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/>:'Apresentação digital · Capa opcional'}
-    </div>
+    {data.presentation.hasCover&&<div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C]"><img className="h-full w-full object-cover" alt="Foto de capa do cartão digital" src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/></div>}
     <div className="flex items-center gap-3">
-     {data.presentation.hasAvatar&&<img className="h-16 w-16 shrink-0 rounded-full object-cover" alt="Foto de perfil do titular"
-       src={publicPromotionalTagImageUrl(identifier,'avatar')} referrerPolicy="no-referrer"/>}
+     {data.presentation.hasAvatar?<img className="h-16 w-16 shrink-0 rounded-full object-cover" alt="Foto de perfil do titular" src={publicPromotionalTagImageUrl(identifier,'avatar')} referrerPolicy="no-referrer"/>:<img src="/kyrub-logo.svg" alt="" className="h-16 w-16 shrink-0 object-contain"/>}
      <h1 className="text-2xl font-bold">{data.presentation.name||'Minha Kyrub Tag'}</h1>
     </div>
     {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
-    {data.presentation.about&&<p className="whitespace-pre-wrap text-slate-200">{data.presentation.about}</p>}
+    {data.presentation.about&&<p className="whitespace-pre-wrap break-words text-slate-200">{data.presentation.about}</p>}
+    {data.links.map(link=>{const dest=parsePublicDestinationUrl(link.url);if(!dest||dest.kind==='card')return null;return <a key={link.url} href={buildPublicDestinationPath(dest.kind,dest.identifier)??'/'} className="block rounded-xl border border-[#34443B] p-3 text-sm"><span className="block text-xs text-[#F47825]">{dest.kind==='profile'?'Perfil':dest.kind==='store'?'Loja':'Comunidade'}</span>{link.name}</a>;})}
     <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     {showSos&&<div className="space-y-2 rounded-xl border border-rose-600/50 p-3">
      <h2 className="font-semibold">Emergência no Brasil</h2>
@@ -173,27 +178,24 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
       </div>)}
      </div>}
     </div>}
-    <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
+    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
    </section>:
+   data?.status==='blocked'&&data.passkeyManaged?<section className="space-y-3"><p role="status">Este cartão está bloqueado. As informações do titular não estão públicas.</p><KyrubTagPasskeyActions tagId={identifier} mode="blocked" origin={data.passkeyOrigin}/></section>:
    promotional?
-   <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
-    <h1 className="text-2xl font-bold">Sua apresentação, do seu jeito.</h1>
-    <p className="text-sm text-slate-300">Este adesivo pode ser ativado por quem concluir primeiro a confirmação do e-mail. Você não precisa de uma conta Kyrub completa.</p>
-    <label className="block text-sm">Nome de apresentação (opcional)
-     <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.name} maxLength={80} placeholder="Como deseja ser chamado?" onChange={e=>setPresentation('name',e.target.value)}/>
-    </label>
-    <label className="block text-sm">O que você faz? (opcional)
-     <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.occupation} maxLength={90} placeholder="Entregador, autônomo, comerciante" onChange={e=>setPresentation('occupation',e.target.value)}/>
-    </label>
-    <label className="block text-sm">Sobre você (opcional)
-     <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.about} rows={3} maxLength={320} placeholder="Sua breve apresentação" onChange={e=>setPresentation('about',e.target.value)}/>
-    </label>
-    <p className="text-sm text-slate-300">A apresentação pública incluirá um botão SOS com números oficiais. Não são publicados e-mail ou dados médicos.</p>
-    {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
+   <KyrubCardDemonstration key={identifier} draftKey={'kyrub.card.demo.tag.'+identifier}
+    onSave={savePresentation}
+    onClear={()=>{setDraft({...EMPTY_PROMOTIONAL_PRESENTATION});try{sessionStorage.removeItem('kyrub.tag.draft.'+identifier);}catch{}}}>
+    <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+     <h2 className="text-base font-bold">Cadastrar meu cartão</h2>
+     <p className="text-sm text-slate-300">Publique seu cartão nesta unidade, sem criar um perfil completo no Kyrub. A primeira pessoa que confirmar a titularidade poderá gerenciá-la. Os dados preenchidos ficarão públicos neste endereço; links serão verificados pelo Kyrub.</p>
+     {data.passkeyOrigin&&<KyrubTagPasskeyActions tagId={identifier} mode="register" origin={data.passkeyOrigin} getDraft={currentPresentation}/>}
+     {data.passkeyOrigin&&data.activation==='email'&&<p className="text-xs text-slate-300">Alternativa: confirmar por e-mail.</p>}
+     {data.activation==='setup'&&data.passkeyOrigin?null:data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
       <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>
-       <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar e salvar minha Kyrub Tag'}</button></div>:
+       <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar vínculo e publicar apresentação da tag'}</button></div>:
       <TagEmailLinkIdentity tagId={identifier}/>}
-   </section>:
+    </section>
+   </KyrubCardDemonstration>:
    data?.status==='unclaimed'&&data.activation==='account'?
    <section className="space-y-3 rounded-xl border border-[#34443B] p-4"><h1 className="text-xl font-bold">Vincule sua Kyrub Tag</h1>
     <p>Esta unidade experimental foi reservada para uma conta específica. Não é necessário informar códigos.</p>
@@ -213,13 +215,13 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
      return <a key={l.url} className="block rounded-xl border border-[#34443B] p-4" href={buildPublicDestinationPath(p.kind,p.identifier)??'/'}>{l.name}</a>;
     })}
    </section>}
-  {(showEdit||showRecovery)&&!owner&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+  {!data?.passkeyManaged&&(showEdit||showRecovery)&&!owner&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <h2 className="font-semibold">Acesso protegido do titular</h2>
    <p className="text-sm text-slate-300">Saber o endereço NFC não autoriza editar. Confirme sua identidade pelo e-mail usado na ativação.</p>
    {!user?.emailVerified?<TagEmailLinkIdentity tagId={identifier}/>:<p className="text-sm text-slate-300">Autenticado como {user.email}. Se esta é sua unidade, o painel de edição será aberto.</p>}
   </section>}
-  <button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>
-  {showRecovery&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+  {!data?.passkeyManaged&&<button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>}
+  {!data?.passkeyManaged&&showRecovery&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <p className="text-sm text-slate-300">Use o código secreto de recuperação entregue na primeira ativação. Será necessário verificar o novo e-mail; a tag ficará bloqueada até você revisá-la.</p>
    {user?.emailVerified?<><p className="text-sm text-slate-300">Novo e-mail verificado: {user.email}</p>
     <input type="password" autoComplete="off" spellCheck={false} className="min-h-11 w-full rounded-lg border border-[#34443B] bg-[#1D2924] p-3 font-mono" value={recoveryInput} onChange={e=>setRecoveryInput(e.target.value.trim().toLowerCase())} placeholder="Código de recuperação (48 caracteres)" maxLength={48}/>
@@ -227,6 +229,6 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <button type="button" className="block text-sm underline text-slate-300" disabled={busy} onClick={()=>void signOut(auth)}>Verificar outro e-mail</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
   </section>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
-  <a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>
+  <a href="/" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>
  </div></main>;
 }

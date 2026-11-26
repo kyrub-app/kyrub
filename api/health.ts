@@ -131,6 +131,54 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'kyrub-tag-passkey') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    response.setHeader('X-Content-Type-Options','nosniff');
+    if(process.env.VERCEL_ENV==='production'?process.env.KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED!=='true':(process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')){
+      response.status(404).json({error:'TAG_PASSKEY_DISABLED'});return;
+    }
+    if((request.method??'GET').toUpperCase()!=='POST'){response.setHeader('Allow','POST');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const origin=headerValue(request.headers.origin??request.headers.Origin)??'';
+    const contentType=headerValue(request.headers['content-type']??request.headers['Content-Type'])??'';
+    if(!/^application\/json(?:\s*;.*)?$/i.test(contentType)){response.status(415).json({error:'TAG_INVALID'});return;}
+    const id=queryValue(request.query?.id);
+    try{
+      const {tagPasskeyRuntimeOrigin}=await import('../server/identity/kyrubTagPilotIsolation.js');
+      const allowed=tagPasskeyRuntimeOrigin();
+      if(!allowed||origin!==allowed){response.status(403).json({error:'TAG_PASSKEY_ORIGIN'});return;}
+      const body=request.body;
+      if(!body||typeof body!=='object'||Array.isArray(body)||JSON.stringify(body).length>24000){response.status(400).json({error:'TAG_INVALID'});return;}
+      const input=body as Record<string,unknown>;
+      const {isPasskeyMutation}=await import('../server/identity/kyrubTagPasskeyState.js');
+      const service=await import('../server/identity/kyrubTagPasskeyLifecycle.js');
+      let accountActor:string|undefined;
+      const authHeader=headerValue(request.headers.authorization??request.headers.Authorization);
+      if(authHeader){
+        const bearer=/^Bearer ([^\s]+)$/i.exec(authHeader)?.[1];
+        if(!bearer||bearer.length>8192)throw Error('TAG_FORBIDDEN');
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const decoded=await adminAuth.verifyIdToken(bearer,true),identity=await adminAuth.getUser(decoded.uid);
+        if(decoded.email_verified!==true||identity.disabled||!identity.emailVerified||!identity.email)throw Error('TAG_FORBIDDEN');
+        accountActor=decoded.uid;
+      }
+      if(input.action==='begin'&&isPasskeyMutation(input.purpose)&&Object.keys(input).every(k=>['action','purpose','presentation','recoveryCode'].includes(k))){
+        response.status(200).json(await service.beginTagPasskeyMutation(origin,id,input.purpose,input.presentation,input.recoveryCode,accountActor));return;
+      }
+      if(input.action==='finish'&&typeof input.challengeId==='string'&&input.response&&typeof input.response==='object'&&!Array.isArray(input.response)&&Object.keys(input).every(k=>['action','challengeId','response','recoveryCode'].includes(k))){
+        response.status(200).json(await service.finishTagPasskeyMutation(origin,id,input.challengeId,input.response as Parameters<typeof service.finishTagPasskeyMutation>[3],input.recoveryCode,accountActor));return;
+      }
+      response.status(400).json({error:'TAG_INVALID'});
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      // Never expose library errors, key material, request contents or owner IDs.
+      if(code==='TAG_PASSKEY_RATE_LIMIT'){response.setHeader('Retry-After','60');response.status(429).json({error:code});}
+      else if(['TAG_INVALID','TAG_PRESENTATION_INVALID'].includes(code))response.status(400).json({error:'TAG_INVALID'});
+      else if(['TAG_CHANGED','CARD_TARGET_UNAVAILABLE','TAG_ACCOUNT_REQUIRED'].includes(code))response.status(409).json({error:code});
+      else response.status(403).json({error:'TAG_PASSKEY_FORBIDDEN'});
+    }
+    return;
+  }
+
   if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';
@@ -153,6 +201,14 @@ export default async function handler(
       if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
       if(method==='GET'){
         const view=queryValue(request.query?.view);
+        if(view==='linked-passkeys'){
+          if(id||(process.env.VERCEL_ENV==='production'?process.env.KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED!=='true':(process.env.VERCEL_ENV!=='preview'||process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true'))){response.status(404).json({error:'TAG_PASSKEY_DISABLED'});return;}
+          const {adminAuth}=await import('../server/firebaseAdmin.js');
+          const identity=await adminAuth.getUser(actor);
+          if(identity.disabled||!identity.emailVerified||!identity.email)throw Error('TAG_FORBIDDEN');
+          const linked=await import('../server/identity/kyrubTagPasskeyAccountLinks.js');
+          response.status(200).json(await linked.listLinkedPasskeyTags(actor));return;
+        }
         if(view==='identity'){
           const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
           response.status(200).json(await identity.getTagIdentityMode(actor));return;

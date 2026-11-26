@@ -1,0 +1,63 @@
+name: Kyrub Tag Passkey isolated Chromium
+on:
+  pull_request:
+    paths:
+      - 'src/components/*KyrubTag*.tsx'
+      - 'src/components/KyrubCardDemonstration.tsx'
+      - 'src/utils/kyrubTagPasskeyClient.ts'
+      - 'server/identity/kyrubTagPasskey*.ts'
+      - 'server/identity/kyrubTagService.ts'
+      - 'api/health.ts'
+      - 'tests/kyrub-tag-passkey-browser.test.mjs'
+      - 'tests/fixtures/kyrub-tag-passkey-browser.tsx'
+      - 'tests/fixtures/kyrub-tag-passkey-firebase.ts'
+      - '.github/workflows/kyrub-tag-passkey-browser.yml'
+permissions:
+  contents: read
+jobs:
+  browser-journey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      GCLOUD_PROJECT: demo-kyrub-welcome
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-welcome
+      FIREBASE_PROJECT_ID: demo-kyrub-welcome
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      VITE_KYRUB_DIRECTORY_BROWSER_EMULATOR: 'true'
+      KYRUB_TAG_PASSKEY_PILOT_ENABLED: 'true'
+      KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED: 'true'
+      VERCEL_ENV: preview
+      VERCEL_BRANCH_URL: kyrub-tag-browser.vercel.app
+      VERCEL_URL: kyrub-tag-browser-immutable.vercel.app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - name: Real card and browser authenticator against local Firebase
+        shell: bash
+        run: |
+          set -o pipefail
+          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-welcome --only firestore,auth "node --test --import tsx tests/kyrub-tag-passkey-browser.test.mjs" 2>&1 | tee passkey-browser.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kyrub-tag-browser-evidence
+          path: |
+            passkey-browser.log
+            passkey-browser-public-card.png
+          if-no-files-found: ignore
+          retention-days: 7

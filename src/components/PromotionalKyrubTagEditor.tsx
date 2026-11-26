@@ -3,10 +3,12 @@ import {auth} from '../utils/firebase';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PromotionalSosContact} from '../../shared/kyrubTagPromotional';
 import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
 import type {OwnedKyrubTag} from '../../shared/kyrubTagContract';
+import {buildPublicDestinationUrl,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
 
-export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null}){
+export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode,initialDraft}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null;initialDraft?:PromotionalTagPresentation}){
  const [tag,setTag]=useState(initial);
- const [presentation,setPresentation]=useState<PromotionalTagPresentation>(initial.presentation??EMPTY_PROMOTIONAL_PRESENTATION);
+ const [presentation,setPresentation]=useState<PromotionalTagPresentation>(initialDraft??initial.presentation??EMPTY_PROMOTIONAL_PRESENTATION);
+ const [destinations,setDestinations]=useState(()=>Object.fromEntries((initialDraft?.destinations??initial.presentation?.destinations??[]).flatMap(url=>{const p=parsePublicDestinationUrl(url);return p&&p.kind!=='card'?[[p.kind,p.identifier]]:[];})) as Partial<Record<'profile'|'store'|'community',string>>);
  const [recoveryCode,setRecoveryCode]=useState(oneTimeRecoveryCode??'');
  const [busy,setBusy]=useState(false);
  const [notice,setNotice]=useState('');
@@ -130,6 +132,11 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" rows={3} value={presentation.about} maxLength={320} disabled={busy} placeholder="Uma breve apresentação" onChange={e=>set('about',e.target.value)}/>
   </label>
   <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+   <strong>Destinos no Kyrub (opcionais)</strong>
+   <p className="text-sm text-slate-300">Adicione somente destinos públicos. Um perfil pessoal deve pertencer à sua própria conta; lojas e comunidades são indicações públicas.</p>
+   {(['profile','store','community'] as const).map(kind=><label key={kind} className="block text-sm">{kind==='profile'?'Meu perfil':kind==='store'?'Loja':'Comunidade'}<input className="mt-1 min-h-11 w-full rounded-lg bg-[#1D2924] p-3" value={destinations[kind]??''} maxLength={120} disabled={busy||uploading||tag.blocked} onChange={e=>setDestinations(prev=>({...prev,[kind]:e.target.value}))}/></label>)}
+  </section>
+  <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <strong>Contatos de emergência (opcionais)</strong>
    <p className="text-sm text-slate-300">O botão SOS sempre oferece 190, 192 e 193 no Brasil. Você pode cadastrar até dois contatos particulares, inclusive com opção de WhatsApp. Eles ficam ocultos até você autorizar a divulgação e declarar que a pessoa concordou.</p>
    {contacts.map((contact,i)=><div key={i} className="space-y-2 rounded-lg bg-[#1D2924] p-3">
@@ -157,7 +164,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    {contacts.length<2&&<button type="button" disabled={busy||uploading} className="min-h-11 rounded-xl border border-[#34443B] px-3"
     onClick={()=>setPresentation(current=>({...current,emergencyContacts:[...(current.emergencyContacts??[]),emptyContact()]}))}>+ Adicionar contato de emergência</button>}
   </section>
-  <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-3 font-bold text-[#121A17] disabled:opacity-50" disabled={busy||uploading||tag.blocked} onClick={()=>void execute('configure-promotional',{presentation})}>Salvar e publicar minha apresentação</button>
+  <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-3 font-bold text-[#121A17] disabled:opacity-50" disabled={busy||uploading||tag.blocked} onClick={()=>{const urls:string[]=[];for(const kind of ['profile','store','community'] as const){const value=(destinations[kind]??'').trim().replace(/^@/,'').toLowerCase();if(!value)continue;const url=buildPublicDestinationUrl(kind,value);if(!url){setNotice('Confira os identificadores dos destinos.');return;}urls.push(url);}void execute('configure-promotional',{presentation:{...presentation,destinations:urls}});}}>Salvar e publicar minha apresentação</button>
   <button type="button" className="min-h-11 w-full rounded-xl border border-[#34443B] p-3 text-sm disabled:opacity-50" disabled={busy} onClick={()=>void rotateRecovery()}>Gerar novo código de recuperação</button>
   {tag.blocked?
    <button type="button" className="min-h-11 w-full rounded-xl border border-amber-600/60 p-3 disabled:opacity-50" disabled={busy} onClick={()=>void execute('unblock-promotional')}>Desbloquear minha Tag</button>:

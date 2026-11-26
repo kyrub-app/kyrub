@@ -1,4 +1,5 @@
 import {getFirebaseAdminProjectId} from '../firebaseAdmin.js';
+import {PRODUCTION_TAG_ORIGIN,productionPasskeyPilotId,assertProductionPasskeyUnit} from './kyrubTagPasskeyReleasePolicy.js';
 
 export const KYRUB_PRODUCTION_PROJECT_ID='kyrub-b8d0e';
 
@@ -59,4 +60,27 @@ export function stableTagPilotHost(env:NodeJS.ProcessEnv=process.env):string|nul
  const host=env.VERCEL_BRANCH_URL?.trim();
  if(env.VERCEL_ENV!=='preview'||!host||host===env.VERCEL_URL||!(/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/.test(host)))return null;
  return host;
+}
+
+/** Advertise only the exact fixed preview origin and never a production write capability. */
+export function tagPasskeyPilotOrigin():string|null{
+ if(process.env.KYRUB_TAG_PASSKEY_PILOT_ENABLED!=='true'||process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')return null;
+ try{assertTagPilotWriteIsolated();const host=stableTagPilotHost();return host&&/^[a-z0-9-]+\.vercel\.app$/.test(host)?'https://'+host:null;}catch{return null;}
+}
+
+// Separate release gate: never loosen the legacy isolated-only write guard.
+export function productionTagPasskeyTestId():string|null{
+ if(process.env.VERCEL_ENV!=='production'||process.env.KYRUB_TAG_PASSKEY_PRODUCTION_ENABLED!=='true')return null;
+ return productionPasskeyPilotId(getFirebaseAdminProjectId(),process.env);
+}
+export function tagPasskeyRuntimeOrigin():string|null{
+ try{return process.env.VERCEL_ENV==='production'?(productionTagPasskeyTestId()?PRODUCTION_TAG_ORIGIN:null):tagPasskeyPilotOrigin();}catch{return null;}
+}
+export function tagPasskeyUnitOrigin(id:string,data:Record<string,unknown>|undefined):string|null{
+ const origin=tagPasskeyRuntimeOrigin();
+ if(!origin)return null;
+ if(process.env.VERCEL_ENV==='production'){
+  try{const approved=productionTagPasskeyTestId();if(!approved)return null;assertProductionPasskeyUnit(approved,id,data);}catch{return null;}
+ }
+ return origin;
 }
