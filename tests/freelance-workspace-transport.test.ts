@@ -100,3 +100,20 @@ test('remote attendance needs no location, early start requires authorization an
  assert.equal(result.status,'suspended');assert.equal(result.workMs,45*60000);assert.equal(result.exceedsAgreedTime,true);assert.equal(result.readyForReview,false);
  assert.throws(()=>projectFreelanceAttendance(schedule,[early,start,stop,{...start,id:'new',at:'2026-11-27T12:20:00.000Z'}]),/CONFLICT/);
 });
+
+test('review suspension does not accrue time and requires explicit restart after administrative resumption',async()=>{
+ const {projectFreelanceAttendance}=await import('../shared/freelanceAttendance.js');
+ const schedule={location:'remote' as const,scheduledStartAt:'2026-11-27T12:00:00.000Z',agreedMinutes:180};
+ const events=[
+ {id:'start',kind:'start',actor:'worker',at:'2026-11-27T12:00:00.000Z'},
+ {id:'suspend',kind:'suspend',actor:'system',at:'2026-11-27T12:30:00.000Z'},
+ {id:'resume-review',kind:'resume_review',actor:'system',at:'2026-11-27T13:00:00.000Z'},
+ {id:'resume',kind:'resume',actor:'worker',at:'2026-11-27T13:15:00.000Z'},
+ {id:'checkout',kind:'checkout',actor:'worker',at:'2026-11-27T14:00:00.000Z'},
+ {id:'confirm',kind:'confirm_checkout',actor:'requester',at:'2026-11-27T14:05:00.000Z'},
+ ] as const;
+ assert.equal(projectFreelanceAttendance(schedule,events.slice(0,3)).status,'awaiting_resume');
+ const r=projectFreelanceAttendance(schedule,events);
+ assert.equal(r.workMs,75*60000);assert.equal(r.breakMs,0);assert.equal(r.status,'confirmed');
+ assert.throws(()=>projectFreelanceAttendance(schedule,[events[0],events[1],{...events[2],actor:'requester'}]),/CONFLICT/);
+});
