@@ -51,6 +51,7 @@ async function session(actor,width){
  assert.deepEqual(identity,{uid:actor.uid,auth:project,db:project,storage:project});
  await page.reload({waitUntil:'domcontentloaded'});
  await page.locator('#btn-solicitar-freela').waitFor({state:'visible',timeout:30000});
+ assert.equal((await page.locator('#btn-fazer-freela').innerText()).trim(),'Fazer freela','Candidate must not show an unverified local vacancy count');
  return page;
 }
 const waitText=(root,text)=>root.getByText(text,{exact:false}).first().waitFor({state:'visible',timeout:20000});
