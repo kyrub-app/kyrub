@@ -18,6 +18,11 @@ test('private intake is idempotent and administrative review cannot execute righ
  await assert.rejects(intake.submit({...credential,secret:random()},requestId,draft,now));
  const results=await Promise.all([intake.submit(credential,requestId,draft,now),intake.submit(credential,requestId,draft,now)]);
  assert.equal(results[0].protocol,results[1].protocol);
+ assert.equal(results[0].trackingCode,results[1].trackingCode);
+ const first=await intake.track(results[0].protocol,results[0].trackingCode,now);
+ assert.equal(first.triageStatus,'pending-review');assert.ok(!JSON.stringify(first).includes(credential.id));
+ await assert.rejects(intake.track(results[0].protocol,random(),now));
+ await assert.rejects(intake.track(results[0].protocol,results[0].trackingCode,results[0].trackingExpiresAt));
  assert.equal((await db.collection('privacy_emulator_requests').get()).size,1);
  assert.ok(!JSON.stringify(results).includes(credential.id));
  await assert.rejects(intake.submit(credential,requestId,{...draft,right:'correction'},now));
@@ -41,6 +46,11 @@ test('private intake is idempotent and administrative review cannot execute righ
  assert.equal(decisions.filter(x=>x.status==='fulfilled').length,1);
  const state=(await db.collection('privacy_emulator_requests').doc(input.protocol).get()).data();
  assert.equal(state?.triageStatus,'verification-required');assert.equal(state?.identityStatus,'pending-verification');assert.equal(state?.actionStatus,'not-executed');
+ const tracked=await intake.track(input.protocol,results[0].trackingCode,clock());
+ assert.equal(tracked.triageStatus,'verification-required');assert.equal(tracked.identityStatus,'pending-verification');assert.equal(tracked.actionStatus,'not-executed');
+ assert.equal((await intake.revokeTracking(input.protocol,results[0].trackingCode,clock())).revoked,true);
+ await assert.rejects(intake.track(input.protocol,results[0].trackingCode,clock()));
+ assert.equal((await db.collection('privacy_emulator_requests').doc(input.protocol).get()).exists,true);
  await profile.update({status:'suspended'});await assert.rejects(admin.list(idToken,clock()));
  assert.equal((await db.collection('privacy_emulator_audit').get()).size,2);
 });
