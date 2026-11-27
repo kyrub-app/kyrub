@@ -1,3 +1,4 @@
+import type {Transaction} from 'firebase-admin/firestore';
 import {createHash} from 'node:crypto';
 import {adminDb} from '../firebaseAdmin.js';
 import {readAttendanceContext} from './freelanceAttendanceScheduleService.js';
@@ -21,8 +22,7 @@ const digest=(value:unknown)=>createHash('sha256').update(canonical(value)).dige
  * No transport action, no Pix disclosure, no bank or ledger mutation.
  * Only a fully persisted completed hourly contract can generate this evidence.
  * Both records are immutable and idempotent, never replace the fixed-price obligation. */
-export async function recordFreelanceVariablePaymentBasis(uid:string,offerId:string){
- return adminDb.runTransaction(async tx=>{
+export async function readVariablePaymentSources(tx:Transaction,uid:string,offerId:string){
   const c=await readAttendanceContext(tx,uid,offerId);
   const commitment=buildFreelanceHourlyCommitment(c.offer,c.application);
   const t=await readAttendanceTimeline(tx,c);
@@ -37,6 +37,11 @@ export async function recordFreelanceVariablePaymentBasis(uid:string,offerId:str
   if(fixedObligation.exists||fixedBasis.exists||statements.exists)return fail();
   if(savedCommitment.exists&&canonical(savedCommitment.data())!==canonical(commitment))return fail();
   if(savedBasis.exists&&(!savedCommitment.exists||canonical(savedBasis.data())!==canonical(record)))return fail();
+  return {c,record,commitment,commitmentRef,basisRef,savedCommitment,savedBasis};
+}
+export async function recordFreelanceVariablePaymentBasis(uid:string,offerId:string){
+ return adminDb.runTransaction(async tx=>{
+  const {record,commitment,commitmentRef,basisRef,savedCommitment,savedBasis}=await readVariablePaymentSources(tx,uid,offerId);
   if(!savedCommitment.exists)tx.create(commitmentRef,commitment);
   if(!savedBasis.exists)tx.create(basisRef,record);
   return {basis:record,replay:savedBasis.exists};
