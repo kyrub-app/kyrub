@@ -509,12 +509,17 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
 
  const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
  await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
+ await call(worker,200,id,'revoke_pix_share',{expectedSequence:2});
+ await call(worker,409,id,'restore_pix_share',{expectedSequence:3});
  await call(payer,409,id,'reveal_pix');
  for(const otherId of ids.slice(1)){await call(worker,200,otherId,'bind_pix');await call(worker,200,otherId,'authorize_pix_share');}
  assert.equal((await call(payer,200,ids[1])).due,false);await call(payer,409,ids[1],'reveal_pix');
  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:'new-'+key}});
  await call(payer,409,ids[2],'reveal_pix');
  await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:2,confirmed:true});
+ await call(worker,200,ids[2],'revoke_pix_share',{expectedSequence:0});
+ await call(worker,200,ids[2],'revoke_pix_share',{expectedSequence:0});
+ assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixSharingControl-1').get()).get('state'),'revoked');
  await call(payer,409,ids[2],'reveal_pix');
  assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).get('destinationRevision'),1);
 });
@@ -1133,6 +1138,15 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await excessFinance(worker,409,'request_review',{},zeroId);
  assert.equal((await zr.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
  assert.equal((await zr.collection('directPayment').doc('hourlyStatements').get()).exists,false);
+ for(const name of ['receivingDestination','pixSharing']){const saved=(await ref.collection('directPayment').doc(name).get()).data()!;await zr.collection('directPayment').doc(name).set({...saved,offerId:zeroId});}
+ const withdrawal=async(actor:Actor,status:number)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=pix_withdrawal&offerId='+zeroId,{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ await withdrawal(owner,403);await withdrawal(other,403);
+ assert.deepEqual(await withdrawal(worker,200),{revision:2,sharingAuthorized:true,sharingRevoked:false,sharingSequence:0});
+ await excessFinance(worker,200,'revoke_pix_share',{expectedRevision:2,expectedSequence:0},zeroId);
+ await excessFinance(worker,200,'revoke_pix_share',{expectedRevision:2,expectedSequence:0},zeroId);
+ assert.deepEqual(await withdrawal(worker,200),{revision:2,sharingAuthorized:false,sharingRevoked:true,sharingSequence:1});
+ await excessFinance(worker,409,'restore_pix_share',{expectedRevision:2,expectedSequence:1},zeroId);
+ assert.equal((await excessFinance(worker,200,undefined,{},zeroId)).financialState,'no_payment_required');
  await zr.collection('directPayment').doc('hourlyFinalObligation').set({fixture:true});
  await excessFinance(owner,409,undefined,{},zeroId);
  await zr.collection('directPayment').doc('hourlyFinalObligation').delete();
@@ -1263,8 +1277,8 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
     const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
     const b=await res.json();assert.equal(res.status,status,JSON.stringify(b));return b;
    };
+   await finance(worker,200,'bind_pix',{expectedRevision:1});await finance(worker,200,'authorize_pix_share',{expectedRevision:1});
    if(started){
-    await finance(worker,200,'bind_pix',{expectedRevision:1});await finance(worker,200,'authorize_pix_share',{expectedRevision:1});
     await act(owner,id,'propose_schedule',200,{proposalId:'schedule',scheduledStartAt:new Date(Date.now()+86400000).toISOString(),confirmed:true});
     await act(worker,id,'accept_schedule',200,{proposalId:'schedule',confirmed:true});
     await act(owner,id,'attendance_event',200,{kind:'authorize_early_start',eventId:'early',expectedSequence:0,confirmed:true});
@@ -1273,6 +1287,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    }
    const occurrenceId='cancel';
    await act(worker,id,'report',200,{kind:'cancellation_requested',occurrenceId,confirmed:true});
+   if(!started){await finance(worker,200,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});await finance(worker,409,'restore_pix_share',{expectedRevision:1,expectedSequence:1});}
    const decision={offerId:id,occurrenceId,outcome:'cancel',reason:'Cancelamento fictício fundamentado',confirmed:true};
    const result=await decideFreelanceReview('Bearer '+admin.token,decision);
    assert.equal(result.replay,false);assert.equal((await decideFreelanceReview('Bearer '+admin.token,decision)).replay,true);
@@ -1285,6 +1300,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).exists,false);
    await finance(other,403);const view=await finance(worker,200);assert.equal(view.finalAmountMinor,null);assert.equal(view.payable,false);
    await finance(owner,409,'reveal_pix',{expectedRevision:1});
+   if(!started){await finance(worker,200,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});assert.equal((await finance(worker,200,undefined,{},'pix_withdrawal')).sharingRevoked,true);}
    const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
    const financeRestrictions=async(a:Actor)=>{const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
    await agreement(other,403);
