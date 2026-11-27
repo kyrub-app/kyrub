@@ -1,3 +1,5 @@
+import {readHourlyReviewNotes} from './freelanceHourlyReviewNotes.js';
+import {digestVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
 import {buildHourlyCancellationResolution,readCancellationResolutionRecords,writeCancellationResolution} from './freelanceHourlyCancellationResolution.js';
 import {prepareCancellationRestriction} from './freelanceEngagementRestrictionService.js';
 import type {Transaction} from 'firebase-admin/firestore';
@@ -30,7 +32,7 @@ export async function readHourlyCancellationAgreementContext(tx:Transaction,uid:
    (proposal.status==='withdrawn'?proposal.decidedBy!==proposal.proposedBy:proposal.decidedBy===proposal.proposedBy))return fail();
  }
  const disputeRef=direct.doc('hourlyCancellationDispute'),rawDispute=(await tx.get(disputeRef)).data();
- const dispute=rawDispute as {schemaVersion:1;sourceDigest:string;openedBy:Role;openedAt:string;status:'open'|'review_requested'|'resolved_voluntarily'|'resolved_administratively';decision?:{actorUid:string;recognizedServiceMinor:number;reason:string;decidedAt:string};requestedBy?:Role;requestedAt?:string;resolvedAt?:string;agreementId?:string}|undefined;
+ const dispute=rawDispute as {schemaVersion:1;sourceDigest:string;openedBy:Role;openedAt:string;status:'open'|'review_requested'|'resolved_voluntarily'|'resolved_administratively';decision?:{actorUid:string;recognizedServiceMinor:number;reason:string;decidedAt:string;proposalDigest:string;evidenceDigest:string};requestedBy?:Role;requestedAt?:string;resolvedAt?:string;agreementId?:string}|undefined;
  if(dispute){
   const requested=dispute.requestedAt!==undefined||dispute.requestedBy!==undefined;
   if(dispute.schemaVersion!==1||dispute.sourceDigest!==record.sourceDigest||!['worker','requester'].includes(dispute.openedBy)||!iso(dispute.openedAt)||Date.parse(dispute.openedAt)<Date.parse(record.cancelledAt)||
@@ -41,7 +43,7 @@ export async function readHourlyCancellationAgreementContext(tx:Transaction,uid:
  }
  if(dispute?.status==='resolved_administratively'){
   const d=dispute.decision;
-  if(!d||Object.keys(d).length!==4||!validFreelanceId(d.actorUid)||[record.commitment.requesterUid,record.commitment.beneficiaryUid].includes(d.actorUid)||!Number.isSafeInteger(d.recognizedServiceMinor)||d.recognizedServiceMinor<0||d.recognizedServiceMinor>capMinor||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||!iso(d.decidedAt)||Date.parse(d.decidedAt)<Date.parse(dispute.requestedAt!))return fail();
+  if(!d||Object.keys(d).length!==6||!validFreelanceId(d.actorUid)||[record.commitment.requesterUid,record.commitment.beneficiaryUid].includes(d.actorUid)||!Number.isSafeInteger(d.recognizedServiceMinor)||d.recognizedServiceMinor<0||d.recognizedServiceMinor>capMinor||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||d.proposalDigest!==digestVariablePaymentSources(proposal)||typeof d.evidenceDigest!=='string'||!/^[a-f0-9]{64}$/.test(d.evidenceDigest)||!iso(d.decidedAt)||Date.parse(d.decidedAt)<Date.parse(dispute.requestedAt!))return fail();
  }
  const restricted=!!dispute&&['open','review_requested'].includes(dispute.status);
  const queueRef=adminDb.doc('freelanceHourlyCancellationReviewsV1/'+id),queue=(await tx.get(queueRef)).data();
@@ -49,9 +51,11 @@ export async function readHourlyCancellationAgreementContext(tx:Transaction,uid:
   if(!queue||Object.keys(queue).length!==6||queue.offerId!==id||queue.requesterUid!==record.commitment.requesterUid||queue.beneficiaryUid!==record.commitment.beneficiaryUid||queue.sourceDigest!==record.sourceDigest||queue.requestedAt!==dispute.requestedAt||queue.status!==(dispute.status==='review_requested'?'pending':dispute.status))return fail();
  }else if(queue)return fail();
  await prepareCancellationRestriction(tx,record.commitment,restricted,restricted);
+ const evidence=await readHourlyReviewNotes(tx,queueRef,record.commitment,record.sourceDigest,dispute?.requestedAt);
+ if(dispute?.decision&&dispute.decision.evidenceDigest!==evidence.digest)return fail();
  const resolved=dispute?.status==='resolved_administratively'?buildHourlyCancellationResolution({sourceDigest:record.sourceDigest,commitment:record.commitment,capMinor,recognizedServiceMinor:dispute.decision!.recognizedServiceMinor,resolvedAt:dispute.decision!.decidedAt,resolution:'administrative',evidence:dispute.decision}):proposal?.status==='accepted'?buildHourlyCancellationResolution({sourceDigest:record.sourceDigest,commitment:record.commitment,capMinor,recognizedServiceMinor:proposal.recognizedServiceMinor,resolvedAt:proposal.decidedAt!,resolution:'bilateral',evidence:proposal}):null;
  const resolutionRecords=await readCancellationResolutionRecords(tx,direct,resolved);
- return {c,record,capMinor,direct,pointer,proposal,dispute,disputeRef,restricted,queueRef,resolved,resolutionRecords};
+ return {c,record,capMinor,direct,pointer,proposal,dispute,disputeRef,restricted,queueRef,resolved,resolutionRecords,evidence};
 }
 export async function readHourlyCancellationAgreement(uid:string,id:string){
  return adminDb.runTransaction(async tx=>{
