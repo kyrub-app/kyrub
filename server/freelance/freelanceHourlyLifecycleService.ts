@@ -1,3 +1,4 @@
+import {readHourlyExcessContext} from './freelanceHourlyExcessReviewService.js';
 import type {Transaction,DocumentReference} from 'firebase-admin/firestore';
 import type {FreelanceSelectionResult} from '../../shared/freelanceLifecycle.js';
 import {buildFreelanceHourlyCommitment,buildFreelanceVariablePaymentBasis} from '../../shared/freelanceVariablePaymentBasis.js';
@@ -34,6 +35,10 @@ export async function prepareHourlyCompletion(tx:Transaction,uid:string,id:strin
  if(!equal(commitment.data(),record.commitment)||fixed.some(d=>d.exists))return fail();
  const expected=record.disposition==='positive_amount_calculated'?buildFinal(record):null;
  if(r.changed){if(saved.exists||final.exists||statements.exists)return fail();}
- else if(!equal(saved.data(),record)||(expected?!equal(final.data(),expected):final.exists||statements.exists))return fail();
+ else{
+  if(!equal(saved.data(),record))return fail();
+  if(record.disposition==='requires_review')await readHourlyExcessContext(tx,uid,id);
+  else if(expected?!equal(final.data(),expected):final.exists||statements.exists)return fail();
+ }
  return ()=>{if(r.changed){tx.create(target,record);if(expected)tx.create(finalRef,expected);}};
 }
