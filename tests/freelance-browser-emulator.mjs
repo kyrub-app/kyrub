@@ -332,6 +332,29 @@ try{
  await payerPage.bringToFront();await button(ps,'Consultar chave Pix integral').click();await button(ps,'Confirmar operação Pix').click();await waitText(ps,sharingKey);
  await button(ps,'Ocultar chave Pix').click();assert.ok(!(await ps.innerText()).includes(sharingKey));assert.ok(!(await ws.innerText()).includes(sharingKey));
  console.log('PASS Pix sharing UI: bind, separate consent, payer-only reveal, manual hide');
+ const replacementKey='replacement-'+suffix+'@example.invalid';
+ await changePersonalPixDestination(fw.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:replacementKey}});
+ await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Substituição ainda não solicitada.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Substituição ainda não solicitada.');
+ assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ assert.equal(await button(ps,'Aceitar substituição da chave Pix').count(),0);
+ await button(ws,'Solicitar substituição da chave Pix').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Substituição solicitada, aguardando aceite.');
+ await button(ps,'Consultar chave vinculada').click();await button(ps,'Aceitar substituição da chave Pix').click();
+ assert.equal(await button(ps,'Confirmar operação Pix').isDisabled(),true);
+ await ps.getByLabel('Declaro que ainda não enviei o pagamento deste contrato.').check();
+ await button(ps,'Confirmar operação Pix').click();await waitText(ps,'Substituição aceita. Aguarde nova autorização de compartilhamento.');
+ await waitText(ps,'Compartilhamento ainda não autorizado');assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Compartilhamento ainda não autorizado');
+ await button(ws,'Autorizar compartilhamento com o contratante').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento autorizado para este contratante.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento autorizado');
+ await payerPage.bringToFront();await button(ps,'Consultar chave Pix integral').click();await button(ps,'Confirmar operação Pix').click();
+ await waitText(ps,replacementKey);await button(ps,'Ocultar chave Pix').click();
+ assert.ok(!(await ps.innerText()).includes(replacementKey));assert.ok(!(await ws.innerText()).includes(replacementKey));
+ assert.equal((await db.doc('freelanceOffersV1/'+directId+'/directPayment/pixRebind-2').get()).get('status'),'accepted');
+ console.log('PASS bilateral replacement via two authenticated browser sessions; new explicit sharing required');
+
  async function financialAction(panel,label){
   await button(panel,label).click();
   const result=panel.page().waitForResponse(r=>r.url().endsWith('/api/freelance/finance')&&r.request().method()==='POST');
@@ -368,6 +391,8 @@ try{
   const panel=page.locator('#canonical-notification-center');
   const inbox=await response;assert.equal(inbox.status(),200,await inbox.text());
   await waitText(panel,'Divergência financeira em Freelas');await waitText(panel,'Regularização financeira em Freelas');
+  await waitText(panel,page===payerPage?'Substituição de chave Pix solicitada':'Substituição de chave Pix aceita');
+  assert.ok(!(await panel.innerText()).includes(replacementKey));assert.ok(!(await panel.innerText()).includes(sharingKey));
   assert.ok(!(await panel.innerText()).includes('Relato fictício do não recebimento.'));
   await page.screenshot({path:'freelance-browser-evidence/financial-notices-'+(page===payerPage?'payer':'worker')+'.png',fullPage:true});
  }
