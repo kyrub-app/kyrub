@@ -2,7 +2,7 @@ import HourlyAttachmentPreview,{validHourlyAttachments,type HourlyAttachment} fr
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
-type Kind='cancellation'|'excess'|'fixed_cancellation';
+type Kind='cancellation'|'excess'|'fixed_cancellation'|'fixed_adjustment';
 type Note={id:string;role:'worker'|'requester';note:string;recordedAt:string};
 type View={offerId:string;kind:Kind;sourceDigest:string;canSubmit:boolean;notes:Note[];attachments:HourlyAttachment[]};
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-teal-300 disabled:opacity-50';
