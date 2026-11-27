@@ -1725,12 +1725,13 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
  }finally{t.mock.restoreAll();if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
 });
 
-test('hourly advance persistence: authenticated contract, private service, bilateral restrictions and replay',async()=>{
+for(const administrative of [false,true])test('hourly advance persistence: '+(administrative?'administrative decision':'voluntary closure'),async t=>{
  const {recordHourlyAdvance,readHourlyAdvances}=await import('../server/freelance/freelanceHourlyAdvanceService.js');
  const {readOwnFreelanceRestrictions,prepareExcessRestriction}=await import('../server/freelance/freelanceEngagementRestrictionService.js');
  const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
- const owner=await account('hourly-advance-owner',['requester']),worker=await account('hourly-advance-worker',['freelancer']),other=await account('hourly-advance-other',[]);
- const id='http-hourly-advance-'+suffix,ref=db.doc('freelanceOffersV1/'+id),gate='KYRUB_FREELANCE_HOURLY_LIFECYCLE_TEST_ONLY',advGate='KYRUB_FREELANCE_HOURLY_ADVANCES_TEST_ONLY';
+ const mode=administrative?'admin':'voluntary';
+ const owner=await account('hourly-advance-owner-'+mode,['requester']),worker=await account('hourly-advance-worker-'+mode,['freelancer']),other=await account('hourly-advance-other-'+mode,[]);
+ const id='http-hourly-advance-'+mode+'-'+suffix,ref=db.doc('freelanceOffersV1/'+id),gate='KYRUB_FREELANCE_HOURLY_LIFECYCLE_TEST_ONLY',advGate='KYRUB_FREELANCE_HOURLY_ADVANCES_TEST_ONLY';
  const prev=process.env[gate],prevAdv=process.env[advGate];
  try{
   process.env[gate]='true';delete process.env[advGate];
@@ -1853,12 +1854,44 @@ test('hourly advance persistence: authenticated contract, private service, bilat
    assert.equal((await addHourlyAdjustmentReviewNote(payer.uid,id,note)).changed,false);
    await assert.rejects(addHourlyAdjustmentReviewNote(recipient.uid,id,note),/CONFLICT/);
    for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:true,openOfferIds:[id]});
+   if(administrative){
+    const {listHourlyAdjustmentReviews,decideHourlyAdjustmentReview}=await import('../server/admin/freelanceHourlyAdjustmentReviewService.js');
+    const admin=await account('hourly-adjust-review-admin',[]),authz='Bearer '+admin.token;
+    await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
+    await assert.rejects(listHourlyAdjustmentReviews(authz));
+    const verify=auth.verifyIdToken.bind(auth);
+    t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+     const d=await verify(token,checkRevoked);return [admin.token,payer.token,other.token].includes(token)?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
+    });
+    await assert.rejects(listHourlyAdjustmentReviews('Bearer '+other.token),/FORBIDDEN/);
+    await db.doc('kyrub_admin/control_plane/admins/'+payer.uid).set({uid:payer.uid,role:'super_admin',status:'active'});
+    assert.ok(!(await listHourlyAdjustmentReviews('Bearer '+payer.token)).items.some(e=>e.offerId===id));
+    const item=(await listHourlyAdjustmentReviews(authz)).items.find(e=>e.offerId===id);assert.ok(item);
+    const decision={offerId:id,confirmed:true,sourceDigest:item.sourceDigest,expectedRequestedAt:item.requestedAt,statementDigest:item.statementDigest,evidenceDigest:item.evidenceDigest,outcome:'inconclusive',reason:'Análise fictícia sem confirmação bancária.'};
+    await assert.rejects(decideHourlyAdjustmentReview('Bearer '+payer.token,decision),/FORBIDDEN/);
+    await addHourlyAdjustmentReviewNote(recipient.uid,id,{...note,noteId:'note-2'});
+    await assert.rejects(decideHourlyAdjustmentReview(authz,decision),/CONFLICT/);
+    const fresh=(await listHourlyAdjustmentReviews(authz)).items.find(e=>e.offerId===id);assert.ok(fresh);
+    const updated={...decision,evidenceDigest:fresh.evidenceDigest};
+    await db.runTransaction(async tx=>{const write=await prepareExcessRestriction(tx,parties,false,true);write();});
+    const result=await decideHourlyAdjustmentReview(authz,updated);assert.equal(result.replay,false);assert.equal(result.bankVerified,false);
+    assert.equal((await decideHourlyAdjustmentReview(authz,updated)).replay,true);
+    await assert.rejects(decideHourlyAdjustmentReview(authz,{...updated,reason:'Outra decisão fictícia.'}),/CONFLICT/);
+    const read=await readHourlyAdjustment(owner.uid,id);assert.equal(read.reviewStatus,'resolved_administratively');assert.equal(read.state,'disputed');assert.equal(read.decision?.outcome,'inconclusive');
+    for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:true,openOfferIds:[id]});
+    await db.runTransaction(async tx=>{const write=await prepareExcessRestriction(tx,parties,true,false);write();});
+    for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:false,openOfferIds:[]});
+    await assert.rejects(recordHourlyAdjustmentStatement(recipient.uid,id,{...pay,eventId:'adjust-received',statement:'received'}),/CONFLICT/);
+    assert.equal((await ref.collection('directPayment').doc('hourlyAdjustmentStatements').get()).get('events').length,2);
+    t.mock.restoreAll();
+   }else{
    assert.equal((await recordHourlyAdjustmentStatement(recipient.uid,id,{...pay,eventId:'adjust-received',statement:'received'})).state,'bilaterally_reported_received');
    assert.equal((await readHourlyAdjustment(payer.uid,id)).reviewStatus,'resolved_voluntarily');
    await assert.rejects(addHourlyAdjustmentReviewNote(payer.uid,id,{...note,noteId:'note-2'}),/CONFLICT/);
    assert.equal((await db.doc('freelanceHourlyAdjustmentReviewsV1/'+id).get()).get('status'),'resolved_voluntarily');
    for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:false,openOfferIds:[]});
    assert.equal((await ref.collection('directPayment').doc('hourlyAdjustmentStatements').get()).get('events').length,3);
+   }
    assert.equal((await ref.collection('directPayment').doc('hourlyStatements').get()).exists,false);
    assert.equal((await ref.collection('financialBasis').doc('hourlyCompletion').get()).get('finalAmountMinor'),gross);
    const obligation=ref.collection('directPayment').doc('hourlyAdjustmentObligation');

@@ -5,6 +5,7 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_adjustment_admin_resolved:['Análise de regularização da jornada encerrada','Consulte a decisão fundamentada. A restrição deste caso foi retirada, sem confirmação bancária ou quitação automática.'],
  hourly_adjustment_disputed:['Divergência na regularização da jornada','Novas contratações temporariamente restritas. Regularize ou solicite análise.'],
  hourly_adjustment_released:['Regularização da jornada informada pelas partes','A restrição deste caso foi retirada. Não é confirmação bancária.'],
  hourly_adjustment_statement:['Manifestação financeira da jornada registrada','Consulte o histórico da obrigação. Nenhuma transferência foi verificada.'],
