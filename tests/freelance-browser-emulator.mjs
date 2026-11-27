@@ -220,6 +220,36 @@ try{
  console.log('PASS deferred cache refresh: original Pix panel retained while open, legacy refresh applied after close');
  assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),undefined);
  console.log('PASS personal Pix UI: Central Pessoal, masked declaration and revocation across two contexts');
+ // Administrative fixture of an already linked CID; actual passkey linking is
+ // covered by its separate emulator suite, not simulated as a UI success here.
+ const cidId=randomUUID().replaceAll('-',''),cidRef=db.doc('kyrub_official_tags/'+cidId);
+ const cidOwner='tagpk_'+'x'.repeat(43),cidKey='cid-'+suffix+'@example.invalid';
+ await cidRef.set({distribution:'promotional',model:'adesivo',manufacturingState:'released',ownerAuthMode:'passkey',ownerId:cidOwner,firstOwnerId:cidOwner,linkedAccountId:worker.uid,linkedAccountAt:new Date().toISOString(),enabled:true,blocked:false,presentation:{name:'CID fictício',occupation:'',about:'',pix:{keyType:'email',key:cidKey,recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true}}});
+ try{
+  await button(secondPix,'Atualizar cadastro').click();
+  await waitText(secondPix,'Chaves Pix dos meus CIDs');
+  await secondPix.getByRole('radio').check();
+  assert.equal(await button(secondPix,'Utilizar chave Pix do meu CID').isDisabled(),true);
+  await secondPix.getByLabel('Confirmo o uso financeiro da chave fictícia deste CID.').check();
+  const imported=second.waitForResponse(r=>r.url().endsWith('/api/personal-finance/pix')&&r.request().method()==='POST');
+  await button(secondPix,'Utilizar chave Pix do meu CID').click();
+  const response=await imported;assert.equal(response.status(),200,await response.text());
+  await waitText(secondPix,'Chave Pix do CID aproveitada. Titularidade não verificada.');
+  assert.ok(!(await secondPix.innerText()).includes(cidKey));
+  const financialRef=db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix');
+  assert.equal((await financialRef.get()).get('key'),cidKey);
+  await second.screenshot({path:'freelance-browser-evidence/personal-cid-pix-import.png',fullPage:true});
+  await secondPix.getByRole('radio').check();
+  assert.equal(await button(secondPix,'Substituir pela chave do CID').isDisabled(),true);
+  await button(secondPix,'Cancelar escolha do CID').click();
+  assert.equal((await financialRef.get()).get('revision'),3);
+  await cidRef.update({'presentation.pix':null});
+  await button(secondPix,'Atualizar cadastro').click();
+  await waitText(secondPix,'Chave declarada: E-mail');
+  await secondPix.getByRole('radio').waitFor({state:'detached'});
+  assert.equal((await financialRef.get()).get('key'),cidKey);
+  console.log('PASS CID Pix UI: masked linked choice, separate confirmation, import without retyping, explicit replacement and independent destination');
+ }finally{await cidRef.delete();}
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){

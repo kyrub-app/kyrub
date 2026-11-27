@@ -136,3 +136,14 @@ test('personal receiving settings remain isolated, private and inside Movimenta�
  assert.match(settings,/ownershipVerified===false/);
  assert.doesNotMatch(settings,/localStorage|sessionStorage|console\./);
 });
+
+test('CID import in Movimentações uses server candidates and separate confirmation',()=>{
+ const settings=read('src/components/modals/PersonalPixSettings.tsx');
+ assert.match(settings,/view=cid_candidates/);
+ assert.match(settings,/validCandidates\(list\)/);
+ assert.match(settings,/cidConfirmed/);
+ assert.match(settings,/sourceVersion:candidate.sourceVersion/);
+ assert.match(settings,/replaceExisting:current.status==='declared'/);
+ assert.match(settings,/Utilizar chave Pix do meu CID/);
+ assert.match(settings,/setCandidates\(\[\]\)/);
+});
