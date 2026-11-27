@@ -92,7 +92,7 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
       // No new financial obligations outside the disposable local candidate.
       if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
          process.env.GOOGLE_APPLICATION_CREDENTIALS||
-         !/^(127\\.0\\.0\\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
+         !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
          getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
       const obligation=buildFreelancePaymentObligation(result.offer,result.application);
       const obligationRef=offerRef.collection('directPayment').doc('obligation');
