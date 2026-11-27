@@ -316,3 +316,37 @@ test('direct payment obligation is created atomically with bilateral contract, n
  await s.selectFreelanceApplication(owner,legacy,worker);await s.confirmFreelanceContract(worker,legacy,true);
  assert.equal((await ref(legacy).collection('directPayment').doc('obligation').get()).exists,false);
 });
+
+test('direct contract Pix destination pins revision, rejects foreign actors and never copies raw key',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const {bindFreelancePixDestination}=await import('../server/freelance/freelancePixDestinationService.js');
+ const id='fixture-pinned-pix',offer=ref(id),binding=offer.collection('directPayment').doc('receivingDestination');
+ const terms=createDirectPaymentTerms({method:'external_pix',amountMinor:input.paymentMinor});
+ await s.publishFreelanceOffer(owner,id,{...input,paymentTerms:terms});
+ await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(owner,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const request={expectedRevision:1,confirmed:true};
+ await assert.rejects(bindFreelancePixDestination(owner,id,request),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(bindFreelancePixDestination(other,id,request),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(bindFreelancePixDestination(worker,id,request),/FREELANCE_PIX_DESTINATION_REQUIRED/);
+ const key='pinned-fixture@example.invalid';
+ await changePersonalPixDestination(worker,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key}});
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,confirmed:false}),/FREELANCE_INVALID/);
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,key}),/FREELANCE_INVALID/);
+ const results=await Promise.all([bindFreelancePixDestination(worker,id,request),bindFreelancePixDestination(worker,id,request)]);
+ assert.deepEqual(results.map(x=>x.created).sort(),[false,true]);
+ const saved=(await binding.get()).data()!;
+ assert.equal(saved.destinationRevision,1);assert.equal(saved.beneficiaryUid,worker);assert.equal(saved.ownershipVerified,false);
+ assert.ok(!JSON.stringify(saved).includes(key));assert.equal('key' in saved,false);
+ for(const uid of [owner,worker,other]){
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,binding.path)));
+  await assertFails(setDoc(doc(db,binding.path),{destinationRevision:2}));
+ }
+ await changePersonalPixDestination(worker,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000'}});
+ await assert.rejects(bindFreelancePixDestination(worker,id,request),/FREELANCE_PIX_DESTINATION_CHANGED/);
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,expectedRevision:2}),/FREELANCE_PIX_DESTINATION_CHANGED/);
+ await changePersonalPixDestination(worker,{action:'revoke',expectedRevision:2,confirmed:true});
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,expectedRevision:3}),/FREELANCE_PIX_DESTINATION_REQUIRED/);
+ assert.deepEqual((await binding.get()).data(),saved);
+});

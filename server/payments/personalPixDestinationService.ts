@@ -112,3 +112,13 @@ export async function importPersonalCidPixDestination(uid:string,input:unknown){
   return projectPersonalPixDestination(next);
  });
 }
+
+/** Server transaction helper: never returns a raw key or grants bank verification. */
+export async function readPersonalPixForContract(tx:FirebaseFirestore.Transaction,uid:string){
+ const parent=profileRef(uid);
+ const [p,d]=await tx.getAll(parent,parent.collection('receiving').doc('externalPix'));
+ if(p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))throw Error('PERSONAL_PIX_CONFLICT');
+ const destination=checked(d.data(),uid);
+ if(!p.exists||destination?.status!=='declared'||!destination.keyType||!destination.key)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
+ return {revision:destination.revision,keyType:destination.keyType,maskedKey:'••••'+destination.key.slice(-4),ownershipVerified:false as const};
+}
