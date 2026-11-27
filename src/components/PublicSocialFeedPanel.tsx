@@ -1,4 +1,4 @@
-import {isReputationSquarePost,reputationSquarePublishEnabled,ReputationSquarePostGate,ReputationPublicationIndicators,ReputationSquareForwardButton,reputationSquareForwardEnabled,type Summary} from './ReputationSquarePreview';
+import {isReputationSquarePost,reputationSquarePublishEnabled,ReputationSquarePostGate,ReputationPublicationIndicators,PublicationCocarLabel,ReputationSquareForwardButton,reputationSquareForwardEnabled,type Summary} from './ReputationSquarePreview';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
@@ -383,7 +383,7 @@ export function PublicSocialFeedPanel({
               />
               <div className="min-w-0 flex-1">
                 <h4 className="truncate text-xs font-black text-slate-100">
-                  {post.user}
+                  {post.user}{summary&&<PublicationCocarLabel count={summary.cocaresAtPublication}/>}
                 </h4>
                 <span className="font-mono text-[9px] text-slate-500">
                   {post.time}
