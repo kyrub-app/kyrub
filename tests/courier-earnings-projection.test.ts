@@ -344,3 +344,33 @@ test('post-contract freelance occurrence freezes execution for review without as
  assert.match(source,/tx.update\(applicationRef,\{status:'under_review'/);
  assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
 });
+
+test('freelance administrative decision preserves evidence, separates finance and permits a later occurrence',async()=>{
+ const m=await import('../shared/freelanceLifecycle');
+ const now='2026-11-27T10:00:00.000Z',later='2026-11-27T10:01:00.000Z';
+ const o=m.createFreelanceOffer('offer-1','owner',{title:'Serviço',description:'Descrição',requirements:'',paymentMinor:12345},now);
+ const s=m.selectFreelanceApplicant(o,m.createFreelanceApplication(o,'worker',now),'owner',now);
+ const c=m.confirmFreelanceSelection(s.offer,s.application,'worker',true,later);
+ const incident=m.openFreelanceOccurrence(c.offer,c.application,'worker','service_disputed',true,later,'review-1');
+ const offer={...c.offer,status:'under_review' as const,occurrenceId:incident.id};
+ const app={...c.application,status:'under_review' as const,occurrenceId:incident.id};
+ assert.throws(()=>m.resolveFreelanceOccurrence(offer,app,incident,'owner','cancel','Motivo fundamentado',true,later),/FREELANCE_FORBIDDEN/);
+ assert.throws(()=>m.resolveFreelanceOccurrence(offer,app,incident,'admin','resume','Motivo fundamentado',true,later),/FREELANCE_CONFLICT/);
+ const agreed=m.recordFreelanceOccurrenceResponse(incident,'owner','agree',true,later);
+ const resumed=m.resolveFreelanceOccurrence(offer,app,agreed,'admin','resume','Motivo fundamentado',true,later);
+ assert.equal(resumed.offer.status,'contracted');assert.equal(resumed.offer.occurrenceId,undefined);
+ assert.equal(resumed.occurrence.status,'resolved');
+ assert.equal(resumed.occurrence.decision?.financialReview,'not_determined');
+ assert.equal(m.openFreelanceOccurrence(resumed.offer,resumed.application,'owner','cancellation_requested',true,later,'review-2').id,'review-2');
+ const cancelled=m.resolveFreelanceOccurrence(offer,app,incident,'admin','cancel','Motivo fundamentado',true,later);
+ assert.equal(cancelled.offer.status,'cancelled');assert.equal(cancelled.application.status,'cancelled');
+ assert.equal(cancelled.offer.paymentMinor,12345);
+ assert.equal(cancelled.occurrence.decision?.financialReview,'pending');
+ assert.equal(m.resolveFreelanceOccurrence(cancelled.offer,cancelled.application,cancelled.occurrence,'admin','cancel','Motivo fundamentado',true,later).changed,false);
+ const source=readFileSync('server/admin/freelanceReviewService.ts','utf8');
+ assert.match(source,/requireKyrubSessionMfa\(authorization,'administrative',300\)/);
+ assert.match(source,/role.role!=='super_admin'/);
+ assert.match(source,/assertRole\(uid,role.data\(\)\)/);
+ assert.match(source,/tx.create\(auditRef/);
+ assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
+});

@@ -165,10 +165,10 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
 }
 
 /** A participant can report an occurrence; neither can adjudicate or settle it. */
-export async function reportFreelanceOccurrence(actorUid:string, offerId:string, kind:unknown, confirmed:unknown):Promise<FreelanceOccurrence>{
-  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+export async function reportFreelanceOccurrence(actorUid:string, offerId:string, kind:unknown, confirmed:unknown, occurrenceId:string):Promise<FreelanceOccurrence>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||!validFreelanceId(occurrenceId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
   const offerRef=adminDb.doc(offers+'/'+offerId);
-  const occurrenceRef=offerRef.collection('occurrences').doc('contract-review');
+  const occurrenceRef=offerRef.collection('occurrences').doc(occurrenceId);
   return adminDb.runTransaction(async tx=>{
     const [o,review]=await tx.getAll(offerRef,occurrenceRef);
     const offer=o.data() as FreelanceOffer|undefined;
@@ -180,29 +180,29 @@ export async function reportFreelanceOccurrence(actorUid:string, offerId:string,
       application.applicantUid!==offer.selectedApplicantUid)throw new Error('FREELANCE_CONFLICT');
     if(review.exists){
       const saved=review.data() as FreelanceOccurrence;
-      if(saved.id==='contract-review'&&saved.offerId===offerId&&saved.ownerUid===offer.ownerUid&&
+      if(saved.id===occurrenceId&&saved.offerId===offerId&&saved.ownerUid===offer.ownerUid&&
         saved.applicantUid===application.applicantUid&&saved.openedBy===actorUid&&saved.kind===kind&&saved.status==='awaiting_review'&&
         offer.status==='under_review'&&application.status==='under_review'&&offer.occurrenceId===saved.id&&application.occurrenceId===saved.id)return saved;
       throw new Error('FREELANCE_CONFLICT');
     }
-    const result=openFreelanceOccurrence(offer,application,actorUid,kind,confirmed,new Date().toISOString());
+    const result=openFreelanceOccurrence(offer,application,actorUid,kind,confirmed,new Date().toISOString(),occurrenceId);
     tx.create(occurrenceRef,result);
     tx.update(offerRef,{status:'under_review',occurrenceId:result.id});
     tx.update(applicationRef,{status:'under_review',occurrenceId:result.id});
     return result;
   });
 }
-export async function respondToFreelanceOccurrence(actorUid:string,offerId:string,position:unknown,confirmed:unknown):Promise<FreelanceOccurrence>{
-  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+export async function respondToFreelanceOccurrence(actorUid:string,offerId:string,position:unknown,confirmed:unknown,occurrenceId:string):Promise<FreelanceOccurrence>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||!validFreelanceId(occurrenceId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
   const offerRef=adminDb.doc(offers+'/'+offerId);
-  const occurrenceRef=offerRef.collection('occurrences').doc('contract-review');
+  const occurrenceRef=offerRef.collection('occurrences').doc(occurrenceId);
   return adminDb.runTransaction(async tx=>{
     const [o,r]=await tx.getAll(offerRef,occurrenceRef);
     const offer=o.data() as FreelanceOffer|undefined;
     const occurrence=r.data() as FreelanceOccurrence|undefined;
     if(!offer||offer.id!==offerId||!validFreelanceId(offer.selectedApplicantUid)||
        (actorUid!==offer.ownerUid&&actorUid!==offer.selectedApplicantUid))throw new Error('FREELANCE_FORBIDDEN');
-    if(!occurrence||occurrence.id!=='contract-review'||occurrence.offerId!==offerId||occurrence.ownerUid!==offer.ownerUid||
+    if(!occurrence||occurrence.id!==occurrenceId||occurrence.offerId!==offerId||occurrence.ownerUid!==offer.ownerUid||
        occurrence.applicantUid!==offer.selectedApplicantUid||offer.status!=='under_review'||offer.occurrenceId!==occurrence.id)throw new Error('FREELANCE_CONFLICT');
     const application=(await tx.get(offerRef.collection('applications').doc(offer.selectedApplicantUid))).data() as FreelanceApplication|undefined;
     if(!application||application.offerId!==offerId||application.ownerUid!==offer.ownerUid||application.applicantUid!==offer.selectedApplicantUid||

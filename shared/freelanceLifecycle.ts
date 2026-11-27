@@ -22,7 +22,8 @@ export interface FreelanceApplication {
   offerId: string;
   applicantUid: string;
   ownerUid: string;
-  status: 'pending' | 'selected' | 'contracted' | 'withdrawn' | 'released' | 'in_progress' | 'completion_requested' | 'completed' | 'under_review';
+  status: 'pending' | 'selected' | 'contracted' | 'withdrawn' | 'released' | 'in_progress' | 'completion_requested' | 'completed' | 'under_review' | 'cancelled';
+  cancelledAt?: string;
   occurrenceId?: string;
   startedAt?: string;
   completionRequestedAt?: string;
@@ -177,11 +178,12 @@ export interface FreelanceOccurrence {
   openedAt: string;
   kind: FreelanceOccurrenceKind;
   priorStatus: FreelanceOccurrencePriorStatus;
-  status: 'awaiting_review';
+  status: 'awaiting_review' | 'resolved';
+  decision?: FreelanceReviewDecision;
   response?: { actorUid: string; position: 'agree' | 'disagree'; at: string };
 }
 export function openFreelanceOccurrence(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string,
-  kind: unknown, confirmed: unknown, now: string): FreelanceOccurrence {
+  kind: unknown, confirmed: unknown, now: string, occurrenceId = 'contract-review'): FreelanceOccurrence {
   validatePair(offer,application,now);
   if (confirmed !== true || (actorUid !== offer.ownerUid && actorUid !== application.applicantUid) ||
       !isSelectedPair(offer,application)) throw new Error('FREELANCE_FORBIDDEN');
@@ -198,7 +200,8 @@ export function openFreelanceOccurrence(offer: FreelanceOffer, application: Free
     previous = Date.parse(a);
   }
   if (Date.parse(now) < previous) throw new Error('FREELANCE_CONFLICT');
-  return {id:'contract-review',offerId:offer.id,ownerUid:offer.ownerUid,applicantUid:application.applicantUid,openedBy:actorUid,openedAt:now,kind,priorStatus:offer.status,status:'awaiting_review'};
+  if (!validFreelanceId(occurrenceId)) throw new Error('FREELANCE_INVALID');
+  return {id:occurrenceId,offerId:offer.id,ownerUid:offer.ownerUid,applicantUid:application.applicantUid,openedBy:actorUid,openedAt:now,kind,priorStatus:offer.status,status:'awaiting_review'};
 }
 export function recordFreelanceOccurrenceResponse(occurrence: FreelanceOccurrence, actorUid: string, position: unknown, confirmed: unknown, now: string): FreelanceOccurrence {
   if (confirmed !== true || actorUid === occurrence.openedBy ||
@@ -211,4 +214,48 @@ export function recordFreelanceOccurrenceResponse(occurrence: FreelanceOccurrenc
     throw new Error('FREELANCE_CONFLICT');
   }
   return {...occurrence,response:{actorUid,position,at:now}};
+}
+
+export interface FreelanceReviewDecision {
+  actorUid: string;
+  outcome: 'resume' | 'cancel';
+  reason: string;
+  decidedAt: string;
+  financialReview: 'pending' | 'not_determined';
+}
+export function resolveFreelanceOccurrence(
+  offer: FreelanceOffer, application: FreelanceApplication, occurrence: FreelanceOccurrence,
+  reviewerUid: string, outcome: unknown, reasonInput: unknown, confirmed: unknown, now: string,
+): {offer:FreelanceOffer; application:FreelanceApplication; occurrence:FreelanceOccurrence; changed:boolean} {
+  validatePair(offer,application,now);
+  if (!validFreelanceId(reviewerUid) || reviewerUid === offer.ownerUid || reviewerUid === application.applicantUid || confirmed !== true)
+    throw new Error('FREELANCE_FORBIDDEN');
+  if ((outcome !== 'resume' && outcome !== 'cancel') || typeof reasonInput !== 'string' ||
+      reasonInput.trim().length < 10 || reasonInput.trim().length > 1000) throw new Error('FREELANCE_INVALID');
+  const reason = reasonInput.trim();
+  if (!validFreelanceId(occurrence.id) || occurrence.offerId !== offer.id ||
+      occurrence.ownerUid !== offer.ownerUid || occurrence.applicantUid !== application.applicantUid ||
+      !isSelectedPair(offer,application)) throw new Error('FREELANCE_CONFLICT');
+  if (occurrence.status === 'resolved' && occurrence.decision?.actorUid === reviewerUid &&
+      occurrence.decision.outcome === outcome && occurrence.decision.reason === reason)
+    return {offer,application,occurrence,changed:false};
+  if (occurrence.status !== 'awaiting_review' || occurrence.decision ||
+      offer.status !== 'under_review' || application.status !== 'under_review' ||
+      offer.occurrenceId !== occurrence.id || application.occurrenceId !== occurrence.id ||
+      !['contracted','in_progress','completion_requested'].includes(occurrence.priorStatus) ||
+      !Number.isFinite(Date.parse(occurrence.openedAt)) || Date.parse(now) < Date.parse(occurrence.openedAt))
+    throw new Error('FREELANCE_CONFLICT');
+  // Absence of a response is not agreement. Resumption requires explicit agreement by the counterpart.
+  if (outcome === 'resume' && (occurrence.kind !== 'service_disputed' || occurrence.response?.position !== 'agree'))
+    throw new Error('FREELANCE_CONFLICT');
+  const decision: FreelanceReviewDecision = {
+    actorUid:reviewerUid,outcome,reason,decidedAt:now,
+    financialReview:outcome==='cancel'?'pending':'not_determined',
+  };
+  const {occurrenceId:_offerOccurrence,...offerRest}=offer;
+  const {occurrenceId:_applicationOccurrence,...applicationRest}=application;
+  const status=outcome==='resume'?occurrence.priorStatus:'cancelled';
+  const patch=outcome==='cancel'?{cancelledAt:now}:{};
+  return {offer:{...offerRest,status,...patch},application:{...applicationRest,status,...patch},
+    occurrence:{...occurrence,status:'resolved',decision},changed:true};
 }
