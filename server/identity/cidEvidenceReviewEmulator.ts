@@ -8,6 +8,7 @@ import {createHash,timingSafeEqual,randomUUID} from 'node:crypto';
 import {assertCidSosEmulator,CID_EMULATOR_PROJECT} from './cidSosEmulatorStore.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {CID_REVIEW_DISPOSITIONS,type CidReviewQueueItem,type CidReviewDetail,type CidReviewInput} from '../../shared/cidEvidenceReview.js';
+import {CID_LEGAL_FIELDS,CID_LEGAL_PURPOSES,CID_LEGAL_FINDINGS,type CidLegalReviewInput,type CidLegalReviewReceipt} from '../../shared/cidEvidenceLegalReview.js';
 import {CID_SPECIALIST_FINDINGS,type CidSpecialistInput,type CidSpecialistReceipt} from '../../shared/cidEvidenceSpecialist.js';
 import {CID_COMPLAINT_CATEGORIES} from '../../shared/cidOccurrenceComplaint.js';
 const APP='cid-evidence-review-local-emulator';
@@ -39,7 +40,7 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
  const app=getApps().find(a=>a.name===APP)??initializeApp({projectId:CID_EMULATOR_PROJECT},APP);
  if(app.options.projectId!==CID_EMULATOR_PROJECT)return deny();
  const db=getFirestore(app),queue=db.collection('cid_sos_emulator_review_queue'),audit=db.collection('cid_sos_emulator_review_audit');
- async function authorize(tx:Transaction,credential:Credential,now:number,permission:'review:read'|'review:decide'|'review:specialist'){
+ async function authorize(tx:Transaction,credential:Credential,now:number,permission:'review:read'|'review:decide'|'review:specialist'|'review:legal'){
   assertCidSosEmulator();if(!time(now)||!credential)return deny();
   if(mode==='control-plane'){
    assertControlPlaneEmulator();
@@ -51,11 +52,11 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
    const [admin,specific]=await Promise.all([tx.get(db.doc('kyrub_admin/control_plane/admins/'+identity.uid)),tx.get(db.doc('kyrub_admin/control_plane/cid_evidence_grants/'+identity.uid))]);
    const profile=admin.data(),grant=specific.data();
    if(profile?.uid!==identity.uid||profile.status!=='active'||!canonicalRoles.has(profile.role)||grant?.uid!==identity.uid||grant.status!=='active'||!Array.isArray(grant.permissions)||!grant.permissions.includes(permission))return deny();
-   if(permission==='review:specialist'&&!grant.permissions.includes('review:read'))return deny();
+   if((permission==='review:specialist'||permission==='review:legal')&&!grant.permissions.includes('review:read'))return deny();
    if(permission!=='review:read'&&now-identity.auth_time*1000>5*60000)return deny();
    return {actorId:identity.uid,actorRole:profile.role} as ReviewIdentity;
   }
-  if(permission==='review:specialist')return deny();
+  if(permission==='review:specialist'||permission==='review:legal')return deny();
   if(!('id' in credential)||!token(credential.id)||!token(credential.secret))return deny();
   const session=(await tx.get(db.collection('cid_sos_emulator_review_sessions').doc(credential.id))).data();
   if(!session||session.id!==credential.id||session.simulation!==true||session.revokedAt!==undefined||session.role!=='evidence-officer'||typeof session.actorId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(session.actorId)||!time(session.authenticatedAt)||!time(session.expiresAt)||now<session.authenticatedAt||now>=session.expiresAt||session.expiresAt-session.authenticatedAt>30*60000||!Array.isArray(session.permissions)||!session.permissions.includes(permission)||typeof session.digest!=='string'||!/^[a-f0-9]{64}$/.test(session.digest)||!timingSafeEqual(Buffer.from(session.digest,'hex'),Buffer.from(hash(credential.secret),'hex')))return deny();
@@ -117,6 +118,33 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
     tx.create(opinion,{id:i.id,tagId:i.tagId,occurrenceId:i.occurrenceId,kind:i.kind,actorId:actor.actorId,actorRole:actor.actorRole,finding:v.finding,reason:justification,createdAt:now,revision,simulation:true,authorizesRetention:false,authorizesDisclosure:false});
     tx.update(ref,{revision,specialistFinding:v.finding,specialistReviewedAt:now});
     record(tx,actor,'specialist-opinion',now,{caseId:i.id,finding:v.finding,revision,reason:justification});
+    return {id:i.id,revision,finding:v.finding,simulation:true,authorizesRetention:false,authorizesDisclosure:false};
+   });
+  },
+  async legalReview(credential:Credential,input:unknown,now:number):Promise<CidLegalReviewReceipt>{
+   if(mode!=='control-plane'||!time(now)||!input||typeof input!=='object'||Array.isArray(input))return deny();
+   const v=input as CidLegalReviewInput;
+   if(Object.keys(v).length!==5||Object.keys(v).some(k=>!['id','expectedRevision','finding','reason','scope'].includes(k))||!uuid(v.id)||!Number.isSafeInteger(v.expectedRevision)||v.expectedRevision<2||typeof v.finding!=='string'||!Object.hasOwn(CID_LEGAL_FINDINGS,v.finding))return deny();
+   const justification=reason(v.reason);
+   let scope:CidLegalReviewInput['scope']=null;
+   if(v.finding==='eligible-for-authorization-review'){
+    const s=v.scope;
+    if(!s||typeof s!=='object'||Array.isArray(s)||Object.keys(s).length!==8||Object.keys(s).some(k=>!['purpose','formalReference','authority','legalBasis','fields','from','to','expiresAt'].includes(k))||typeof s.purpose!=='string'||!Object.hasOwn(CID_LEGAL_PURPOSES,s.purpose)||!Array.isArray(s.fields)||s.fields.length<1||s.fields.length>5||new Set(s.fields).size!==s.fields.length||s.fields.some(k=>typeof k!=='string'||!Object.hasOwn(CID_LEGAL_FIELDS,k))||!time(s.from)||!time(s.to)||s.from>s.to||s.to>now||!time(s.expiresAt)||s.expiresAt<=now||s.expiresAt-now>7*86400000)return deny();
+    scope={purpose:s.purpose,formalReference:reason(s.formalReference),authority:reason(s.authority),legalBasis:reason(s.legalBasis),fields:[...s.fields],from:s.from,to:s.to,expiresAt:s.expiresAt};
+   }else if(v.scope!==null)return deny();
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,credential,now,'review:legal'),ref=queue.doc(v.id),snapshot=await tx.get(ref),i=item(snapshot,now);
+    const opinionRef=db.collection('cid_sos_emulator_specialist_opinions').doc(i.id),legalRef=db.collection('cid_sos_emulator_legal_opinions').doc(i.id);
+    const [opinion,prior]=await Promise.all([tx.get(opinionRef),tx.get(legalRef)]);
+    const specialist=opinion.data();
+    if(i.status!=='escalated'||i.specialistFinding!=='legal-review-required'||i.revision!==v.expectedRevision||prior.exists||!specialist||specialist.simulation!==true||specialist.id!==i.id||specialist.tagId!==i.tagId||specialist.occurrenceId!==i.occurrenceId||specialist.revision!==i.revision||specialist.finding!=='legal-review-required'||typeof specialist.actorId!=='string'||typeof snapshot.get('triagedBy')!=='string'||[specialist.actorId,snapshot.get('triagedBy')].includes(actor.actorId)||!time(specialist.createdAt)||specialist.createdAt>now)return deny();
+    await detail(tx,i);
+    const revision=i.revision+1;
+    // References and declared legal basis are reviewer statements, not independently
+    // authenticated legal documents. This record cannot operate on data or issue grants.
+    tx.create(legalRef,{id:i.id,tagId:i.tagId,occurrenceId:i.occurrenceId,actorId:actor.actorId,actorRole:actor.actorRole,finding:v.finding,reason:justification,scope,createdAt:now,revision,simulation:true,authorizesRetention:false,authorizesDisclosure:false});
+    tx.update(ref,{revision,legalFinding:v.finding,legalReviewedAt:now});
+    record(tx,actor,'legal-opinion',now,{caseId:i.id,finding:v.finding,revision,reason:justification});
     return {id:i.id,revision,finding:v.finding,simulation:true,authorizesRetention:false,authorizesDisclosure:false};
    });
   },
