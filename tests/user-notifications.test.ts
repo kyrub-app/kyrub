@@ -232,3 +232,25 @@ describe('canonical user notifications', () => {
   });
 
 });
+
+test('ERP management bell is separate from general notifications and Staff', async () => {
+  const { buildInventoryManagementAlerts } = await import('../shared/erpManagementAlerts');
+  const item = (id: string, currentQuantity: number, minimumQuantity: number) => ({ id, name: id, unit: 'un', currentQuantity, minimumQuantity });
+  const input = [item('zero',0,5), item('minimum',5,5), item('below',3,5), item('normal',6,5), item('unconfigured',1,0), item('invalid',-1,5)];
+  const before = JSON.stringify(input);
+  const alerts = buildInventoryManagementAlerts(input);
+  assert.deepEqual(alerts.map(a => [a.id,a.severity]), [['zero','out_of_stock'],['below','low_stock'],['minimum','low_stock']]);
+  assert.equal(JSON.stringify(input), before);
+  assert.equal(buildInventoryManagementAlerts([item('zero',6,5)]).length, 0);
+  const renda = readFileSync('src/components/tabs/RendaTab.tsx','utf8');
+  assert.match(renda, /!guestReadOnly && hasConfiguredStore && <ErpManagementAlertsBell \/>/);
+  assert.match(renda, /hasConfiguredStore && <LocalServiceDashboardCards \/>/);
+  const bell = readFileSync('src/components/store/ErpManagementAlertsBell.tsx','utf8');
+  assert.match(bell, /getDocFromServer/);
+  assert.match(bell, /store.data\(\)\?\.ownerId !== uid/);
+  assert.match(bell, /getProductInventoryDocumentPath\(uid\)/);
+  assert.match(bell, /snapshot.metadata.fromCache \|\| snapshot.metadata.hasPendingWrites/);
+  assert.match(bell, /auth.currentUser\?\.uid === uid/);
+  assert.doesNotMatch(bell, /setDoc\(|addDoc\(|updateDoc\(|localStorage|loadUserNotificationInbox/);
+  assert.ok(!USER_NOTIFICATION_ORIGIN_TABS.some(tab => tab.label === 'ERP'));
+});
