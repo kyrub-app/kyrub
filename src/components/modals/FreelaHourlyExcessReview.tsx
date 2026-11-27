@@ -1,3 +1,4 @@
+import FreelaHourlyReviewNotes from './FreelaHourlyReviewNotes';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -51,6 +52,7 @@ export default function FreelaHourlyExcessReview({user,offerId}:{user:User;offer
    {v.resolved&&<p>Valor reconhecido: {money(v.resolved.recognizedServiceMinor)}. {v.payable?'Atualize a consulta financeira para regularizar o Pix.':'Nenhum pagamento necessário para esta resolução.'}</p>}
    {v.restrictionActive&&<p className="text-amber-300">Novas contratações restritas para ambas as partes. Negociação voluntária disponível.</p>}
    {v.dispute?.status==='review_requested'&&<p>Análise administrativa solicitada.</p>}
+   {v.dispute&&['review_requested','resolved_administratively','resolved_voluntarily'].includes(v.dispute.status)&&<FreelaHourlyReviewNotes key={user.uid+':'+offerId+':'+v.sourceDigest} user={user} offerId={offerId} kind="excess" sourceDigest={v.sourceDigest}/>}
    {v.dispute?.status==='resolved_voluntarily'&&<p>Divergência deste excedente resolvida. Outras restrições podem permanecer.</p>}
    {!v.dispute&&p?.status==='declined'&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('dispute_hourly_excess')}>Declarar divergência</button>}
    {v.dispute?.status==='open'&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('request_hourly_excess_review')}>Solicitar análise administrativa</button>}
