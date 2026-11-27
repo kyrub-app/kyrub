@@ -1,3 +1,6 @@
+import {readExtensionRecords} from './freelanceAttendanceExtensionService.js';
+import {projectAcceptedFreelanceExtensions} from '../../shared/freelanceAttendanceExtensions.js';
+import {validateFreelanceExtensions} from '../../shared/freelanceHourlyAccounting.js';
 import {createHash} from 'node:crypto';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
@@ -21,11 +24,14 @@ export async function readAttendanceTimeline(tx:Transaction,c:Context){
  return {ref,events,projection,schedule:c.current.schedule,scheduleId:c.current.id};
 }
 type Timeline=NonNullable<Awaited<ReturnType<typeof readAttendanceTimeline>>>;
-function append(tx:Transaction,t:Timeline,event:FreelanceAttendanceEvent){
+async function append(tx:Transaction,t:Timeline,event:FreelanceAttendanceEvent){
  const old=t.events.find(e=>e.id===event.id);
  if(old){if(old.kind!==event.kind||old.actor!==event.actor)return fail();return ()=>{};}
+ const ext=await readExtensionRecords(tx,t.ref.parent.parent!,t.scheduleId,t.schedule,t.events);
+ if(Date.parse(event.at)<=ext.last)return fail();
  const events=[...t.events,event];
  projectFreelanceAttendance(t.schedule,events);
+ validateFreelanceExtensions(t.schedule,events,projectAcceptedFreelanceExtensions(ext.records));
  return ()=>tx.set(t.ref,{scheduleId:t.scheduleId,events});
 }
 export async function readFreelanceAttendance(uid:string,offerId:string){
@@ -44,7 +50,7 @@ export async function recordFreelanceAttendance(uid:string,offerId:string,input:
   const existing=t.events.find(e=>e.id===id);
   if(existing){if(existing.kind!==kind||existing.actor!==c.actor)return fail();return;}
   if(t.events.length!==input.expectedSequence||t.events.length>=480||c.offer.status!==(beforeStart.includes(kind)?'contracted':'in_progress'))return fail();
-  const write=append(tx,t,{id,kind,actor:c.actor,at:new Date().toISOString()});write();
+  const write=await append(tx,t,{id,kind,actor:c.actor,at:new Date().toISOString()});write();
  });
 }
 /** Read/validate first; caller invokes returned write only after all other reads.
