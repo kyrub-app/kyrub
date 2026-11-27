@@ -1,3 +1,4 @@
+import {readFreelanceAttendance,recordFreelanceAttendance} from './freelanceAttendanceService.js';
 import {readFreelanceAttendanceSchedule,changeFreelanceAttendanceSchedule} from './freelanceAttendanceScheduleService.js';
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,normalizeFreelanceOffer} from '../../shared/freelanceLifecycle.js';
@@ -26,6 +27,7 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  case 'apply':exact(['expectedPaymentTerms','expectedWorkTerms','counterproposal','expectedRequesterStore']);return lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms,expectedRequesterStore:b.expectedRequesterStore,counterproposal:b.counterproposal});
  case 'select':exact(['applicantUid','expectedCounterproposal']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid,b.expectedCounterproposal);
  case 'confirm':exact(['confirmed','expectedPaymentTerms','expectedWorkTerms','expectedRequesterStore']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms,expectedRequesterStore:b.expectedRequesterStore});
+ case 'attendance_event':exact(['kind','eventId','expectedSequence','confirmed']);return recordFreelanceAttendance(uid,b.offerId,{kind:b.kind,eventId:b.eventId,expectedSequence:b.expectedSequence,confirmed:b.confirmed});
  case 'propose_schedule':exact(['proposalId','scheduledStartAt','confirmed']);return changeFreelanceAttendanceSchedule(uid,b.offerId,'propose',{proposalId:b.proposalId,scheduledStartAt:b.scheduledStartAt,confirmed:b.confirmed});
  case 'accept_schedule':case 'decline_schedule':case 'withdraw_schedule':exact(['proposalId','confirmed']);return changeFreelanceAttendanceSchedule(uid,b.offerId,b.action==='accept_schedule'?'accept':b.action==='decline_schedule'?'decline':'withdraw',{proposalId:b.proposalId,confirmed:b.confirmed});
  case 'release':exact(['applicantUid','confirmed']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.releaseFreelanceReservation(uid,b.offerId,b.applicantUid,b.confirmed);
@@ -40,7 +42,7 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
 type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>Promise<unknown>;mutate:(uid:string,input:unknown)=>Promise<unknown>};
-const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='attendance_schedule'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendanceSchedule(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
+const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='attendance'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendance(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='attendance_schedule'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendanceSchedule(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
 export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dependencies=defaults){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
  try{if(!deps.enabled()){res.status(503).json({code:'FREELANCE_DISABLED'});return;}}catch{res.status(503).json({code:'FREELANCE_DISABLED'});return;}

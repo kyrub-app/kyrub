@@ -1,3 +1,4 @@
+import {prepareFreelanceAttendanceLifecycle,prepareFreelanceAttendanceReview} from './freelanceAttendanceService.js';
 import {requireOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
 import {sameFreelanceStoreRepresentation,readFreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
 import {readFreelanceCounterproposal,sameFreelanceCounterproposal,negotiatedFreelanceTerms} from '../../shared/freelanceCounterproposal.js';
@@ -224,6 +225,8 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       }else await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
+    const at=action==='start'?'startedAt':action==='request_completion'?'completionRequestedAt':'completedAt';
+    const writeAttendance=offer.workTerms?await prepareFreelanceAttendanceLifecycle(tx,actorUid,offerId,action,result.offer[at]!,result.changed):()=>{};
     if(action==='confirm_completion'){
       const basis=buildFreelanceRemunerationBasis(result.offer,result.application);
       const basisRef=offerRef.collection('financialBasis').doc('remuneration');
@@ -234,7 +237,7 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       }else if(!matchesFreelanceRemunerationBasis(saved.data(),basis))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
     }
     if(result.changed){
-      const at=action==='start'?'startedAt':action==='request_completion'?'completionRequestedAt':'completedAt';
+      writeAttendance();
       tx.update(offerRef,{status:result.offer.status,[at]:result.offer[at]!});
       tx.update(applicationRef,{status:result.application.status,[at]:result.application[at]!});
     }
@@ -264,6 +267,8 @@ export async function reportFreelanceOccurrence(actorUid:string, offerId:string,
       throw new Error('FREELANCE_CONFLICT');
     }
     const result=openFreelanceOccurrence(offer,application,actorUid,kind,confirmed,new Date().toISOString(),occurrenceId);
+    const writeAttendance=offer.workTerms?await prepareFreelanceAttendanceReview(tx,actorUid,offerId,occurrenceId,'suspend',result.openedAt):()=>{};
+    writeAttendance();
     tx.create(occurrenceRef,result);
     tx.update(offerRef,{status:'under_review',occurrenceId:result.id});
     tx.update(applicationRef,{status:'under_review',occurrenceId:result.id});
