@@ -1,5 +1,6 @@
+import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {adminDb} from '../firebaseAdmin.js';
-import {requireOwnedFreelanceStore} from '../freelance/freelanceStoreRepresentationService.js';
+import {requireOwnedFreelanceStore,readOwnedFreelanceStore} from '../freelance/freelanceStoreRepresentationService.js';
 import {normalizePersonalPixKey} from '../../shared/personalPixDestination.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 type Destination={schemaVersion:1;storeId:string;ownerUid:string;revision:number;status:'declared'|'revoked';updatedAt:string;keyType?:'email'|'random';key?:string};
@@ -47,4 +48,24 @@ export async function readStoreRefundSecret(tx:FirebaseFirestore.Transaction,uid
  const {d}=await context(tx,uid,storeId);
  if(d?.status!=='declared'||!d.key||!d.keyType)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
  return {revision:d.revision,keyType:d.keyType,key:d.key,maskedKey:'••••'+d.key.slice(-4),ownershipVerified:false as const};
+}
+
+/** ERP entry point: resolve canonical store from the authenticated owner,
+ * not the legacy ERP storeId or a browser-selected canonical identifier. */
+async function resolveOwnStore(uid:string){
+ return adminDb.runTransaction(async tx=>{
+  const store=await readOwnedFreelanceStore(tx,uid);
+  if(!store)throw Error('FREELANCE_STORE_FORBIDDEN');
+  return store.storeId;
+ },{readOnly:true});
+}
+export async function readOwnStoreRefundDestination(uid:string){
+ const storeId=await resolveOwnStore(uid);
+ return {storeId,...await readStoreRefundDestination(uid,storeId)};
+}
+export async function changeOwnStoreRefundDestination(uid:string,input:unknown,authorization:string){
+ const mfa=await requireKyrubSessionMfa(authorization,'financial',300);
+ if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');
+ const storeId=await resolveOwnStore(uid);
+ return {storeId,...await changeStoreRefundDestination(uid,storeId,input)};
 }
