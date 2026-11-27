@@ -520,3 +520,36 @@ test('private financial evidence: participant-only, append-only, bounded and no 
  await assert.rejects(submit(worker,id,{...note,evidenceId:'late-note'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
  assert.deepEqual((await adminDb.doc(path).get()).data(),snapshot);
 });
+
+test('private PNG receipt storage: one per party, server-only access, no raw metadata, replay and closure',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {submitFreelanceFinancialReceipt:submit}=await import('../server/freelance/freelanceFinancialReceiptService.js');
+ const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-receipt-payer',worker='fixture-receipt-worker',other='fixture-receipt-other';
+ for(const uid of [payer,worker,other])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const id='fixture-private-receipt',path='freelanceFinancialReviewsV1/'+id+'/evidence/receipts',file=path+'/files/receipt-a';
+ await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+ await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(payer,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ await record(payer,id,{eventId:'paid',statement:'paid',confirmed:true});await record(worker,id,{eventId:'denied',statement:'not_received',confirmed:true});
+ const receipt={receiptId:'receipt-a',pngBase64:receiptFixture(),confirmed:true};
+ await assert.rejects(submit(payer,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await request(worker,id,{confirmed:true});
+ await assert.rejects(submit(other,id,receipt),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(submit(payer,id,{...receipt,pngBase64:'YWJjZA=='}),/FREELANCE_RECEIPT_INVALID/);
+ const results=await Promise.all([submit(payer,id,receipt),submit(payer,id,receipt)]);
+ assert.deepEqual(results.map(r=>r.created).sort(),[false,true]);assert.ok(results.every(r=>r.revision===1));
+ await assert.rejects(submit(worker,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await assert.rejects(submit(payer,id,{...receipt,receiptId:'receipt-b'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await submit(worker,id,{...receipt,receiptId:'receipt-b'});
+ const stored=(await adminDb.doc(path).get()).data()!,blob=(await adminDb.doc(file).get()).data()!;
+ assert.equal(stored.revision,2);assert.equal('pngBase64' in stored,false);
+ assert.ok(!Buffer.from(blob.pngBase64,'base64').includes(Buffer.from('fixture metadata')));
+ for(const uid of [payer,worker,other]){
+  const db=env.authenticatedContext(uid).firestore();
+  for(const p of [path,file]){await assertFails(getDoc(doc(db,p)));await assertFails(setDoc(doc(db,p),{pngBase64:'fake'}));}
+ }
+ await record(worker,id,{eventId:'received',statement:'received',confirmed:true});
+ await assert.rejects(submit(worker,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ assert.deepEqual((await adminDb.doc(path).get()).data(),stored);
+});
