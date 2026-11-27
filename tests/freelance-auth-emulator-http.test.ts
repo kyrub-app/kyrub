@@ -1047,10 +1047,29 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await excessApi(worker,409,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
  await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
  await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
- const resolved=await excessApi(owner,200);assert.equal(resolved.resolved.recognizedServiceMinor,13000);assert.equal(resolved.resolved.unrecognizedExcessMs,1800000);assert.equal(resolved.payable,false);assert.equal(resolved.restrictionActive,false);assert.equal(resolved.dispute.status,'resolved_voluntarily');
+ const resolved=await excessApi(owner,200);assert.equal(resolved.resolved.recognizedServiceMinor,13000);assert.equal(resolved.resolved.unrecognizedExcessMs,1800000);assert.equal(resolved.payable,true);assert.equal(resolved.restrictionActive,false);assert.equal(resolved.dispute.status,'resolved_voluntarily');
  assert.equal((await db.doc('freelanceHourlyExcessReviewsV1/'+excessId).get()).get('status'),'resolved_voluntarily');
  for(const actor of [owner,worker]){assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[excessId]});const root=db.doc('freelanceEngagementRestrictionsV1/'+actor.uid);const stored=(await root.get()).data()!;assert.deepEqual(stored.openOfferIds,[excessId]);assert.deepEqual(stored.openCancellationOfferIds,[excessId]);assert.equal(stored.openExcessOfferIds,undefined);await root.set({schemaVersion:1,uid:actor.uid,openOfferIds:[]});}
- assert.equal((await er.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+ const excessFinal=(await er.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;
+ assert.equal(excessFinal.kind,'hourly_excess_obligation');assert.equal(excessFinal.amountMinor,13000);assert.equal(excessFinal.sourceDigest,resolved.resolved.sourceDigest);assert.notEqual(excessFinal.sourceDigest,ev.sourceDigest);
+ // Synthetic pre-existing consent copied from the prepared hourly fixture, scoped to this contract.
+ for(const name of ['receivingDestination','pixSharing']){
+  const saved=(await ref.collection('directPayment').doc(name).get()).data()!;
+  await er.collection('directPayment').doc(name).set({...saved,offerId:excessId});
+ }
+ const excessFinance=async(actor:Actor,status:number,action?:string,extra:Record<string,unknown>={},target=excessId)=>{
+  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view=case&offerId='+target);
+  const r=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:target,action,confirmed:true,...extra})}:{})});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));return data;
+ };
+ assert.equal((await excessFinance(owner,200)).amountMinor,13000);
+ const disclosed=await excessFinance(owner,200,'reveal_pix',{expectedRevision:2});assert.equal(disclosed.amountMinor,13000);
+ const xf={eventId:'excess-paid',statement:'paid',expectedAmountMinor:13000,sourceDigest:excessFinal.sourceDigest};
+ await excessFinance(owner,409,'statement',{...xf,sourceDigest:ev.sourceDigest});
+ await excessFinance(owner,409,'statement',{...xf,expectedAmountMinor:12000});
+ await excessFinance(owner,200,'statement',xf);
+ await excessFinance(worker,200,'statement',{...xf,eventId:'excess-received',statement:'received'});
+ assert.equal((await excessFinance(owner,200)).financialState,'bilaterally_reported_received');
  await excessApi(owner,409,'propose_hourly_excess',{...ep,proposalId:'third'});
  // Separate excess case for administrative decision, with synthetic MFA only in emulator.
  const adminId=excessId+'-admin',ar=db.doc('freelanceOffersV1/'+adminId);
@@ -1084,13 +1103,14 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
   await review(admin,409,{...next,recognizedExcessMs:0});
   await excessApi(worker,409,'accept_hourly_excess',{...af,proposalId:'second'},adminId);
   const av=await excessApi(worker,200,undefined,{},adminId);
-  assert.equal(av.dispute.status,'resolved_administratively');assert.equal(av.resolved.recognizedServiceMinor,13000);assert.equal(av.restrictionActive,false);assert.equal(av.payable,false);
+  assert.equal(av.dispute.status,'resolved_administratively');assert.equal(av.resolved.recognizedServiceMinor,13000);assert.equal(av.restrictionActive,false);assert.equal(av.payable,true);
   assert.equal('actorUid' in av.dispute.decision,false);
-  assert.equal((await ar.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+  const adminFinal=(await ar.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;assert.equal(adminFinal.kind,'hourly_excess_obligation');assert.equal(adminFinal.amountMinor,13000);assert.equal(adminFinal.sourceDigest,av.resolved.sourceDigest);
+  assert.equal((await excessFinance(owner,200,undefined,{},adminId)).amountMinor,13000);
   for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:false,openOfferIds:[]});
   assert.ok(!(await review(admin,200)).items.some((x:any)=>x.offerId===adminId));
  }finally{mock.mock.restore();}
- await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);
+ await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);
  await ref.collection('directPayment').doc('obligation').set({fixture:true});
  await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  await act(owner,id,'record_hourly_basis',400,{confirmed:true});

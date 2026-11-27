@@ -14,7 +14,7 @@ export async function readHourlyExcessContext(tx:Transaction,uid:string,id:strin
  if(!s.savedBasis.exists||!s.savedCommitment.exists||record.disposition!=='requires_review'||record.accounting.status!=='requires_excess_review')return fail();
  const direct=c.ref.collection('directPayment'),pointer=direct.doc('hourlyExcessAgreement'),resolutionRef=direct.doc('hourlyExcessResolution');
  const [pdoc,resolution,final,history]=await tx.getAll(pointer,resolutionRef,direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'));
- if(final.exists||history.exists)return fail();
+
  const raw=pdoc.data();let proposal:Proposal|null=null;
  if(raw){
   if(Object.keys(raw).length!==2||raw.schemaVersion!==1||!validFreelanceId(raw.proposalId))return fail();
@@ -36,13 +36,15 @@ export async function readHourlyExcessContext(tx:Transaction,uid:string,id:strin
   resolved=buildHourlyExcessAdministrativeResolution(record,d);
  }
  if(resolved?(!resolution.exists||canonicalVariablePaymentRecord(resolution.data())!==canonicalVariablePaymentRecord(resolved)):resolution.exists)return fail();
+ const obligation=resolved?buildHourlyExcessObligation(record,resolved):null;
+ if(obligation?(!final.exists||canonicalVariablePaymentRecord(final.data())!==canonicalVariablePaymentRecord(obligation)):final.exists||history.exists)return fail();
  const restricted=!!dispute&&['open','review_requested'].includes(dispute.status);
  const queueRef=adminDb.doc('freelanceHourlyExcessReviewsV1/'+id),queue=(await tx.get(queueRef)).data();
  if(dispute?.requestedAt){
   if(!queue||Object.keys(queue).length!==6||queue.offerId!==id||queue.requesterUid!==record.commitment.requesterUid||queue.beneficiaryUid!==record.commitment.beneficiaryUid||queue.sourceDigest!==record.sourceDigest||queue.requestedAt!==dispute.requestedAt||queue.status!==(restricted?'pending':dispute.status))return fail();
  }else if(queue)return fail();
  await prepareExcessRestriction(tx,record.commitment,restricted,restricted);
- return {s,record,c,direct,pointer,proposal,resolutionRef,resolved,dispute,disputeRef,restricted,queueRef};
+ return {s,record,c,direct,pointer,proposal,resolutionRef,resolved,dispute,disputeRef,restricted,queueRef,obligation,finalRef:final.ref,statementRef:history.ref,history};
 }
 export type HourlyExcessAdminDecision={actorUid:string;recognizedExcessMs:number;reason:string;decidedAt:string;proposalDigest:string};
 export function buildHourlyExcessAdministrativeResolution(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],d:HourlyExcessAdminDecision){
@@ -51,17 +53,23 @@ export function buildHourlyExcessAdministrativeResolution(record:Awaited<ReturnT
 function buildResolution(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],p:Proposal){
  return {schemaVersion:1,kind:'hourly_excess_resolution',offerId:record.commitment.offerId,baseDigest:record.sourceDigest,sourceDigest:digestVariablePaymentSources({base:record.sourceDigest,proposal:p}),resolvedAt:p.decidedAt!,...calculateHourlyExcessResolution(record,p.recognizedExcessMs),payable:false};
 }
+export function buildHourlyExcessObligation(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],resolved:ReturnType<typeof buildResolution>){
+ const c=record.commitment,amount=resolved.recognizedServiceMinor;
+ if(!Number.isSafeInteger(amount)||amount<0||resolved.baseDigest!==record.sourceDigest||resolved.offerId!==c.offerId||!iso(resolved.resolvedAt)||Date.parse(resolved.resolvedAt)<Date.parse(record.completedAt))return fail();
+ if(amount===0)return null;
+ return {schemaVersion:1 as const,kind:'hourly_excess_obligation' as const,offerId:c.offerId,requesterUid:c.requesterUid,beneficiaryUid:c.beneficiaryUid,...(c.requesterStoreId?{requesterStoreId:c.requesterStoreId}:{}),contractedAt:c.contractedAt,dueAt:resolved.resolvedAt,sourceDigest:resolved.sourceDigest,amountMinor:amount,currency:'BRL' as const,method:'external_pix' as const,custody:'none' as const};
+}
 export async function readHourlyExcessReview(uid:string,id:string){
  return adminDb.runTransaction(async tx=>{
-  const {record,c,proposal,resolved,dispute,restricted}=await readHourlyExcessContext(tx,uid,id),a=record.accounting;
-  return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,hourlyRateMinor:a.hourlyRateMinor,authorizedMinor:a.withinCapReferenceMinor,excessMs:a.excessMs,recordedMs:a.compensableMs,proposal,resolved,dispute:dispute?{status:dispute.status,openedAt:dispute.openedAt,requestedAt:dispute.requestedAt??null,...(dispute.decision?{decision:{recognizedExcessMs:dispute.decision.recognizedExcessMs,reason:dispute.decision.reason,decidedAt:dispute.decision.decidedAt}}:{})}:null,restrictionActive:restricted,payable:false,bankVerified:false};
+  const {record,c,proposal,resolved,dispute,restricted,obligation}=await readHourlyExcessContext(tx,uid,id),a=record.accounting;
+  return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,hourlyRateMinor:a.hourlyRateMinor,authorizedMinor:a.withinCapReferenceMinor,excessMs:a.excessMs,recordedMs:a.compensableMs,proposal,resolved,dispute:dispute?{status:dispute.status,openedAt:dispute.openedAt,requestedAt:dispute.requestedAt??null,...(dispute.decision?{decision:{recognizedExcessMs:dispute.decision.recognizedExcessMs,reason:dispute.decision.reason,decidedAt:dispute.decision.decidedAt}}:{})}:null,restrictionActive:restricted,payable:!!obligation,bankVerified:false};
  },{readOnly:true});
 }
 export async function changeHourlyExcessReview(uid:string,id:string,action:'propose'|'accept'|'decline'|'withdraw',input:{proposalId:unknown;sourceDigest:unknown;recognizedExcessMs?:unknown;confirmed:unknown}){
  if(!validFreelanceId(input.proposalId)||input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest))throw Error('FREELANCE_INVALID');
  const proposalId=input.proposalId;
  return adminDb.runTransaction(async tx=>{
-  const {record,c,direct,pointer,proposal:p,resolutionRef,dispute,disputeRef,restricted,queueRef}=await readHourlyExcessContext(tx,uid,id);
+  const {record,c,direct,pointer,proposal:p,resolutionRef,dispute,disputeRef,restricted,queueRef,finalRef}=await readHourlyExcessContext(tx,uid,id);
   if(input.sourceDigest!==record.sourceDigest||dispute?.status==='resolved_administratively')return fail();
   const now=new Date().toISOString(),ref=direct.doc('hourlyExcessAgreement-'+proposalId),recipient=c.actor==='worker'?'requester':'freelancer';
   if(Date.parse(now)<Date.parse(record.completedAt))return fail();
@@ -84,7 +92,9 @@ export async function changeHourlyExcessReview(uid:string,id:string,action:'prop
   const release=status==='accepted'&&restricted?await prepareExcessRestriction(tx,record.commitment,true,false):()=>{};
   if(status==='accepted'){
    if(restricted){if(!dispute||Date.parse(now)<Date.parse(dispute.requestedAt??dispute.openedAt))return fail();tx.update(disputeRef,{status:'resolved_voluntarily',resolvedAt:now,agreementId:p.id});if(dispute.requestedAt)tx.update(queueRef,{status:'resolved_voluntarily'});release();}
-   tx.create(resolutionRef,buildResolution(record,{...p,status,decidedBy:c.actor,decidedAt:now}));
+   const resolution=buildResolution(record,{...p,status,decidedBy:c.actor,decidedAt:now});
+   const final=buildHourlyExcessObligation(record,resolution);
+   tx.create(resolutionRef,resolution);if(final)tx.create(finalRef,final);
   }
   tx.update(ref,{status,decidedBy:c.actor,decidedAt:now});
   writeFreelanceFinancialNotices(tx,record.commitment,status==='accepted'?'hourly_excess_accepted':'hourly_excess_closed',now,recipient,proposalId);
