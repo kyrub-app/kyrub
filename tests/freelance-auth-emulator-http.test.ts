@@ -2476,3 +2476,43 @@ test('Cocares historical reconciliation: preview, multiple pages, concurrent gra
   if(previousEpoch===undefined)delete process.env[epochKey];else process.env[epochKey]=previousEpoch;
  }
 });
+
+
+test('Cocares resumable migration: bounded steps, grant invalidation and cross-page duplicate keys',async()=>{
+ const flags=['KYRUB_COCAR_PROJECTION_TEST_ONLY','KYRUB_COCAR_PROJECTION_TEST_EPOCH','KYRUB_COCAR_MIGRATION_FIXTURE_UID'] as const;
+ const old=flags.map(k=>process.env[k]),uid='cocar-migration-'+suffix;
+ const ledger=db.collection('users/'+uid+'/xpLedger'),projection=db.doc('users/'+uid+'/cocarProjectionV1/current'),checkpoint=projection.parent.doc('migration');
+ const {startCocarMigrationFixture,stepCocarMigrationFixture}=await import('../server/gamification/cocarProjectionTransaction.js');
+ const {persistVerifiedKyrubXp,readVerifiedKyrubXpTotal}=await import('../server/gamification/xpLedgerRepository.js');
+ const entry=(key:string,deltaXp:number)=>({userId:uid,sourceType:'achievement' as const,sourceId:'fixture',deltaXp,correlationId:key,idempotencyKey:key,occurredAt:'2026-11-27T12:00:00.000Z'});
+ try{
+  process.env[flags[0]]='true';process.env[flags[1]]='migration-'+suffix;process.env[flags[2]]=uid;
+  const batch=db.batch();
+  for(let i=0;i<130;i++){const key='old_'+String(i).padStart(3,'0'),ref=ledger.doc('xp_'+key);batch.set(ref,{...entry(key,i===64?-2:1),id:ref.id,economy:'kyrub_xp'});}
+  await batch.commit();
+  await startCocarMigrationFixture(db,uid,'run1');
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run1'),{status:'progress',entries:64});
+  assert.equal((await projection.get()).exists,false);
+  await persistVerifiedKyrubXp(entry('zz',5));
+  assert.equal((await checkpoint.get()).exists,false);
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run1'),{status:'restart_required'});
+  await startCocarMigrationFixture(db,uid,'run2');
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run1'),{status:'restart_required'});
+  for(let i=0;i<5;i++){assert.equal((await stepCocarMigrationFixture(db,uid,'run2')).status,'progress');assert.equal((await projection.get()).exists,false);}
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run2'),{status:'complete',total:132,entries:131});
+  assert.equal((await checkpoint.get()).exists,false);
+  assert.deepEqual(await readVerifiedKyrubXpTotal(uid),{total:132,entryCount:131});
+  assert.equal((await projection.get()).get('total'),132);
+  // Seed duplicate key at sorted positions 63 and 64, straddling a key page.
+  const dup=ledger.doc('xp_duplicate');
+  await dup.set({...entry('old_063',1),id:dup.id,economy:'kyrub_xp'});
+  await startCocarMigrationFixture(db,uid,'run3');
+  for(let i=0;i<4;i++)assert.equal((await stepCocarMigrationFixture(db,uid,'run3')).status,'progress');
+  assert.equal((await stepCocarMigrationFixture(db,uid,'run3')).status,'invalid');
+  assert.equal((await projection.get()).exists,false);
+  assert.equal((await ledger.get()).size,132);
+ }finally{
+  const clean=db.batch();clean.delete(projection);clean.delete(checkpoint);for(const d of (await ledger.get()).docs)clean.delete(d.ref);await clean.commit();
+  flags.forEach((k,i)=>{if(old[i]===undefined)delete process.env[k];else process.env[k]=old[i];});
+ }
+});
