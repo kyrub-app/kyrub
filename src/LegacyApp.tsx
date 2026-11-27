@@ -1581,6 +1581,9 @@ const handleLogin = async (provider: 'google' | 'apple') => {
                     </button>
                   )}
 
+                  {storeReputationCandidateEnabled() && canStoreRoleAccessErpMenuItem(erpAccessRole, 'reputacoes_gestao') && (
+                    <button type="button" onClick={() => requestErpManagementNavigation('reputacoes_gestao')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400" data-kyrub-desktop-management-item="reputacoes_gestao"><Star className="w-3.5 h-3.5"/><span>Reputações (gestão)</span></button>
+                  )}
                   {/* Restantes abas de navegação */}
                   {[
                     { id: 'clientes', label: 'Clientes', icon: Users },
@@ -1596,7 +1599,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
                     return (
                       <button
                         key={tab.id}
-                        onClick={() => setActiveSubTab(tab.id as any)}
+                        onClick={() => { requestErpManagementNavigation(null); setActiveSubTab(tab.id as any); }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
                           isSelected
                             ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10'
