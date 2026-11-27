@@ -631,6 +631,10 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   const {auditOwnFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexAudit.js');
   const audited=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
   assert.equal(audited.state,'verified_snapshot');assert.equal(audited.projection?.completedContracts,1);assert.equal(audited.projection?.aggregate.mean,5);
+  const {auditOwnFreelanceReputationIndexBatched}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+  const batched=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:1,maxPages:2});
+  assert.equal(batched.state,'verified_snapshot');assert.deepEqual(batched.projection,audited.projection);assert.equal(batched.pages,1);
+  await assert.rejects(auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:0}),/INVALID/);
   const privateView=await call(worker,'?view=reputation_verified_professional',200);
   assert.deepEqual(privateView,{subject:audited.subject,state:audited.state,projection:audited.projection});
   await call(null,'?view=reputation_verified_professional',401);
@@ -643,6 +647,8 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await indexRef.update({'accumulator.ratingUnits':1680});
   const mismatch=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
   assert.equal(mismatch.state,'repair_required');assert.equal(mismatch.projection,null);
+  const batchedMismatch=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional');
+  assert.equal(batchedMismatch.state,'repair_required');assert.equal(batchedMismatch.projection,null);
   assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
   await indexRef.update({accumulator:before});
   const receiptRef=db.doc('freelanceReputationIndexReceiptsV1/'+id),originalReceipt=(await receiptRef.get()).data()!;
@@ -1322,6 +1328,9 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
    assert.equal(rebuilt.experienceAdded,true);assert.equal(rebuilt.ratingsAdded,true);
    const verified=await auditOwnFreelanceReputationIndex(owner.uid,'store_requester');
    assert.equal(verified.state,'verified_snapshot');assert.equal(verified.projection?.completedContracts,1);assert.equal(verified.projection?.aggregate.mean,4);
+   const {auditOwnFreelanceReputationIndexBatched}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+   assert.deepEqual((await auditOwnFreelanceReputationIndexBatched(owner.uid,'store_requester')).projection,verified.projection);
+   await assert.rejects(auditOwnFreelanceReputationIndexBatched(manager.uid,'store_requester'),/FORBIDDEN/);
    assert.equal((await auditOwnFreelanceReputationIndex(owner.uid,'personal_requester')).projection?.completedContracts,0);
    await assert.rejects(auditOwnFreelanceReputationIndex(manager.uid,'store_requester'),/FORBIDDEN/);
    const management='?view=reputation_management&storeId='+owner.uid;
