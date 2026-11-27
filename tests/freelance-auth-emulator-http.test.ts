@@ -1014,9 +1014,27 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(payer,409,zeroId,'statement',{eventId:'late-original-paid',statement:'paid'});
  assert.equal((await accounting(worker,200,zeroId)).resolution.sourceDigest,zero.resolution.sourceDigest);
  assert.equal((await db.doc('freelanceOffersV1/'+zeroId+'/directPayment/externalStatements').get()).exists,false);
+ // Movements: each contract appears once, with its own historical value and adjustment.
+ const moves=async(actor:Actor,role:string,status=200)=>{
+  const r=await fetch(url+'?view=movements&role='+role,{headers:{authorization:'Bearer '+actor.token}});
+  const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;
+ };
+ for(const [actor,role] of [[payer,'requester'],[worker,'freelancer']] as const){
+  const page=await moves(actor,role);assert.equal(page.bankVerifiedMinor,null);
+  const entry=(target:string)=>{const rows=page.entries.filter((e:any)=>e.offerId===target);assert.equal(rows.length,1);return rows[0];};
+  const refundEntry=entry(id);assert.equal(refundEntry.operationalStatus,'cancelled');assert.equal(refundEntry.amountMinor,15000);assert.equal(refundEntry.cancellation.recognizedServiceMinor,5000);assert.equal(refundEntry.cancellation.reportedReceivedMinor,15000);
+  assert.equal(refundEntry.cancellation.adjustment.flow,role==='requester'?'inflow':'outflow');assert.equal(refundEntry.cancellation.adjustment.amountMinor,10000);assert.equal(refundEntry.cancellation.adjustment.financialState,'bilaterally_reported_received');
+  const complement=entry(completionId);assert.equal(complement.cancellation.adjustment.flow,role==='requester'?'outflow':'inflow');assert.equal(complement.cancellation.adjustment.amountMinor,4000);
+  const administrative=entry(adminId);assert.equal(administrative.cancellation.adjustment.financialState,'administratively_closed_unverified');assert.equal(administrative.cancellation.adjustment.bankVerified,false);
+  const business=entry(storeOffer);assert.equal(business.requesterStoreId,storeId);assert.equal(business.cancellation.adjustment.direction,'refund');
+  const zeroEntry=entry(zeroId);assert.equal(zeroEntry.cancellation.recognizedServiceMinor,0);assert.equal(zeroEntry.cancellation.adjustment,null);
+  assert.equal(entry(staleId).cancellation.state,'pending');
+  assert.ok(!JSON.stringify(page).includes('@example.invalid'));assert.ok(!JSON.stringify(page).includes('pngBase64'));
+ }
+ assert.equal((await moves(other,'requester')).entries.some((e:any)=>[id,completionId,adminId,storeOffer,zeroId,staleId].includes(e.offerId)),false);
  // A changed amount in the persisted adjustment cannot be presented as valid.
  const adjustmentRef=db.doc('freelanceOffersV1/'+completionId+'/directPayment/fixedCancellationAdjustment');
- await adjustmentRef.update({amountMinor:4001});await accounting(worker,409,completionId);await finance(payer,409,completionId);
+ await adjustmentRef.update({amountMinor:4001});await accounting(worker,409,completionId);await finance(payer,409,completionId);await moves(payer,'requester',409);
  await adjustmentRef.set(additionalDebt);
  // Historical declarations can invalidate a proposal without erasing it.
  await propose(worker,200,staleId,'stale-proposal',3000,0);
