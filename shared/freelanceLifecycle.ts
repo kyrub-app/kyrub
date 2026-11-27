@@ -1,8 +1,10 @@
+import {createDirectPaymentTerms,type DirectPaymentTerms} from './directPaymentTerms.js';
 export interface FreelanceOfferInput {
   title: string;
   description: string;
   requirements: string;
   paymentMinor: number;
+  paymentTerms?: DirectPaymentTerms;
 }
 export interface FreelanceOffer extends FreelanceOfferInput {
   id: string;
@@ -19,6 +21,7 @@ export interface FreelanceOffer extends FreelanceOfferInput {
   createdAt: string;
 }
 export interface FreelanceApplication {
+  paymentTerms?: DirectPaymentTerms;
   offerId: string;
   applicantUid: string;
   ownerUid: string;
@@ -37,17 +40,35 @@ export interface FreelanceApplication {
 }
 export const validFreelanceId = (value: unknown): value is string =>
   typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
+/** Stored terms must be exact, match the agreed amount and never imply settlement. */
+export function readFreelancePaymentTerms(value:unknown,amountMinor:number):DirectPaymentTerms|undefined{
+ if(value===undefined)return undefined;
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('FREELANCE_INVALID');
+ const v=value as Record<string,unknown>;
+ let expected:DirectPaymentTerms;
+ try{expected=createDirectPaymentTerms({timing:v.timing,method:v.method,amountMinor});}catch{throw Error('FREELANCE_INVALID');}
+ const keys=Object.keys(expected) as Array<keyof DirectPaymentTerms>;
+ if(Object.keys(v).length!==keys.length||keys.some(k=>v[k]!==expected[k]))throw Error('FREELANCE_INVALID');
+ return expected;
+}
+export function sameFreelancePaymentTerms(a:unknown,b:unknown,amountMinor:number):boolean{
+ try{
+  const x=readFreelancePaymentTerms(a,amountMinor),y=readFreelancePaymentTerms(b,amountMinor);
+  return x===undefined?y===undefined:y!==undefined&&x.timing===y.timing&&x.method===y.method;
+ }catch{return false;}
+}
 export function normalizeFreelanceOffer(input: unknown): FreelanceOfferInput {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('FREELANCE_INVALID');
   const data = input as Record<string, unknown>;
-  if (Object.keys(data).some(key => !['title','description','requirements','paymentMinor'].includes(key))) throw new Error('FREELANCE_INVALID');
+  if (Object.keys(data).some(key => !['title','description','requirements','paymentMinor','paymentTerms'].includes(key))) throw new Error('FREELANCE_INVALID');
   const text = (value: unknown, max: number, required: boolean): string => {
     if (typeof value !== 'string' || value.trim().length > max || (required && !value.trim())) throw new Error('FREELANCE_INVALID');
     return value.trim();
   };
   const paymentMinor = data.paymentMinor;
   if (typeof paymentMinor !== 'number' || !Number.isSafeInteger(paymentMinor) || paymentMinor <= 0 || paymentMinor > 999999999) throw new Error('FREELANCE_INVALID');
-  return {title:text(data.title,120,true),description:text(data.description,4000,true),requirements:text(data.requirements ?? '',1000,false),paymentMinor};
+  const paymentTerms=readFreelancePaymentTerms(data.paymentTerms,paymentMinor);
+  return {title:text(data.title,120,true),description:text(data.description,4000,true),requirements:text(data.requirements ?? '',1000,false),paymentMinor,...(paymentTerms?{paymentTerms}:{})};
 }
 export function createFreelanceOffer(id: string, ownerUid: string, input: unknown, now: string): FreelanceOffer {
   if (!validFreelanceId(id) || !validFreelanceId(ownerUid) || !Number.isFinite(Date.parse(now))) throw new Error('FREELANCE_INVALID');
@@ -56,7 +77,8 @@ export function createFreelanceOffer(id: string, ownerUid: string, input: unknow
 export function createFreelanceApplication(offer: FreelanceOffer, applicantUid: string, now: string): FreelanceApplication {
   if (!validFreelanceId(offer.id) || !validFreelanceId(offer.ownerUid) || !validFreelanceId(applicantUid) || !Number.isFinite(Date.parse(now))) throw new Error('FREELANCE_INVALID');
   if (offer.ownerUid === applicantUid || offer.status !== 'open') throw new Error('FREELANCE_FORBIDDEN');
-  return {offerId:offer.id,ownerUid:offer.ownerUid,applicantUid,status:'pending',createdAt:now};
+  const paymentTerms=readFreelancePaymentTerms(offer.paymentTerms,offer.paymentMinor);
+  return {offerId:offer.id,ownerUid:offer.ownerUid,applicantUid,status:'pending',createdAt:now,...(paymentTerms?{paymentTerms}:{})};
 }
 
 export interface FreelanceSelectionResult {
@@ -69,7 +91,8 @@ function validatePair(offer: FreelanceOffer, application: FreelanceApplication, 
       !validFreelanceId(application.applicantUid) ||
       application.offerId !== offer.id || application.ownerUid !== offer.ownerUid ||
       application.applicantUid === offer.ownerUid || !Number.isFinite(Date.parse(now)) ||
-      !Number.isSafeInteger(offer.paymentMinor) || offer.paymentMinor <= 0 || offer.paymentMinor > 999999999) {
+      !Number.isSafeInteger(offer.paymentMinor) || offer.paymentMinor <= 0 || offer.paymentMinor > 999999999 ||
+      !sameFreelancePaymentTerms(offer.paymentTerms,application.paymentTerms,offer.paymentMinor)) {
     throw new Error('FREELANCE_CONFLICT');
   }
 }

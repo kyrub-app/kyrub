@@ -2,7 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
-import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
+import { sameFreelancePaymentTerms,createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
 
 const offers = 'freelanceOffersV1';
 const eligibility = (uid: string) => adminDb.doc('identity_verifications/' + uid);
@@ -23,7 +23,8 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
       const saved = existing.data() as FreelanceOffer;
       if (saved.id !== proposed.id || saved.ownerUid !== actorUid || saved.status !== 'open' ||
           saved.title !== proposed.title || saved.description !== proposed.description ||
-          saved.requirements !== proposed.requirements || saved.paymentMinor !== proposed.paymentMinor) throw new Error('FREELANCE_CONFLICT');
+          saved.requirements !== proposed.requirements || saved.paymentMinor !== proposed.paymentMinor ||
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,proposed.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
       return {offer:saved,created:false};
     }
     tx.create(ref, proposed);
@@ -42,7 +43,8 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string): 
     const proposed = createFreelanceApplication(offer,actorUid,new Date().toISOString());
     if (applicationSnap.exists) {
       const saved = applicationSnap.data() as FreelanceApplication;
-      if (saved.offerId !== offerId || saved.applicantUid !== actorUid || saved.ownerUid !== offer.ownerUid || saved.status !== 'pending') throw new Error('FREELANCE_CONFLICT');
+      if (saved.offerId !== offerId || saved.applicantUid !== actorUid || saved.ownerUid !== offer.ownerUid || saved.status !== 'pending' ||
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
       return {application:saved,created:false};
     }
     tx.create(applicationRef,proposed);
@@ -155,6 +157,9 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       const [owner,worker]=await tx.getAll(eligibility(offer.ownerUid),eligibility(offer.selectedApplicantUid));
       assertApproved(owner.data(),'requester');
       assertApproved(worker.data(),'freelancer');
+      // Direct terms are not a payment authorization. Preserve the legacy gate;
+      // the new lifecycle remains blocked until its obligation model is integrated.
+      if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined)throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
       await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
