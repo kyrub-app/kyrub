@@ -16,7 +16,7 @@ export type PrivacyRight=keyof typeof PRIVACY_RIGHTS;
 export const PRIVACY_CONTEXTS={ecosystem:'Conta e serviços Kyrub',cid:'Cartão de Informação Digital (CID)',thirdParty:'Dados tratados sem conta Kyrub'} as const;
 export type PrivacyContext=keyof typeof PRIVACY_CONTEXTS;
 export type PrivacyRequestDraft={right:PrivacyRight;context:PrivacyContext;confirmed:true};
-export type PrivacyRequestReceipt={protocol:string;status:'received';simulated:boolean};
+export type PrivacyRequestReceipt={protocol:string;status:'received';simulated:boolean;trackingCode?:string;trackingExpiresAt?:number};
 export type PrivacyRightsAdapter={submit:(draft:PrivacyRequestDraft)=>Promise<PrivacyRequestReceipt>};
 export function normalizePrivacyRequest(input:unknown):PrivacyRequestDraft{
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('PRIVACY_REQUEST_INVALID');
