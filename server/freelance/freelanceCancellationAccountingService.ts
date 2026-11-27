@@ -1,3 +1,4 @@
+import {buildFixedCancellationResolution,readFixedResolutionRecords,writeFixedResolution} from './freelanceFixedCancellationResolution.js';
 import {digestVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
 import {readHourlyReviewNotes} from './freelanceHourlyReviewNotes.js';
 import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
@@ -67,14 +68,18 @@ export async function readFixedCancellationContext(tx:FirebaseFirestore.Transact
   if(!d||Object.keys(d).length!==8||!validFreelanceId(d.actorUid)||[c.obligation.requesterUid,c.obligation.beneficiaryUid].includes(d.actorUid)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||!Number.isFinite(Date.parse(d.decidedAt))||Date.parse(d.decidedAt)<Date.parse(dispute.requestedAt!)||d.snapshot!==snapshot||d.proposalDigest!==digestVariablePaymentSources(proposal??null)||d.evidenceDigest!==evidence.digest)return conflict();
   administrativeAmounts=calculateCancellationAccounting(c.obligation,c.events,d.recognizedServiceMinor,d.reportedReceivedMinor);
  }
+ const resolutionBase={obligation:c.obligation,events:c.events,snapshot,cancelledAt:c.offer.cancelledAt};
+ const resolved=dispute?.status==='resolved_administratively'?buildFixedCancellationResolution({...resolutionBase,kind:'administrative',resolvedAt:dispute.decision!.decidedAt,recognizedServiceMinor:dispute.decision!.recognizedServiceMinor,reportedReceivedMinor:dispute.decision!.reportedReceivedMinor,decision:dispute.decision}):proposal?.status==='accepted'?buildFixedCancellationResolution({...resolutionBase,kind:'bilateral',resolvedAt:proposal.decidedAt!,recognizedServiceMinor:proposal.recognizedServiceMinor,reportedReceivedMinor:proposal.reportedReceivedMinor,decision:proposal}):null;
+ if(resolved&&(stale&&proposal?.status==='accepted'||!eligible||cancellationRestricted))return conflict();
+ const resolutionRecords=await readFixedResolutionRecords(tx,direct,resolved);
  await prepareCancellationRestriction(tx,c.obligation,cancellationRestricted,cancellationRestricted);
- return {...c,direct,pointer,proposal,snapshot,stale,eligible,dispute,disputeRef,cancellationRestricted,queueRef,evidence,evidenceSource,administrativeAmounts};
+ return {...c,direct,pointer,proposal,snapshot,stale,eligible,dispute,disputeRef,cancellationRestricted,queueRef,evidence,evidenceSource,administrativeAmounts,resolved,resolutionRecords,resolutionBase};
 }
 function project(c:Awaited<ReturnType<typeof readFixedCancellationContext>>,uid:string){
  const p=c.proposal;
  const amounts:Accounting|null=p&&!c.stale&&c.eligible&&p.status!=='closed'?calculateCancellationAccounting(c.obligation,c.events,p.recognizedServiceMinor,p.reportedReceivedMinor):null;
  return {offerId:c.offer.id,currency:'BRL',agreedMinor:c.obligation.terms.amountMinor,
-  priorPaymentState:c.projection.state,eligible:c.eligible,snapshot:c.snapshot,restrictionActive:c.cancellationRestricted,dispute:c.dispute?{status:c.dispute.status,requestedAt:c.dispute.requestedAt??null,...(c.dispute.decision?{decision:{reason:c.dispute.decision.reason,decidedAt:c.dispute.decision.decidedAt,amounts:c.administrativeAmounts}}:{})}:null,evidenceSource:c.dispute?.requestedAt?c.evidenceSource:null,bankVerified:false,settlement:'not_verified',
+  priorPaymentState:c.projection.state,eligible:c.eligible,resolution:c.resolved?.resolution??null,snapshot:c.snapshot,restrictionActive:c.cancellationRestricted,dispute:c.dispute?{status:c.dispute.status,requestedAt:c.dispute.requestedAt??null,...(c.dispute.decision?{decision:{reason:c.dispute.decision.reason,decidedAt:c.dispute.decision.decidedAt,amounts:c.administrativeAmounts}}:{})}:null,evidenceSource:c.dispute?.requestedAt?c.evidenceSource:null,bankVerified:false,settlement:'not_verified',
   proposal:p?{id:p.id,status:c.stale?'stale':p.status,proposedByMe:p.proposedBy===uid,proposedAt:p.proposedAt,closure:p.status==='closed'?(p.decidedBy===p.proposedBy?'withdrawn':'declined'):null,amounts}:null};
 }
 export async function readCancellationAccounting(uid:string,id:string){
@@ -103,7 +108,7 @@ export async function changeCancellationAccounting(uid:string,id:string,action:'
     if(c.stale||p.proposedBy!==uid||p.recognizedServiceMinor!==a.recognizedServiceMinor||p.reportedReceivedMinor!==a.reportedReceivedMinor)return conflict();
     return {changed:false};
    }
-   if(p&&!c.stale&&p.status!=='closed')return conflict();
+   if(c.resolved||p&&!c.stale&&p.status!=='closed')return conflict();
    const ref=c.direct.doc('cancellationAccounting-'+proposalId);
    if((await tx.get(ref)).exists)return conflict();
    const proposal:Proposal={schemaVersion:1,id:proposalId,offerId:id,proposedBy:uid,proposedAt:now,snapshot:c.snapshot,
@@ -122,6 +127,11 @@ export async function changeCancellationAccounting(uid:string,id:string,action:'
   }
   const release=action==='accept'&&c.cancellationRestricted?await prepareCancellationRestriction(tx,c.obligation,true,false):()=>{};
   if(action==='accept'&&c.cancellationRestricted){if(!c.dispute||Date.parse(now)<Date.parse(c.dispute.requestedAt??c.dispute.openedAt))return conflict();tx.update(c.disputeRef,{status:'resolved_voluntarily',resolvedAt:now,agreementId:p.id});if(c.dispute.requestedAt)tx.update(c.queueRef,{status:'resolved_voluntarily'});release();}
+  if(action==='accept'){
+   const decision={...p,status:'accepted',decidedBy:uid,decidedAt:now};
+   const result=buildFixedCancellationResolution({...c.resolutionBase,kind:'bilateral',resolvedAt:now,recognizedServiceMinor:p.recognizedServiceMinor,reportedReceivedMinor:p.reportedReceivedMinor,decision});
+   writeFixedResolution(tx,c.resolutionRecords,result);
+  }
   tx.update(c.direct.doc('cancellationAccounting-'+proposalId),{status,decidedBy:uid,decidedAt:now});
   writeFreelanceFinancialNotices(tx,c.obligation,action==='accept'?'cancellation_accounting_accepted':'cancellation_accounting_closed',now,uid===c.obligation.requesterUid?'freelancer':'requester',proposalId);
   return {changed:true};
