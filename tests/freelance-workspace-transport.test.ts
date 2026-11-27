@@ -117,3 +117,56 @@ test('review suspension does not accrue time and requires explicit restart after
  assert.equal(r.workMs,75*60000);assert.equal(r.breakMs,0);assert.equal(r.status,'confirmed');
  assert.throws(()=>projectFreelanceAttendance(schedule,[events[0],events[1],{...events[2],actor:'requester'}]),/CONFLICT/);
 });
+
+test('hourly assessment uses actual recorded time, waiting and approved breaks, not the estimate',async()=>{
+ const {calculateFreelanceHourlyAccounting}=await import('../shared/freelanceHourlyAccounting.js');
+ const {projectFreelanceAttendance}=await import('../shared/freelanceAttendance.js');
+ const schedule={location:'on_site' as const,scheduledStartAt:'2026-11-27T12:00:00.000Z',agreedMinutes:360};
+ const at=(h:string)=>'2026-11-27T'+h+':00.000Z';
+ const events=[
+ {id:'a',kind:'check_in',actor:'worker',at:at('11:45')},
+ {id:'b',kind:'confirm_presence',actor:'requester',at:at('11:50')},
+ {id:'c',kind:'acknowledge_waiting',actor:'requester',at:at('12:05')},
+ {id:'d',kind:'start',actor:'worker',at:at('12:30')},
+ {id:'e',kind:'request_break',actor:'worker',at:at('13:30')},
+ {id:'f',kind:'approve_break',actor:'requester',at:at('13:30')},
+ {id:'g',kind:'resume',actor:'worker',at:at('14:00')},
+ {id:'h',kind:'checkout',actor:'worker',at:at('16:00')},
+ {id:'i',kind:'confirm_checkout',actor:'requester',at:at('16:05')},
+ ] as const;
+ const input={workTerms:{mode:'hourly',location:'on_site',estimatedMinutes:360,hourlyRateMinor:2000},estimatedMinor:12000,schedule,events,extensions:[]};
+ const result=calculateFreelanceHourlyAccounting(input);
+ assert.equal(result.status,'calculated');assert.equal(result.calculatedServiceMinor,7000);assert.equal(result.authorizedCapMinor,12000);
+ assert.equal(result.workMs,180*60000);assert.equal(result.waitMs,30*60000);assert.equal(result.breakMs,30*60000);
+ assert.equal(result.bankVerified,false);assert.equal(result.settlement,'not_verified');
+ const before=calculateFreelanceHourlyAccounting({...input,events:events.slice(0,-1)});
+ assert.equal(before.status,'awaiting_confirmation');assert.equal(before.calculatedServiceMinor,null);
+ const suspended=calculateFreelanceHourlyAccounting({...input,events:[...events.slice(0,4),{id:'stop',kind:'suspend',actor:'system',at:at('13:00')}]});
+ assert.equal(suspended.status,'requires_suspension_review');assert.equal(suspended.calculatedServiceMinor,null);
+ assert.equal(projectFreelanceAttendance(schedule,events.slice(0,4),at('13:00')).elapsedCompensableMs,60*60000);
+ assert.throws(()=>calculateFreelanceHourlyAccounting({...input,workTerms:{mode:'fixed',location:'on_site',estimatedMinutes:360}}),/CONFLICT/);
+ assert.throws(()=>calculateFreelanceHourlyAccounting({...input,estimatedMinor:13000}),/INVALID/);
+});
+test('hourly extensions require both roles before the cap, unapproved excess remains unresolved',async()=>{
+ const {calculateFreelanceHourlyAccounting}=await import('../shared/freelanceHourlyAccounting.js');
+ const at=(h:string)=>'2026-11-27T'+h+':00.000Z';
+ const schedule={location:'remote' as const,scheduledStartAt:at('08:00'),agreedMinutes:360};
+ const events=[
+ {id:'start',kind:'start',actor:'worker',at:at('08:00')},
+ {id:'out',kind:'checkout',actor:'worker',at:at('15:00')},
+ {id:'confirmed',kind:'confirm_checkout',actor:'requester',at:at('15:05')},
+ ] as const;
+ const input={workTerms:{mode:'hourly',location:'remote',estimatedMinutes:360,hourlyRateMinor:2000},estimatedMinor:12000,schedule,events,extensions:[]};
+ const excess=calculateFreelanceHourlyAccounting(input);
+ assert.equal(excess.status,'requires_excess_review');assert.equal(excess.excessMs,3600000);
+ assert.equal(excess.withinCapReferenceMinor,12000);assert.equal(excess.calculatedServiceMinor,null);
+ const extension={id:'e1',extraMinutes:60,proposedBy:'worker' as const,acceptedBy:'requester' as const,proposedAt:at('13:00'),acceptedAt:at('13:15')};
+ const extended=calculateFreelanceHourlyAccounting({...input,extensions:[extension]});
+ assert.equal(extended.authorizedMinutes,420);assert.equal(extended.authorizedCapMinor,14000);assert.equal(extended.calculatedServiceMinor,14000);
+ for(const bad of [{...extension,acceptedBy:'worker' as const},{...extension,acceptedAt:at('14:00')},{...extension,acceptedAt:at('15:01')},{...extension,extraMinutes:0}]){
+  assert.throws(()=>calculateFreelanceHourlyAccounting({...input,extensions:[bad]}),/CONFLICT/);
+ }
+ assert.throws(()=>calculateFreelanceHourlyAccounting({...input,extensions:[extension,extension]}),/CONFLICT/);
+ const seconds=calculateFreelanceHourlyAccounting({...input,events:[events[0],{...events[1],at:'2026-11-27T08:00:01.000Z'},{...events[2],at:at('08:01')}]});
+ assert.equal(seconds.calculatedServiceMinor,1);
+});

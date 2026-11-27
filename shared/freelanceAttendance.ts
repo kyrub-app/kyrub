@@ -11,7 +11,7 @@ const time=(v:unknown):number=>{
  return t;
 };
 const actors:Record<FreelanceAttendanceKind,FreelanceAttendanceEvent['actor']>={check_in:'worker',confirm_presence:'requester',authorize_early_start:'requester',acknowledge_waiting:'requester',start:'worker',request_break:'worker',approve_break:'requester',resume:'worker',checkout:'worker',confirm_checkout:'requester',suspend:'system',resume_review:'system'};
-export function projectFreelanceAttendance(schedule:FreelanceAttendanceSchedule,events:readonly FreelanceAttendanceEvent[]){
+export function projectFreelanceAttendance(schedule:FreelanceAttendanceSchedule,events:readonly FreelanceAttendanceEvent[],asOf?:string){
  const scheduled=time(schedule.scheduledStartAt);
  if(!['on_site','remote'].includes(schedule.location)||!Number.isSafeInteger(schedule.agreedMinutes)||schedule.agreedMinutes<1||schedule.agreedMinutes>10080||!Array.isArray(events)||events.length>512)return fail();
  let arrived:number|null=null,presence=false,early=false,started=false,waiting:number|null=null,work:number|null=null,breakAsked=false,pause:number|null=null,checkout:number|null=null,confirmed=false,suspended=false,reviewHold=false,waitFloor=-Infinity;
@@ -48,7 +48,11 @@ export function projectFreelanceAttendance(schedule:FreelanceAttendanceSchedule,
   }
  }
  const compensableMs=workMs+waitMs;
+ const asOfMs=asOf===undefined?undefined:time(asOf);
+ if(asOfMs!==undefined&&asOfMs<last)return fail();
+ const elapsedCompensableMs=compensableMs+(asOfMs===undefined?0:work!==null?asOfMs-work:waiting!==null?asOfMs-waiting:0);
+ if(!Number.isSafeInteger(elapsedCompensableMs)||elapsedCompensableMs<compensableMs)return fail();
  if(![workMs,waitMs,breakMs,compensableMs].every(v=>Number.isSafeInteger(v)&&v>=0))return fail();
  return {status:suspended?'suspended':confirmed?'confirmed':checkout!==null?'awaiting_confirmation':reviewHold?'awaiting_resume':pause!==null?'paused':work!==null?'working':waiting!==null?'waiting':presence?'present':arrived!==null?'checked_in':'scheduled',
- workMs,waitMs,breakMs,compensableMs,exceedsAgreedTime:compensableMs>schedule.agreedMinutes*60000,readyForReview:confirmed,earlyAuthorized:early,breakRequested:breakAsked,financialSettlement:'not_verified' as const};
+ workMs,waitMs,breakMs,compensableMs,elapsedCompensableMs,exceedsAgreedTime:elapsedCompensableMs>schedule.agreedMinutes*60000,readyForReview:confirmed,earlyAuthorized:early,breakRequested:breakAsked,financialSettlement:'not_verified' as const};
 }
