@@ -1,3 +1,4 @@
+import {readHourlyCancellation} from './freelanceHourlyCancellationService.js';
 import {readCancellationAccounting,changeCancellationAccounting} from './freelanceCancellationAccountingService.js';
 import {adminAuth} from '../firebaseAdmin.js';
 import {readOwnFreelanceMovements} from './freelanceMovementsService.js';
@@ -54,6 +55,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
+   if(q.view==='hourly_cancellation'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellation(uid,q.offerId));return;}
    if(q.view==='cancellation_accounting'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCancellationAccounting(uid,q.offerId));return;}
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
    if(q.view==='pix_rebind'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixRebind(uid,q.offerId));return;}
