@@ -13,7 +13,7 @@ export function projectOwnDataFixture(input:{protocol:string;ownerUid:string;now
  }
  if(input.preferences){
   const p=input.preferences;
-  if(p.simulation!==true||p.ownerUid!==input.ownerUid||!str(p.locale,16)||!/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.locale)||!['light','dark','system'].includes(String(p.theme)))return deny();
+  if(p.simulation!==true||p.ownerUid!==input.ownerUid||!str(p.locale,16)||!/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.locale)||typeof p.theme!=='string'||!['light','dark','system'].includes(p.theme))return deny();
   data.preferences={locale:p.locale,theme:p.theme as 'light'|'dark'|'system'};categories.push('preferences');
  }
  return {protocol:input.protocol,formatVersion:1,generatedAt:input.now,simulation:true,completeAccessResponse:false,categories,data};
