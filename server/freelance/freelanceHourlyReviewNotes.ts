@@ -2,7 +2,7 @@ import {sanitizeReceiptPng,MAX_RECEIPT_BYTES} from './freelanceReceiptPng.js';
 import type {Transaction,DocumentReference} from 'firebase-admin/firestore';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {digestVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
-export type HourlyReviewKind='cancellation'|'excess'|'fixed_cancellation';
+export type HourlyReviewKind='cancellation'|'excess'|'fixed_cancellation'|'fixed_adjustment';
 type Party={offerId:string;requesterUid:string;beneficiaryUid:string};
 type Note={id:string;actorUid:string;note:string;recordedAt:string};
 const fail=():never=>{throw Error('FREELANCE_FINANCIAL_EVIDENCE_CONFLICT');};
