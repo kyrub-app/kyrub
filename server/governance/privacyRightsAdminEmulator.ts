@@ -1,7 +1,7 @@
 // Local-only. No access to underlying personal data or execution of rights.
 import {getApps,initializeApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
-import {getFirestore,type Transaction} from 'firebase-admin/firestore';
+import {getFirestore,type Transaction,type DocumentData} from 'firebase-admin/firestore';
 import {randomUUID} from 'node:crypto';
 import {assertPrivacyEmulator,PRIVACY_EMULATOR_PROJECT} from './privacyRightsEmulator.js';
 import {normalizePrivacyRequest} from '../../shared/privacyRights.js';
@@ -24,7 +24,7 @@ export function createPrivacyRightsAdminEmulator(){
   return {actorId:identity.uid,actorRole:a.get('role') as string};
  }
  function log(tx:Transaction,actor:{actorId:string;actorRole:string},action:string,now:number,fields:Record<string,unknown>){const id=randomUUID();tx.create(audit.doc(id),{id,...actor,action,createdAt:now,simulation:true,...fields});}
- function project(id:string,v:FirebaseFirestore.DocumentData|undefined,now:number){
+ function project(id:string,v:DocumentData|undefined,now:number){
   if(!uuid(id)||!v||v.protocol!==id||v.simulation!==true||v.status!=='received'||v.identityStatus!=='pending-verification'||v.actionStatus!=='not-executed'||!Number.isSafeInteger(v.receivedAt)||v.receivedAt<=0||v.receivedAt>now||!Number.isSafeInteger(v.revision)||v.revision<0||!['pending-review','verification-required'].includes(v.triageStatus))return deny();
   return {protocol:id,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
  }
