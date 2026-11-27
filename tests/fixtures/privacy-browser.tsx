@@ -9,6 +9,7 @@ const root=createRoot(document.getElementById('root')!);
 const client=createPrivacyHomologationHttpClient();
 root.render(<p>Ambiente fictício de privacidade</p>);
 Object.assign(window,{
+ privacyTestMountAccount:(sessionKey:string,token:string,credential?:{id:string;secret:string})=>root.render(<KyrubPrivacyCentralPilot context="ecosystem" sessionKey={sessionKey} rights={credential?client.intake(credential):undefined} tracking={client.tracking(async()=>token)} consents={client.consents(async()=>token)} own={client.own(async()=>token)}/>),
  privacyTestMountAdmin:(profile:AdminProfile,token:string)=>root.render(<AdminPrivacyGovernancePilot key={profile.uid} profile={profile} uid={profile.uid} adapter={client.admin(async()=>token)}/>),
  privacyTestRegister:(optionsJSON:PublicKeyCredentialCreationOptionsJSON)=>startRegistration({optionsJSON}),
  privacyTestMount:(credential?:{id:string;secret:string})=>root.render(<KyrubPrivacyCentralPilot context="cid" sessionKey="cid-fixture" rights={credential?client.intake(credential):undefined} tracking={client.tracking(undefined,optionsJSON=>startAuthentication({optionsJSON}))}/>)
