@@ -1,3 +1,4 @@
+import type {FreelanceCounterproposal,FreelanceOriginalTerms} from './freelanceCounterproposal.js';
 import {readFreelanceWorkTerms,sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady,type FreelanceWorkTerms} from './freelanceWorkTerms.js';
 import {createDirectPaymentTerms,type DirectPaymentTerms} from './directPaymentTerms.js';
 export interface FreelanceOfferInput {
@@ -11,6 +12,8 @@ export interface FreelanceOfferInput {
 export interface FreelanceOffer extends FreelanceOfferInput {
   id: string;
   ownerUid: string;
+  selectedCounterproposal?:FreelanceCounterproposal;
+  originalOfferTerms?:FreelanceOriginalTerms;
   status: 'open' | 'selected' | 'contracted' | 'in_progress' | 'completion_requested' | 'completed' | 'cancelled' | 'under_review';
   occurrenceId?: string;
   startedAt?: string;
@@ -23,6 +26,7 @@ export interface FreelanceOffer extends FreelanceOfferInput {
   createdAt: string;
 }
 export interface FreelanceApplication {
+  counterproposal?:FreelanceCounterproposal;
   paymentTerms?: DirectPaymentTerms;
   workTerms?: FreelanceWorkTerms;
   offerId: string;
@@ -157,7 +161,7 @@ export function releaseFreelanceSelection(offer: FreelanceOffer, application: Fr
       offer.selectedApplicantUid !== application.applicantUid) return {offer,application,changed:false};
   if (offer.status !== 'selected' || application.status !== 'selected' || !isSelectedPair(offer,application) ||
       offer.contractedAt || application.contractedAt || Date.parse(now) < Date.parse(offer.selectedAt!)) throw new Error('FREELANCE_CONFLICT');
-  const {selectedApplicantUid: _uid, selectedAt: _at, ...remaining} = offer;
+  const {selectedApplicantUid: _uid, selectedAt: _at, selectedCounterproposal:_proposal, ...remaining} = offer;
   return {offer:{...remaining,status:'open'}, application:{...application,status:'released',releasedAt:now,releasedBy:actorUid},changed:true};
 }
 export function withdrawFreelanceApplication(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string, confirmed: unknown, now: string): FreelanceSelectionResult {
