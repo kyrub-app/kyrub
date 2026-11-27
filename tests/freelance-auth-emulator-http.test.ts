@@ -579,6 +579,31 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await finance(worker,200,id,'statement',{eventId:'received',statement:'received'});
  const completed=await finance(worker,200,id);assert.equal(completed.financialState,'bilaterally_reported_received');assert.equal(completed.bankVerified,false);
  assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).get('confirmedServiceMinor'),15000);
+ const {readFreelanceReputation,submitFreelanceReputation}=await import('../server/freelance/freelanceReputationService.js');
+ const rg='KYRUB_FREELANCE_REPUTATION_TEST_ONLY',priorGate=process.env[rg];
+ try{
+  delete process.env[rg];
+  await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:5}),/FORBIDDEN/);
+  process.env[rg]='true';
+  const outsider=await account('reputation-outsider',[]);
+  await assert.rejects(readFreelanceReputation(outsider.uid,id),/FORBIDDEN/);
+  await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:5,subject:outsider.uid}),/INVALID/);
+  await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:6}),/INVALID/);
+  const submitted=await Promise.all([submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:5}),submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:5})]);
+  assert.equal(submitted.filter(v=>v.changed).length,1);
+  assert.equal((await readFreelanceReputation(worker.uid,id)).received,null);
+  assert.equal((await readFreelanceReputation(worker.uid,id)).own,null);
+  await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:3}),/CONFLICT/);
+  const mutual=await submitFreelanceReputation(worker.uid,id,{confirmed:true,stars:4});
+  assert.equal(mutual.publicationState,'bilateral_released');assert.equal(mutual.received?.stars,5);assert.equal(mutual.rewardsGranted,false);
+  const personal=await readFreelanceReputation(payer.uid,id);
+  assert.equal(personal.received?.stars,4);assert.deepEqual(personal.received?.subject,{kind:'personal_requester',id:payer.uid});
+  assert.deepEqual(personal.own?.subject,{kind:'professional',id:worker.uid});
+  assert.equal((await ref.collection('reputationPrivateV1').get()).size,2);
+  assert.ok(!JSON.stringify(personal).includes('authorUid'));
+  await ref.collection('reputationPrivateV1').doc('worker').update({contractDigest:'0'.repeat(64)});
+  await assert.rejects(readFreelanceReputation(payer.uid,id),/CONFLICT/);
+ }finally{if(priorGate===undefined)delete process.env[rg];else process.env[rg]=priorGate;}
  const advanceId='http-advance-execution-'+suffix;
  await act(payer,advanceId,'publish',200,{terms:{...base,paymentTerms:advance}});
  await act(worker,advanceId,'apply',200,{expectedPaymentTerms:advance});
