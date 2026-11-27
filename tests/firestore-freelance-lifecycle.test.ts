@@ -350,3 +350,56 @@ test('direct contract Pix destination pins revision, rejects foreign actors and 
  await assert.rejects(bindFreelancePixDestination(worker,id,{...request,expectedRevision:3}),/FREELANCE_PIX_DESTINATION_REQUIRED/);
  assert.deepEqual((await binding.get()).data(),saved);
 });
+
+test('bilateral financial restriction blocks new engagement in either role; each open case must be resolved',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {prepareVoluntaryDisputeRestriction}=await import('../server/freelance/freelanceEngagementRestrictionService.js');
+ const {buildFreelancePaymentObligation}=await import('../shared/freelancePaymentObligation.js');
+ const {appendExternalPixStatement}=await import('../shared/freelanceExternalPaymentStatements.js');
+ const payer='fixture-restricted-payer',beneficiary='fixture-restricted-worker',unrelated='fixture-restricted-unrelated';
+ for(const uid of [payer,beneficiary,unrelated])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const cases=[];
+ for(const id of ['fixture-restriction-first','fixture-restriction-second']){
+  await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+  await s.applyToFreelanceOffer(beneficiary,id);await s.selectFreelanceApplication(payer,id,beneficiary);
+  const result=await s.confirmFreelanceContract(beneficiary,id,true);
+  cases.push(buildFreelancePaymentObligation(result.offer,result.application));
+ }
+ await s.publishFreelanceOffer(unrelated,'fixture-restriction-available',input);
+ await s.publishFreelanceOffer(payer,'fixture-restriction-open',input);
+ await s.applyToFreelanceOffer(beneficiary,'fixture-restriction-available');
+ await s.publishFreelanceOffer(unrelated,'fixture-restriction-selected',input);
+ await s.applyToFreelanceOffer(beneficiary,'fixture-restriction-selected');
+ await s.selectFreelanceApplication(unrelated,'fixture-restriction-selected',beneficiary);
+ const histories=new Map<string,import('../shared/freelanceExternalPaymentStatements.js').ExternalPixEvent[]>();
+ async function statement(o:typeof cases[number],kind:'paid'|'not_received'|'received',uid:string){
+  const before=histories.get(o.offerId)??[];
+  const next=appendExternalPixStatement(o,before,{id:'event-'+(before.length+1),actorUid:uid,statement:kind,recordedAt:new Date().toISOString()});
+  await adminDb.runTransaction(async tx=>{const write=await prepareVoluntaryDisputeRestriction(tx,o,before,next.events);write();});
+  histories.set(o.offerId,next.events);
+ }
+ await statement(cases[0],'paid',payer);await statement(cases[0],'not_received',beneficiary);
+ await statement(cases[1],'not_received',beneficiary);await statement(cases[1],'paid',payer);
+ for(const uid of [payer,beneficiary]){
+  const restriction=adminDb.doc('freelanceEngagementRestrictionsV1/'+uid);
+  assert.equal((await restriction.get()).get('openOfferIds').length,2);
+  await assert.rejects(s.publishFreelanceOffer(uid,'fixture-block-'+uid,input),/FREELANCE_FINANCIAL_RESTRICTION/);
+  await s.publishFreelanceOffer(unrelated,'fixture-new-application-'+uid,input);
+  await assert.rejects(s.applyToFreelanceOffer(uid,'fixture-new-application-'+uid),/FREELANCE_FINANCIAL_RESTRICTION/);
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,restriction.path)));
+  await assertFails(setDoc(doc(db,restriction.path),{openOfferIds:[]}));
+ }
+ await assert.rejects(s.applyToFreelanceOffer(unrelated,'fixture-restriction-open'),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await assert.rejects(s.selectFreelanceApplication(unrelated,'fixture-restriction-available',beneficiary),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await assert.rejects(s.confirmFreelanceContract(beneficiary,'fixture-restriction-selected',true),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await s.withdrawPendingFreelanceApplication(beneficiary,'fixture-restriction-available',true);
+ await s.releaseFreelanceReservation(unrelated,'fixture-restriction-selected',beneficiary,true);
+ await statement(cases[0],'received',beneficiary);
+ await assert.rejects(s.publishFreelanceOffer(payer,'fixture-still-blocked',input),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await statement(cases[1],'received',beneficiary);
+ for(const uid of [payer,beneficiary]){
+  assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+  await s.publishFreelanceOffer(uid,'fixture-restored-'+uid,input);
+ }
+});
