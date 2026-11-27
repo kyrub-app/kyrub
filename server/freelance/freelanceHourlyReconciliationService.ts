@@ -34,12 +34,12 @@ async function readBasis(tx:Transaction,uid:string,id:string,x:Awaited<ReturnTyp
 export async function readHourlyReconciliationContext(tx:Transaction,uid:string,id:string){
  const x=await readHourlyAdvanceContext(tx,uid,id);
  const basis=await readBasis(tx,uid,id,x);
- const projection=projectHourlyAdvances(x.commitment,x.events,basis?.recognizedMinor??null);
- const historyDigest=digestVariablePaymentSources(x.events);
+ const projection=projectHourlyAdvances(x.commitment,x.events,basis?.recognizedMinor??null,x.review.recognitions);
+ const historyDigest=digestVariablePaymentSources(x.review.reviews.length?{events:x.events,reviews:x.review.reviews}:x.events);
  const ready=!!basis&&x.events.length>0&&!projection.pendingCount&&!projection.disputedCount;
  const candidate=ready?{schemaVersion:1 as const,kind:'hourly_reconciliation' as const,offerId:id,commitmentDigest:x.commitmentDigest,
   basis:basis!,historyDigest,revision:x.events.length,reportedPaidMinor:projection.reportedPaidMinor,
-  bilateralMinor:projection.bilateralMinor,adjustment:projection.adjustment,currency:'BRL' as const,custody:'none' as const,bankVerified:false as const}:null;
+  bilateralMinor:projection.bilateralMinor,...(x.review.recognitions.length?{administrativelyRecognizedMinor:projection.administrativelyRecognizedMinor,creditedMinor:projection.creditedMinor}:{}),adjustment:projection.adjustment,currency:'BRL' as const,custody:'none' as const,bankVerified:false as const}:null;
  const saved=x.frozen.data();
  if(saved&&(!candidate||canonicalVariablePaymentRecord(saved)!==canonicalVariablePaymentRecord(candidate)))return fail();
  return {x,basis,projection,historyDigest,candidate,frozen:!!saved};
@@ -48,7 +48,7 @@ function view(x:Awaited<ReturnType<typeof readHourlyReconciliationContext>>){
  const a=x.projection.adjustment;
  return {offerId:x.x.commitment.offerId,role:x.x.c.actor,revision:x.x.events.length,historyDigest:x.historyDigest,
   sourceDigest:x.basis?.sourceDigest??null,basisKind:x.basis?.kind??null,recognizedMinor:x.projection.recognizedMinor,
-  reportedPaidMinor:x.projection.reportedPaidMinor,reportedReceivedMinor:x.projection.reportedReceivedMinor,bilateralMinor:x.projection.bilateralMinor,
+  reportedPaidMinor:x.projection.reportedPaidMinor,reportedReceivedMinor:x.projection.reportedReceivedMinor,bilateralMinor:x.projection.bilateralMinor,administrativelyRecognizedMinor:x.projection.administrativelyRecognizedMinor,creditedMinor:x.projection.creditedMinor,
   pendingCount:x.projection.pendingCount,disputedCount:x.projection.disputedCount,state:x.projection.state,
   adjustment:a?{direction:a.direction,amountMinor:a.amountMinor,flow:(x.x.c.actor==='requester')===(a.direction==='additional')?'outflow':'inflow'}:null,
   eligible:!!x.candidate,frozen:x.frozen,restrictionActive:x.x.restricted,bankVerified:false as const};
