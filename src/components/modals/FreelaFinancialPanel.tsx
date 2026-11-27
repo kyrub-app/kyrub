@@ -74,8 +74,8 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
   <p>Homologação: use somente dados e comprovantes fictícios. O Kyrub não realiza transferências nem confirma pagamentos bancários.</p>
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar situação financeira</button>
   {busy&&<p role="status">Consultando financeiro…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status" className="text-emerald-300">{message}</p>}
-  {workMode!=='hourly'&&data?.amountMode!=='hourly_final'&&!busy&&!paused&&!paid&&!received&&!data?.reviewStatus&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role}/>}
-  {workMode==='hourly'&&<p>Apuração de jornada em homologação; compartilhamento da chave Pix e pagamento por hora ainda não liberados.</p>}
+  {!busy&&!paused&&!paid&&!received&&!data?.reviewStatus&&(workMode!=='hourly'||['contracted','in_progress','completion_requested'].includes(operationalStatus??'')||data?.amountMode==='hourly_final')&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role} hourly={workMode==='hourly'}/> }
+  {workMode==='hourly'&&<p>Jornada em homologação. A chave pode ser vinculada antes da execução; somente a obrigação final positiva permite consulta integral. Não pague pela estimativa.</p>}
   {data&&<>
    <p className="font-bold text-white">{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.amountMinor/100)} · {data.amountMode==='hourly_final'?'Valor final apurado':data.timing==='advance'?'Antecipado':'Na conclusão'}</p>
    {paused?<><p className="text-amber-300">{data.operationalStatus==='cancelled'?'Serviço cancelado. Tratamento financeiro pendente.':'Serviço em análise operacional.'} O valor acordado não representa saldo exigível. Não envie novo pagamento por este painel.</p>{data.due&&<p>Histórico de pagamento antecipado: {states[data.financialState]}. Registre somente fatos de pagamentos ou recebimentos já ocorridos.</p>}</>:<p>{states[data.financialState]}</p>}

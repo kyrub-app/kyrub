@@ -9,15 +9,15 @@ import {buildFreelanceHourlyCommitment,buildFreelanceVariablePaymentBasis} from 
 
 const fail=():never=>{throw Error('FREELANCE_VARIABLE_PAYMENT_CONFLICT');};
 // Firestore map key order is not guaranteed; stable encoding for immutable snapshots.
-function canonical(value:unknown):string{
- if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+export function canonicalVariablePaymentRecord(value:unknown):string{
+ if(Array.isArray(value))return '['+value.map(canonicalVariablePaymentRecord).join(',')+']';
  if(value!==null&&typeof value==='object'){
   const r=value as Record<string,unknown>;
-  return '{'+Object.keys(r).sort().map(k=>JSON.stringify(k)+':'+canonical(r[k])).join(',')+'}';
+  return '{'+Object.keys(r).sort().map(k=>JSON.stringify(k)+':'+canonicalVariablePaymentRecord(r[k])).join(',')+'}';
  }
  const s=JSON.stringify(value);if(s===undefined)return fail();return s;
 }
-const digest=(value:unknown)=>createHash('sha256').update(canonical(value)).digest('hex');
+const digest=(value:unknown)=>createHash('sha256').update(canonicalVariablePaymentRecord(value)).digest('hex');
 /** Service-only candidate, using the local-emulator boundary of readAttendanceContext.
  * No transport action, no Pix disclosure, no bank or ledger mutation.
  * Only a fully persisted completed hourly contract can generate this evidence.
@@ -35,8 +35,8 @@ export async function readVariablePaymentSources(tx:Transaction,uid:string,offer
   const commitmentRef=direct.doc('hourlyCommitment'),basisRef=financial.doc('hourlyCompletion');
   const [savedCommitment,savedBasis,fixedObligation,fixedBasis,statements,final,hourlyStatements]=await tx.getAll(commitmentRef,basisRef,direct.doc('obligation'),financial.doc('remuneration'),direct.doc('externalStatements'),direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'));
   if(fixedObligation.exists||fixedBasis.exists||statements.exists||((final.exists||hourlyStatements.exists)&&(!savedCommitment.exists||!savedBasis.exists))||(hourlyStatements.exists&&!final.exists))return fail();
-  if(savedCommitment.exists&&canonical(savedCommitment.data())!==canonical(commitment))return fail();
-  if(savedBasis.exists&&(!savedCommitment.exists||canonical(savedBasis.data())!==canonical(record)))return fail();
+  if(savedCommitment.exists&&canonicalVariablePaymentRecord(savedCommitment.data())!==canonicalVariablePaymentRecord(commitment))return fail();
+  if(savedBasis.exists&&(!savedCommitment.exists||canonicalVariablePaymentRecord(savedBasis.data())!==canonicalVariablePaymentRecord(record)))return fail();
   return {c,record,commitment,commitmentRef,basisRef,savedCommitment,savedBasis};
 }
 export async function recordFreelanceVariablePaymentBasis(uid:string,offerId:string){
