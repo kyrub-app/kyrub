@@ -30,3 +30,17 @@ Referências oficiais:
 
 ## Pendência de continuidade — decisão do proprietário em 27/11/2026
 Após concluir a etapa técnica de Freelas e sua homologação isolada, revisar especificamente como operar o Mercado Pago enquanto o Split 1:N não estiver habilitado, considerando Lojas, Entregas e Freelas, sem antecipar a discussão nesta etapa. Nenhuma configuração comercial, taxa ou integração real é aprovada por este registro.
+
+## Revisão de prioridade comercial (27/11/2026)
+
+Decisão do proprietário: Freelas deve estar operacional comercialmente na V1 para apoiar captação inicial de estabelecimentos e prestadores, em particular no segmento bares e restaurantes. A etapa financeira não é opcional. O modelo econômico permanece em definição.
+
+Candidato prioritário: Split 1:1 (contratante paga, prestador selecionado é o recebedor, Kyrub recebe eventual comissão aprovada). OAuth e conta elegível do prestador; Checkout Pro/Transparente. Verificar capacidade comercial da aplicação/conta, aceitação do segmento de serviços, Pix externo com split, valor líquido do prestador, estornos e conciliação. Não assumir retenção/liberação condicionada por split comum. Reserva/captura de cartão via Payments API é possibilidade distinta para serviços curtos, sujeita a confirmação de compatibilidade com split e prazo de captura; não se aplica automaticamente ao Pix. Se pagamento direto externo for avaliado, exigir decisão explícita sobre mudança do modelo e ausência de garantia de financiamento; não usar como bypass silencioso.
+
+Fontes oficiais consultadas em 27/11/2026:
+- https://www.mercadopago.com.br/developers/pt/docs/split-payments/split-1-1/integration-configuration/integrate-marketplace
+- https://www.mercadopago.com.br/developers/en/docs/split-payments/split-1-1/prerequisites
+- https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/make-value-reserve
+- https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/payment-management/capture-authorized-payment
+
+Reutilizar auditoria #1147 (split ainda não efetivado naquela versão) e perfil financeiro genérico #262 (já mesclada, não onboarding PSP real), verificar sua presença atual antes de implementar. Nenhuma comissão, cobrança, contrato, ativação ou configuração autorizada nesta decisão.
