@@ -7,7 +7,11 @@ export interface FreelanceOfferInput {
 export interface FreelanceOffer extends FreelanceOfferInput {
   id: string;
   ownerUid: string;
-  status: 'open' | 'selected' | 'contracted';
+  status: 'open' | 'selected' | 'contracted' | 'in_progress' | 'completion_requested' | 'completed' | 'cancelled';
+  startedAt?: string;
+  completionRequestedAt?: string;
+  completedAt?: string;
+  cancelledAt?: string;
   selectedApplicantUid?: string;
   selectedAt?: string;
   contractedAt?: string;
@@ -17,7 +21,13 @@ export interface FreelanceApplication {
   offerId: string;
   applicantUid: string;
   ownerUid: string;
-  status: 'pending' | 'selected' | 'contracted';
+  status: 'pending' | 'selected' | 'contracted' | 'withdrawn' | 'released' | 'in_progress' | 'completion_requested' | 'completed';
+  startedAt?: string;
+  completionRequestedAt?: string;
+  completedAt?: string;
+  withdrawnAt?: string;
+  releasedAt?: string;
+  releasedBy?: string;
   selectedAt?: string;
   contractedAt?: string;
   createdAt: string;
@@ -97,4 +107,59 @@ export function confirmFreelanceSelection(
   if (offer.status !== 'selected' || application.status !== 'selected' || offer.contractedAt || application.contractedAt ||
       Date.parse(now) < Date.parse(offer.selectedAt!)) throw new Error('FREELANCE_CONFLICT');
   return {offer:{...offer,status:'contracted',contractedAt:now},application:{...application,status:'contracted',contractedAt:now},changed:true};
+}
+
+export type FreelanceExecutionAction = 'start' | 'request_completion' | 'confirm_completion';
+const transition = {
+  start: { from:'contracted', to:'in_progress', at:'startedAt', actor:'worker' },
+  request_completion: { from:'in_progress', to:'completion_requested', at:'completionRequestedAt', actor:'worker' },
+  confirm_completion: { from:'completion_requested', to:'completed', at:'completedAt', actor:'owner' },
+} as const;
+
+/** Unselected or released applicants do not become contracted. A released application stays historical. */
+export function releaseFreelanceSelection(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string, confirmed: unknown, now: string): FreelanceSelectionResult {
+  validatePair(offer,application,now);
+  if (confirmed !== true || (actorUid !== offer.ownerUid && actorUid !== application.applicantUid)) throw new Error('FREELANCE_FORBIDDEN');
+  if (application.status === 'released' && application.releasedBy === actorUid && application.releasedAt &&
+      offer.selectedApplicantUid !== application.applicantUid) return {offer,application,changed:false};
+  if (offer.status !== 'selected' || application.status !== 'selected' || !isSelectedPair(offer,application) ||
+      offer.contractedAt || application.contractedAt || Date.parse(now) < Date.parse(offer.selectedAt!)) throw new Error('FREELANCE_CONFLICT');
+  const {selectedApplicantUid: _uid, selectedAt: _at, ...remaining} = offer;
+  return {offer:{...remaining,status:'open'}, application:{...application,status:'released',releasedAt:now,releasedBy:actorUid},changed:true};
+}
+export function withdrawFreelanceApplication(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string, confirmed: unknown, now: string): FreelanceSelectionResult {
+  validatePair(offer,application,now);
+  if (confirmed !== true || actorUid !== application.applicantUid) throw new Error('FREELANCE_FORBIDDEN');
+  if (application.status === 'withdrawn' && application.withdrawnAt) return {offer,application,changed:false};
+  if (application.status !== 'pending' || offer.selectedApplicantUid === actorUid || Date.parse(now) < Date.parse(application.createdAt)) throw new Error('FREELANCE_CONFLICT');
+  return {offer,application:{...application,status:'withdrawn',withdrawnAt:now},changed:true};
+}
+export function cancelOpenFreelanceOffer(offer: FreelanceOffer, actorUid: string, confirmed: unknown, now: string): FreelanceOffer {
+  if (confirmed !== true || actorUid !== offer.ownerUid || !validFreelanceId(actorUid)) throw new Error('FREELANCE_FORBIDDEN');
+  if (!validFreelanceId(offer.id) || !Number.isFinite(Date.parse(now)) || Date.parse(now) < Date.parse(offer.createdAt)) throw new Error('FREELANCE_INVALID');
+  if (offer.status === 'cancelled' && offer.cancelledAt) return offer;
+  if (offer.status !== 'open' || offer.selectedApplicantUid || offer.contractedAt) throw new Error('FREELANCE_CONFLICT');
+  return {...offer,status:'cancelled',cancelledAt:now};
+}
+export function advanceFreelanceExecution(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string, action: FreelanceExecutionAction, confirmed: unknown, now: string): FreelanceSelectionResult {
+  validatePair(offer,application,now);
+  if (!Object.prototype.hasOwnProperty.call(transition,action)) throw new Error('FREELANCE_INVALID');
+  const rule = transition[action];
+  if (confirmed !== true || !isSelectedPair(offer,application) ||
+      actorUid !== (rule.actor === 'owner' ? offer.ownerUid : application.applicantUid)) throw new Error('FREELANCE_FORBIDDEN');
+  const fields = ['contractedAt','startedAt','completionRequestedAt','completedAt'] as const;
+  const step = fields.indexOf(rule.at);
+  for(let i=0;i<step;i++){
+    const field=fields[i]; const at=offer[field];
+    if (!at || !Number.isFinite(Date.parse(at)) || application[field] !== at ||
+        Date.parse(at) < Date.parse(i===0 ? offer.selectedAt! : offer[fields[i-1]]!)) throw new Error('FREELANCE_CONFLICT');
+  }
+  const current=offer[rule.at];
+  if (offer.status === rule.to && application.status === rule.to && current &&
+      Number.isFinite(Date.parse(current)) && application[rule.at] === current &&
+      Date.parse(current) >= Date.parse(offer[fields[step-1]]!)) return {offer,application,changed:false};
+  if (offer.status !== rule.from || application.status !== rule.from ||
+      fields.slice(step).some(field => offer[field] || application[field]) ||
+      Date.parse(now) < Date.parse(offer[fields[step-1]]!)) throw new Error('FREELANCE_CONFLICT');
+  return {offer:{...offer,status:rule.to,[rule.at]:now},application:{...application,status:rule.to,[rule.at]:now},changed:true};
 }
