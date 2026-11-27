@@ -499,12 +499,12 @@ export const transitionOrderStatusWithInventory = async (
     }
     if (nextStatus === 'accepted' && isDeliveryOrder) {
       if (!requestedProvider) {
-        throw new Error(storeOrderDistributionEnabled()?'Escolha como a entrega será realizada: Kyrub ou entregador próprio.':'Confirme que a entrega será realizada pelo entregador próprio da loja.');
+        throw new Error(storeOrderDistributionEnabled()?'Escolha como a entrega será realizada: Kyrub ou entregador próprio.':'Escolha como a entrega será realizada: confirme o entregador próprio da loja.');
       }
-      assertStoreOrderDeliveryChoice({requestedProvider,persistedProvider,currentStatus:order.status});
       if (persistedProvider && persistedProvider !== requestedProvider) {
         throw new Error('A modalidade de entrega já foi definida para este pedido.');
       }
+      assertStoreOrderDeliveryChoice({requestedProvider,persistedProvider,currentStatus:order.status});
     }
     // The canonical order mirror is an ERP projection; inventory authority
     // stays on its existing independently verified tenant/member path.
