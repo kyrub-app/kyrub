@@ -595,11 +595,22 @@ test('contract Pix replacement requires both participants, preserves prior discl
  await finance(worker,200,'propose_pix_rebind',pair);
  await finance(worker,200,'propose_pix_rebind',pair);
  assert.equal((await finance(payer,200)).pending,true);
+ const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
+ const list=(uid:string)=>listUserNotifications({recipientUserId:uid});
+ const notice=(await list(payer.uid)).notifications.filter(n=>n.eventType==='freelance_finance_pix_rebind_proposed');
+ assert.equal(notice.length,1);assert.equal(notice[0].target.kind,'none');
+ await markUserNotificationRead({recipientUserId:payer.uid,notificationId:notice[0].id});
+ await finance(worker,200,'propose_pix_rebind',pair);
+ assert.ok((await list(payer.uid)).notifications.find(n=>n.id===notice[0].id)?.readAt);
  await finance(worker,403,'accept_pix_rebind',{...pair,paymentNotSent:true});
  await finance(payer,400,'accept_pix_rebind',{...pair,paymentNotSent:false});
  await finance(payer,200,'accept_pix_rebind',{...pair,paymentNotSent:true});
  await finance(payer,200,'accept_pix_rebind',{...pair,paymentNotSent:true});
  const direct=db.doc('freelanceOffersV1/'+id).collection('directPayment');
+ const accepted=(await list(worker.uid)).notifications.filter(n=>n.eventType==='freelance_finance_pix_rebind_accepted');
+ assert.equal(accepted.length,1);assert.equal(accepted[0].target.kind,'none');
+ assert.equal((await list(other.uid)).notifications.length,0);
+ for(const a of [payer,worker]){const inbox=await list(a.uid);assert.ok(!JSON.stringify(inbox).includes(oldKey));assert.ok(!JSON.stringify(inbox).includes(newKey));}
  const audit=(await direct.doc('pixRebind-2').get()).data()!;
  assert.equal(audit.previousBinding.destinationRevision,1);assert.equal(audit.previousDisclosure.destinationRevision,1);
  assert.equal(audit.previousSharing.destinationRevision,1);assert.equal(audit.bankVerified,false);
