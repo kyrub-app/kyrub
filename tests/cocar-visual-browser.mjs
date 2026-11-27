@@ -43,13 +43,14 @@ try{
    }
    return route.continue();
   });
+  try{
   await page.goto(origin+'/tests/cocar-visual-fixture.html');
   await page.waitForFunction(()=>typeof window.mountCocarFixture==='function');
   await page.evaluate(args=>window.mountCocarFixture(args),{token,postId,authorId:'fixture-author',connectionId:'fixture-connection',messageId:'fixture-message',createdAt});
   const feed=page.getByRole('region',{name:'Praça',exact:true}),chat=page.getByRole('region',{name:'Mensagem encaminhada',exact:true});
-  await feed.getByLabel('1.234X — Cocares na data da publicação',{exact:true}).waitFor({state:'visible'});
+  await feed.locator('[aria-label="1.234X — Cocares na data da publicação"]').waitFor({state:'visible'});
   await chat.getByRole('button',{name:'Visualizar publicação',exact:true}).click();
-  await chat.getByLabel('1.234X — Cocares na data da publicação',{exact:true}).waitFor({state:'visible'});
+  await chat.locator('[aria-label="1.234X — Cocares na data da publicação"]').waitFor({state:'visible'});
   for(const region of [feed,chat]){
    for(const label of ['Serviços concluídos','Contratações concluídas','Profissional','Contratante pessoal'])await region.getByText(label,{exact:true}).waitFor({state:'visible'});
    await region.getByText('Autora original fictícia',{exact:false}).first().waitFor({state:'visible'});
@@ -63,7 +64,11 @@ try{
   await chat.getByText('Autor original',{exact:true}).waitFor({state:'visible'});
   assert.equal(await chat.getByTitle('Cocares na data da publicação').count(),0);
   assert.deepEqual(forbidden,[]);assert.deepEqual(errors,[]);
-  await ctx.close();
   console.log('PASS actual UI components with isolated HTTP fixtures, width',width);
+  }catch(error){
+   await page.screenshot({path:'cocar-visual-evidence/failure-'+width+'.png',fullPage:true}).catch(()=>{});
+   console.error('Visual fixture diagnostics',JSON.stringify({width,square,connected,errors,forbidden,body:await page.locator('body').innerText().catch(()=>''),labels:await page.locator('[title="Cocares na data da publicação"]').evaluateAll(nodes=>nodes.map(n=>({text:n.textContent,label:n.getAttribute('aria-label')}))).catch(()=>[])}));
+   throw error;
+  }finally{await ctx.close();}
  }
 }finally{await browser.close();await auth.deleteUser(uid);}
