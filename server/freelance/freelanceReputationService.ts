@@ -8,7 +8,7 @@ import {freelanceReputationParties,freelanceReputationSlot,type ReputationSubjec
 import {canonicalVariablePaymentRecord,digestVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
 
 const fail=():never=>{throw Error('FREELANCE_REPUTATION_CONFLICT');};
-const gate=()=>{if(process.env.KYRUB_FREELANCE_REPUTATION_TEST_ONLY!=='true'||process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||!['127.0.0.1:9099','localhost:9099'].includes(process.env.FIREBASE_AUTH_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_FORBIDDEN');};
+export const assertFreelanceReputationLocal=()=>{if(process.env.KYRUB_FREELANCE_REPUTATION_TEST_ONLY!=='true'||process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||!['127.0.0.1:9099','localhost:9099'].includes(process.env.FIREBASE_AUTH_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_FORBIDDEN');};
 const iso=(v:unknown):v is string=>typeof v==='string'&&Number.isFinite(Date.parse(v))&&new Date(Date.parse(v)).toISOString()===v;
 // Stars are a test-only candidate for the previously discussed evaluation
 // format. No criteria, final scale approval, deadline, reward or public read.
@@ -21,7 +21,7 @@ const reasonText=(value:unknown)=>{
 };
 type Slot={schemaVersion:1;offerId:string;contractDigest:string;role:Role;authorUid:string;subject:ReputationSubject;stars:number;submittedAt:string};
 export async function readFreelanceReputationContext(tx:Transaction,uid:string,id:string){
- gate();
+ assertFreelanceReputationLocal();
  const c=await readAttendanceContext(tx,uid,id),parties=freelanceReputationParties(c.offer,c.application);
  const contractDigest=digestVariablePaymentSources({parties,selectedAt:c.offer.selectedAt,contractedAt:c.offer.contractedAt,startedAt:c.offer.startedAt,completionRequestedAt:c.offer.completionRequestedAt,paymentMinor:c.offer.paymentMinor,paymentTerms:c.offer.paymentTerms??null,workTerms:c.offer.workTerms??null,requesterStore:c.offer.requesterStore??null});
  const collection=c.ref.collection('reputationPrivateV1'),refs={requester:collection.doc('requester'),worker:collection.doc('worker')};
@@ -40,7 +40,7 @@ export async function readFreelanceReputationContext(tx:Transaction,uid:string,i
 const opposite=(role:Role):Role=>role==='requester'?'worker':'requester';
 /** Only a recipient of a released rating can challenge it. The original
  * immutable rating remains the source of truth; no scoring or sanction write. */
-async function contestationContext(tx:Transaction,x:Awaited<ReturnType<typeof readFreelanceReputationContext>>){
+export async function contestationContext(tx:Transaction,x:Awaited<ReturnType<typeof readFreelanceReputationContext>>){
  const role=x.c.actor,other=opposite(role),own=x.slots[role],rating=x.slots[other];
  const ref=adminDb.doc('freelanceReputationContestsV1/'+digestVariablePaymentSources([x.parties.offerId,other]));
  const raw=(await tx.get(ref)).data() as Contestation|undefined;
@@ -66,7 +66,7 @@ export async function readOwnFreelanceReputationContestation(uid:string,id:strin
  },{readOnly:true});
 }
 export async function contestFreelanceReputation(uid:string,id:string,input:unknown){
- gate();
+ assertFreelanceReputationLocal();
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(Object.keys(b).length!==3||b.confirmed!==true||typeof b.ratingDigest!=='string'||!/^[a-f0-9]{64}$/.test(b.ratingDigest))throw Error('FREELANCE_INVALID');
@@ -95,7 +95,7 @@ export async function readFreelanceReputation(uid:string,id:string){
  return adminDb.runTransaction(async tx=>view(await readFreelanceReputationContext(tx,uid,id)),{readOnly:true});
 }
 export async function submitFreelanceReputation(uid:string,id:string,input:unknown){
- gate();
+ assertFreelanceReputationLocal();
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(Object.keys(b).length!==2||b.confirmed!==true||!stars(b.stars))throw Error('FREELANCE_INVALID');
@@ -116,7 +116,7 @@ export async function submitFreelanceReputation(uid:string,id:string,input:unkno
  * Corporate access is limited to the current authorized representative's own
  * historical contracts; ownership-transfer policy is not defined here. */
 export async function readOwnFreelanceReputationProfile(uid:string,kind:unknown,cursor?:unknown){
- gate();
+ assertFreelanceReputationLocal();
  if(!validFreelanceId(uid)||(kind!=='professional'&&kind!=='personal_requester'&&kind!=='store_requester')||(cursor!==undefined&&!validFreelanceId(cursor)))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
