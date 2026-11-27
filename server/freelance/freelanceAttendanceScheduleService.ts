@@ -30,7 +30,7 @@ export async function readAttendanceContext(tx:Transaction,uid:string,offerId:st
   current=readFreelanceScheduleProposal((await tx.get(ref.collection('attendance').doc('schedule-'+raw.proposalId))).data());
   if(current.id!==raw.proposalId||!terms||current.schedule.location!==terms.location||current.schedule.agreedMinutes!==terms.estimatedMinutes||Date.parse(current.proposedAt)<Date.parse(offer.contractedAt))return fail();
  }
- return {ref,pointer,offer,terms,actor,current};
+ return {ref,pointer,offer,application,terms,actor,current};
 }
 export async function readFreelanceAttendanceSchedule(uid:string,offerId:string){
  return adminDb.runTransaction(async tx=>{
