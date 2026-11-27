@@ -1158,6 +1158,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    await finance(other,403);const view=await finance(worker,200);assert.equal(view.finalAmountMinor,null);assert.equal(view.payable,false);
    await finance(owner,409,'reveal_pix',{expectedRevision:1});
    const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
+   const financeRestrictions=async(a:Actor)=>{const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
    await agreement(other,403);
    const a=await agreement(worker,200);
    assert.equal(a.agreedMinor,null);assert.equal(a.payable,false);
@@ -1170,12 +1171,33 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    await finance(worker,403,'accept_hourly_cancellation',decisionFields);
    await finance(owner,403,'withdraw_hourly_cancellation',decisionFields);
    await finance(owner,200,'decline_hourly_cancellation',decisionFields);
+   assert.equal((await agreement(owner,200)).restrictionActive,false);
+   const disputeFields={sourceDigest:a.sourceDigest};
+   await finance(other,403,'dispute_hourly_cancellation',disputeFields);
+   await finance(owner,409,'dispute_hourly_cancellation',{sourceDigest:'0'.repeat(64)});
+   await finance(worker,200,'dispute_hourly_cancellation',disputeFields);
+   await finance(worker,200,'dispute_hourly_cancellation',disputeFields);
+   for(const actor of [owner,worker]){
+    assert.deepEqual(await financeRestrictions(actor),{restricted:true,openOfferIds:[id]});
+   }
+   assert.equal((await act(owner,id+'-blocked','publish',409,{terms})).code,'FREELANCE_FINANCIAL_RESTRICTION');
+   await finance(owner,200,'request_hourly_cancellation_review',disputeFields);
+   await finance(owner,200,'request_hourly_cancellation_review',disputeFields);
+   assert.equal((await agreement(worker,200)).dispute.status,'review_requested');
+   // A synthetic second restriction cause on the same contract must survive this agreement.
+   if(started)for(const actor of [owner,worker])await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[id]});
    await finance(owner,200,'propose_hourly_cancellation',{...proposal,proposalId:'p2'});
    await finance(worker,409,'accept_hourly_cancellation',decisionFields);
    const second={...decisionFields,proposalId:'p2'};
    await finance(worker,200,'accept_hourly_cancellation',second);
    await finance(worker,200,'accept_hourly_cancellation',second);
-   assert.equal((await agreement(owner,200)).agreedMinor,proposal.recognizedServiceMinor);
+   const settled=await agreement(owner,200);
+   assert.equal(settled.agreedMinor,proposal.recognizedServiceMinor);
+   assert.equal(settled.dispute.status,'resolved_voluntarily');assert.equal(settled.restrictionActive,false);
+   for(const actor of [owner,worker]){
+    assert.deepEqual(await financeRestrictions(actor),{restricted:started,openOfferIds:started?[id]:[]});
+    if(started)await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[]});
+   }
    assert.equal((await ref.collection('directPayment').doc('hourlyCancellationAgreement-p1').get()).get('status'),'declined');
    assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
    await finance(owner,409,'propose_hourly_cancellation',{...proposal,proposalId:'p3'});
