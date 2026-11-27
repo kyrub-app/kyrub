@@ -11,6 +11,7 @@ import {emptyReputationAccumulator,incrementReputationExperience,incrementReleas
 import {validFreelanceId,type FreelanceOffer} from '../../shared/freelanceLifecycle.js';
 import type {ReputationSubject} from '../../shared/freelanceReputation.js';
 const equal=(a:unknown,b:unknown)=>canonicalVariablePaymentRecord(a)===canonicalVariablePaymentRecord(b);
+export const certifiedReputationReadEnabled=()=>reputationIndexEnabled()&&process.env.KYRUB_FREELANCE_REPUTATION_CERTIFIED_READ_TEST_ONLY==='true';
 /** Read-only bounded audit. Verifies source records, every contract receipt,
  * and the exact accumulator in the same snapshot. Never creates a durable
  * certificate: an interrupted feature flag or a historical import could
@@ -47,7 +48,7 @@ export async function readStoreTeamReputation(uid:string,legacyStoreId:unknown){
    const member=(await tx.get(adminDb.doc('stores/'+store.storeId+'/members/'+uid))).data();
    if(!member||member.userId!==uid||member.storeId!==store.storeId||member.status!=='active'||!isStoreRole(member.role)||member.role==='owner')throw Error('FREELANCE_STORE_FORBIDDEN');
   }
-  const {subject,state,projection}=await auditInTransaction(tx,legacyStoreId,'store_requester');
+  const {subject,state,projection}=certifiedReputationReadEnabled()?await readCertifiedInTransaction(tx,legacyStoreId,{kind:'store_requester',id:store.storeId}):await auditInTransaction(tx,legacyStoreId,'store_requester');
   if(subject.id!==store.storeId)throw Error('FREELANCE_STORE_FORBIDDEN');
   return {legacyStoreId,subject,state,projection};
  },{readOnly:true});
@@ -135,7 +136,6 @@ export async function auditOwnFreelanceReputationIndexBatched(uid:string,kind:un
  * witness still matching the audited snapshot. No client supplied proof. */
 export async function certifyOwnFreelanceReputationIndex(uid:string,kind:unknown){
  const audited=await auditOwnFreelanceReputationIndexBatched(uid,kind);
- if(audited.state!=='verified_snapshot')return {certified:false,state:audited.state};
  const subject=audited.subject,scope={subject,representativeUid:uid};
  return adminDb.runTransaction(async tx=>{
   if(!reputationIndexEnabled())throw Error('FREELANCE_FORBIDDEN');
@@ -145,6 +145,10 @@ export async function certifyOwnFreelanceReputationIndex(uid:string,kind:unknown
   }
   const [index,witness]=await tx.getAll(adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources(scope)),coverageRef(scope));
   if(indexDigest(index.data())!==audited.baselineDigest||indexDigest(witness.data())!==audited.baselineWitness)return {certified:false,state:'snapshot_changed' as const};
+  if(audited.state!=='verified_snapshot'){
+   writeCoverage(tx,scope,null);
+   return {certified:false,state:audited.state};
+  }
   writeCoverage(tx,scope,audited.baselineDigest);
   return {certified:true,state:'verified_snapshot' as const};
  });
@@ -159,7 +163,12 @@ export async function readCertifiedFreelanceReputationIndex(uid:string,kind:unkn
  return adminDb.runTransaction(async tx=>{
   const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
   if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
-  const subject:ReputationSubject={kind,id:store?.storeId??uid},scope={subject,representativeUid:uid};
+  const subject:ReputationSubject={kind,id:store?.storeId??uid};
+  return readCertifiedInTransaction(tx,uid,subject);
+ },{readOnly:true});
+}
+async function readCertifiedInTransaction(tx:Transaction,uid:string,subject:ReputationSubject){
+ const kind=subject.kind,scope={subject,representativeUid:uid};
   const [index,witness]=await tx.getAll(adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources(scope)),coverageRef(scope));
   const raw=index.data(),w=checkedCoverage(scope,witness.data());
   if(!w||w.verifiedDigest!==indexDigest(raw))return {subject,state:'repair_required' as const,projection:null};
@@ -168,5 +177,11 @@ export async function readCertifiedFreelanceReputationIndex(uid:string,kind:unkn
    const a=raw?validateReputationAccumulator(kind,raw.accumulator):emptyReputationAccumulator(kind);
    return {subject,state:'verified_snapshot' as const,projection:projectReputationAccumulator(kind,a)};
   }catch{return {subject,state:'repair_required' as const,projection:null};}
- },{readOnly:true});
+}
+
+/** Existing authenticated personal endpoint may opt into the constant-read
+ * implementation only in isolated homologation. No expensive fallback for
+ * missing/invalid coverage; repair is an internal audited operation. */
+export async function readOwnReputationForWorkspace(uid:string,kind:unknown){
+ return certifiedReputationReadEnabled()?readCertifiedFreelanceReputationIndex(uid,kind):auditOwnFreelanceReputationIndex(uid,kind);
 }
