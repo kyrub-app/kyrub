@@ -7,6 +7,7 @@ on:
       - 'tests/*privacy*.test.ts'
       - 'src/components/KyrubPrivacy*.tsx'
       - 'src/components/KyrubOptionalConsentPilot.tsx'
+      - 'src/components/admin/AdminPrivacyGovernancePilot.tsx'
       - '.github/workflows/privacy-v1-integrated.yml'
 permissions:
   contents: read
@@ -22,7 +23,7 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - run: node --import tsx --test tests/privacy-rights-foundation.test.ts tests/privacy-lifecycle-planning.test.ts tests/privacy-incident-triage.test.ts
+      - run: node --import tsx --test tests/privacy-rights-foundation.test.ts tests/privacy-lifecycle-planning.test.ts tests/privacy-incident-triage.test.ts tests/privacy-admin-workspace.test.ts
   emulator:
     runs-on: ubuntu-latest
     timeout-minutes: 15
