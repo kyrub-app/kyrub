@@ -23,7 +23,7 @@ function readEvents(raw:unknown,offerId:string):ExternalPixEvent[]{
  typeof e.recordedAt==='string'&&['paid','received','not_received'].includes(e.statement)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
  return r.events;
 }
-async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:string,offerId:string){
+export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:string,offerId:string){
  const ref=adminDb.doc('freelanceOffersV1/'+offerId),direct=ref.collection('directPayment'),statementRef=direct.doc('externalStatements');
   const [o,ob,history]=await tx.getAll(ref,direct.doc('obligation'),statementRef);
   const offer=o.data() as FreelanceOffer|undefined;
@@ -52,7 +52,7 @@ type FinancialReview={
  requestedAt:string;status:'pending'|'resolved_voluntarily';resolvedAt?:string;
 };
 const reviewRef=(offerId:string)=>adminDb.doc('freelanceFinancialReviewsV1/'+offerId);
-function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFreelancePaymentObligation>):FinancialReview|undefined{
+export function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFreelancePaymentObligation>):FinancialReview|undefined{
  if(raw===undefined)return undefined;
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  const r=raw as FinancialReview;

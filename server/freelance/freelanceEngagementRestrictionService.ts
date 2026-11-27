@@ -50,3 +50,11 @@ export async function prepareVoluntaryDisputeRestriction(tx:FirebaseFirestore.Tr
  });
  return ()=>{for(let i=0;i<refs.length;i++)tx.set(refs[i],updates[i]);};
 }
+
+/** Server-only consistency check; a missing bilateral restriction is not a valid pending review. */
+export async function assertFinancialCaseRestrictions(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation){
+ assertLocal();
+ const ids=[obligation.requesterUid,obligation.beneficiaryUid];
+ const docs=await tx.getAll(...ids.map(root));
+ if(docs.some((d,i)=>!readIds(d.data(),ids[i]).includes(obligation.offerId)))throw Error('FREELANCE_RESTRICTION_CONFLICT');
+}
