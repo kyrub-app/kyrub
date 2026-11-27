@@ -5,6 +5,7 @@ import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {PRIVACY_ASSESSMENT_FINDINGS,type PrivacyAssessmentFinding} from '../../shared/privacyRightsAssessment.js';
+import {PRIVACY_RESPONSE_MESSAGES} from '../../shared/privacyRightsResponse.js';
 import {normalizePrivacyRequest} from '../../shared/privacyRights.js';
 import {preparePrivacyRequest,projectPrivacyReceipt,type PrivacyRequestRecord} from './privacyRightsPolicy.js';
 export const PRIVACY_EMULATOR_PROJECT='demo-kyrub-privacy';
@@ -91,8 +92,15 @@ export function createPrivacyRightsEmulator(){
     const a=t.data(),r=s.data();
     if(!a||a.protocol!==protocol||a.simulation!==true||a.revokedAt!==undefined||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||a.expiresAt-a.createdAt>PRIVACY_TRACKING_TTL_MS||!equal(a.digest,hash(code)))return deny();
     if(!r||r.protocol!==protocol||r.simulation!==true||r.status!=='received'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed'||!validTime(r.receivedAt)||r.receivedAt!==a.createdAt||!['pending-review','verification-required'].includes(r.triageStatus))return deny();
-    // Status only: no draft, channel reference, identity or personal data.
-    return {protocol,receivedAt:r.receivedAt,...(typeof r.assessmentFinding==='string'&&Object.hasOwn(PRIVACY_ASSESSMENT_FINDINGS,r.assessmentFinding)?{assessmentFinding:r.assessmentFinding as PrivacyAssessmentFinding}:{}),evidenceStatus:r.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:r.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
+    let reviewedNotice:string|undefined;
+    if(r.responseStatus==='reviewed'&&r.responseAssessmentRevision===r.assessmentRevision&&Number.isSafeInteger(r.assessmentRevision)&&r.assessmentRevision>0&&typeof r.assessmentFinding==='string'&&Object.hasOwn(PRIVACY_RESPONSE_MESSAGES,r.assessmentFinding)){
+     const notice=(await tx.get(db.collection('privacy_emulator_responses').doc(protocol+'_'+r.assessmentRevision))).data();
+     const expected=PRIVACY_RESPONSE_MESSAGES[r.assessmentFinding as keyof typeof PRIVACY_RESPONSE_MESSAGES];
+     if(!notice||notice.protocol!==protocol||notice.assessmentRevision!==r.assessmentRevision||notice.status!=='reviewed'||notice.finding!==r.assessmentFinding||notice.message!==expected||notice.simulation!==true||notice.delivered!==false||notice.actionStatus!=='not-executed'||typeof notice.reviewedBy!=='string'||typeof notice.preparedBy!=='string'||notice.preparedBy===notice.reviewedBy)return deny();
+     reviewedNotice=expected;
+    }
+    // Status and fixed reviewed notice only: no draft, channel reference, identity or personal data.
+    return {protocol,receivedAt:r.receivedAt,...(reviewedNotice?{reviewedNotice}:{}),...(typeof r.assessmentFinding==='string'&&Object.hasOwn(PRIVACY_ASSESSMENT_FINDINGS,r.assessmentFinding)?{assessmentFinding:r.assessmentFinding as PrivacyAssessmentFinding}:{}),evidenceStatus:r.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:r.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
    });
   },
   async revokeTracking(protocol:string,code:string,now:number){
