@@ -122,7 +122,7 @@ async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string
  const {obligation,events}=context;
  const review=checkedReview(reviewDoc.data(),obligation);
  const [bindingDoc,sharingDoc]=await tx.getAll(direct.doc('receivingDestination'),direct.doc('pixSharing'));
- if(review||events.some(e=>e.statement==='paid'||e.statement==='received'))return blocked();
+ if(['under_review','cancelled'].includes(context.offer.status)||review||events.some(e=>e.statement==='paid'||e.statement==='received'))return blocked();
  const binding=bindingDoc.data();
  if(!bindingDoc.exists)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
  if(!matches(binding,id,obligation.beneficiaryUid,obligation.contractedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
