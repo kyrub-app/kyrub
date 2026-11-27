@@ -2186,12 +2186,19 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
           assert.deepEqual((await post.get()).data(),stored);
           const card='?view=reputation_connected_card&offerId='+connectionId+'&cursor='+messages.docs[0].id;
           await call(null,card,401);
-          assert.deepEqual(await call(worker,card,200),await call(worker,read,200));
-          assert.deepEqual(await call(payer,card,200),await call(payer,read,200));
+          const publicSummary=await call(worker,read,200);
+          const received=await call(worker,card,200);
+          assert.deepEqual({experience:received.experience,reputations:received.reputations},publicSummary);
+          assert.deepEqual(received.publication,{authorName:'Perfil fictício',authorImage:'',createdAtIso:stored.createdAtIso,expiresAtIso:new Date(Date.parse(stored.createdAtIso)+86400000).toISOString()});
+          assert.deepEqual(await call(payer,card,200),received);
+          assert.equal(received.publication.email,undefined);
+          await profile.update({name:'Nome público atualizado'});
+          assert.equal((await call(worker,card,200)).publication.authorName,'Nome público atualizado');
+          await profile.update({name:'Perfil fictício'});
           assert.deepEqual(await call(worker,card+'&targetUid='+worker.uid,400),{code:'FREELANCE_INVALID'});
-          await profile.update({isProfileVisible:false});assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null});await call(payer,'',403,direct);await profile.update({isProfileVisible:true});
+          await profile.update({isProfileVisible:false});assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});await call(payer,'',403,direct);await profile.update({isProfileVisible:true});
           await connection.delete();await call(payer,'',403,direct);
-          assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null});
+          assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});
           assert.equal((await chat.get()).size,1);
          }finally{
           await connection.delete();

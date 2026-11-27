@@ -388,10 +388,22 @@ export async function readConnectedReputationCard(uid:string,connectionId:unknow
  if(!squarePublicationEnabled()||process.env.KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY!=='true'||process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
  if(!validFreelanceId(uid)||!validFreelanceId(connectionId)||!validFreelanceId(messageId))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
-  const hidden={experience:null,reputations:null};
+  const hidden={experience:null,reputations:null,publication:null};
   const [connection,message]=await tx.getAll(adminDb.doc('connections/'+connectionId),adminDb.doc('social_chats/'+connectionId+'/messages/'+messageId));
   const c=connection.data(),m=message.data();
   if(!c||!m||c.status!=='accepted'||!validFreelanceId(m.senderId)||!validFreelanceId(m.receiverId)||m.senderId===m.receiverId||![m.senderId,m.receiverId].includes(uid)||!Array.isArray(c.participantIds)||c.participantIds.length!==2||!c.participantIds.includes(m.senderId)||!c.participantIds.includes(m.receiverId)||!((c.senderId===m.senderId&&c.receiverId===m.receiverId)||(c.receiverId===m.senderId&&c.senderId===m.receiverId))||!validSquarePost(m.reputationPostId))return hidden;
-  return readReputationSquareInTransaction(tx,m.reputationPostId);
+  const summary=await readReputationSquareInTransaction(tx,m.reputationPostId);
+  if(!summary.experience||!summary.reputations)return hidden;
+  const [original,proof]=await tx.getAll(adminDb.doc('social_posts/'+m.reputationPostId),adminDb.doc('freelanceReputationSquarePostsV1/'+m.reputationPostId));
+  const p=original.data(),r=proof.data();
+  if(!p||!r||!validFreelanceId(r.authorId)||typeof r.identifier!=='string')return hidden;
+  const sourceRef=adminDb.doc('users/'+r.authorId);
+  const [source,profile]=await tx.getAll(sourceRef,sourceRef.collection('public_profile').doc('main'));
+  const identity=projectSocialAddress({kind:'profile',identifier:r.identifier,targetId:r.authorId},source.data(),profile.data());
+  if(!identity)return hidden;
+  const expiresAt=Date.parse(p.squareDistributedAtIso??r.createdAtIso)+squareWindow;
+  if(!Number.isFinite(expiresAt)||Date.now()>=expiresAt)return hidden;
+  return {experience:summary.experience,reputations:summary.reputations,publication:{authorName:identity.name,authorImage:identity.image,createdAtIso:r.createdAtIso,expiresAtIso:new Date(expiresAt).toISOString()}};
+
  },{readOnly:true});
 }
