@@ -1157,8 +1157,31 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).exists,false);
    await finance(other,403);const view=await finance(worker,200);assert.equal(view.finalAmountMinor,null);assert.equal(view.payable,false);
    await finance(owner,409,'reveal_pix',{expectedRevision:1});
+   const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
+   await agreement(other,403);
+   const a=await agreement(worker,200);
+   assert.equal(a.agreedMinor,null);assert.equal(a.payable,false);
+   const proposal={proposalId:'p1',sourceDigest:a.sourceDigest,recognizedServiceMinor:started?Math.min(100,a.capMinor):0};
+   await finance(worker,400,'propose_hourly_cancellation',{...proposal,recognizedServiceMinor:a.capMinor+1});
+   await finance(worker,409,'propose_hourly_cancellation',{...proposal,sourceDigest:'0'.repeat(64)});
+   await finance(worker,200,'propose_hourly_cancellation',proposal);
+   await finance(worker,200,'propose_hourly_cancellation',proposal);
+   const decisionFields={proposalId:'p1',sourceDigest:a.sourceDigest};
+   await finance(worker,403,'accept_hourly_cancellation',decisionFields);
+   await finance(owner,403,'withdraw_hourly_cancellation',decisionFields);
+   await finance(owner,200,'decline_hourly_cancellation',decisionFields);
+   await finance(owner,200,'propose_hourly_cancellation',{...proposal,proposalId:'p2'});
+   await finance(worker,409,'accept_hourly_cancellation',decisionFields);
+   const second={...decisionFields,proposalId:'p2'};
+   await finance(worker,200,'accept_hourly_cancellation',second);
+   await finance(worker,200,'accept_hourly_cancellation',second);
+   assert.equal((await agreement(owner,200)).agreedMinor,proposal.recognizedServiceMinor);
+   assert.equal((await ref.collection('directPayment').doc('hourlyCancellationAgreement-p1').get()).get('status'),'declined');
+   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+   await finance(owner,409,'propose_hourly_cancellation',{...proposal,proposalId:'p3'});
    if(started){
     await ref.collection('attendance').doc('timeline').delete();
+    await agreement(worker,409);
     await finance(worker,409);
    }
   }
