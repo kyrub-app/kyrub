@@ -489,6 +489,24 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
  const direct=db.doc('freelanceOffersV1/'+id).collection('directPayment');
  const audit=(await direct.doc('pixDisclosure').get()).data();assert.equal(audit?.requesterUid,payer.uid);assert.ok(!JSON.stringify(audit).includes(key));
  await call(payer,200,id,'reveal_pix');assert.deepEqual((await direct.doc('pixDisclosure').get()).data(),audit);
+ const consent={expectedSequence:0};
+ await call(payer,403,id,'revoke_pix_share',consent);await call(other,403,id,'revoke_pix_share',consent);
+ await call(worker,200,id,'revoke_pix_share',consent);await call(worker,200,id,'revoke_pix_share',consent);
+ const revoked=await call(payer,200,id);assert.equal(revoked.sharingAuthorized,false);assert.equal(revoked.sharingRevoked,true);assert.equal(revoked.sharingSequence,1);
+ await call(payer,409,id,'reveal_pix');await call(worker,409,id,'authorize_pix_share');
+ // Same personal key remains valid on another contract.
+ await call(worker,200,ids[2],'bind_pix');await call(worker,200,ids[2],'authorize_pix_share');
+ assert.equal((await call(payer,200,ids[2],'reveal_pix')).key,key);
+ await call(worker,409,id,'restore_pix_share',{expectedSequence:0});
+ await call(worker,200,id,'restore_pix_share',{expectedSequence:1});await call(worker,200,id,'restore_pix_share',{expectedSequence:1});
+ await call(worker,409,id,'revoke_pix_share',{expectedSequence:0});
+ const restored=await call(payer,200,id);assert.equal(restored.sharingAuthorized,true);assert.equal(restored.sharingSequence,2);
+ assert.equal((await call(payer,200,id,'reveal_pix')).key,key);
+ assert.deepEqual((await direct.doc('pixDisclosure').get()).data(),audit);
+ assert.equal((await direct.doc('pixSharingEvent-1-1').get()).get('state'),'revoked');
+ assert.equal((await direct.doc('pixSharingEvent-1-2').get()).get('state'),'active');
+ assert.ok(!JSON.stringify((await direct.doc('pixSharingControl-1').get()).data()).includes(key));
+
  const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
  await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
  await call(payer,409,id,'reveal_pix');
@@ -498,7 +516,7 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
  await call(payer,409,ids[2],'reveal_pix');
  await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:2,confirmed:true});
  await call(payer,409,ids[2],'reveal_pix');
- assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).exists,false);
+ assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).get('destinationRevision'),1);
 });
 
 test('direct publication HTTP: canonical terms, explicit acceptance, immutable obligation and completion payment execution',async()=>{
@@ -534,6 +552,9 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await finance(worker,200,id,'bind_pix',{expectedRevision:1});
  assert.equal((await act(worker,id,'start',409,{confirmed:true})).code,'FREELANCE_PIX_SHARING_REQUIRED');
  await finance(worker,200,id,'authorize_pix_share',{expectedRevision:1});
+ await finance(worker,200,id,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});
+ assert.equal((await act(worker,id,'start',409,{confirmed:true})).code,'FREELANCE_PIX_SHARING_REQUIRED');
+ await finance(worker,200,id,'restore_pix_share',{expectedRevision:1,expectedSequence:1});
  assert.equal((await finance(payer,200,id)).financialState,'not_due');
  await finance(payer,409,id,'statement',{eventId:'early-paid',statement:'paid'});
  await finance(payer,409,id,'reveal_pix',{expectedRevision:1});
@@ -552,6 +573,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await act(payer,advanceId,'select',200,{applicantUid:worker.uid});
  await act(worker,advanceId,'confirm',200,{confirmed:true,expectedPaymentTerms:advance});
  await finance(worker,200,advanceId,'bind_pix',{expectedRevision:1});await finance(worker,200,advanceId,'authorize_pix_share',{expectedRevision:1});
+ await finance(worker,200,advanceId,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});
  assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');
  await finance(payer,200,advanceId,'statement',{eventId:'paid',statement:'paid'});
  assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');

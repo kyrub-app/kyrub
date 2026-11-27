@@ -332,6 +332,16 @@ try{
  await payerPage.bringToFront();await button(ps,'Consultar chave Pix integral').click();await button(ps,'Confirmar operação Pix').click();await waitText(ps,sharingKey);
  await button(ps,'Ocultar chave Pix').click();assert.ok(!(await ps.innerText()).includes(sharingKey));assert.ok(!(await ws.innerText()).includes(sharingKey));
  console.log('PASS Pix sharing UI: bind, separate consent, payer-only reveal, manual hide');
+ await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Compartilhamento autorizado');
+ await button(ws,'Revogar compartilhamento neste contrato').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento revogado neste contrato.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento revogado');
+ assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ await button(ws,'Autorizar novamente neste contrato').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento novamente autorizado.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento autorizado');
+ console.log('PASS contract-specific Pix revocation and explicit restoration through authenticated UI');
+
  const replacementKey='replacement-'+suffix+'@example.invalid';
  await changePersonalPixDestination(fw.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:replacementKey}});
  await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Substituição ainda não solicitada.');
