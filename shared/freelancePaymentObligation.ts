@@ -1,3 +1,4 @@
+import {sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from './freelanceWorkTerms.js';
 import {validFreelanceId,readFreelancePaymentTerms,sameFreelancePaymentTerms,type FreelanceOffer,type FreelanceApplication} from './freelanceLifecycle.js';
 import type {DirectPaymentTerms} from './directPaymentTerms.js';
 
@@ -18,7 +19,8 @@ export function buildFreelancePaymentObligation(offer:FreelanceOffer,app:Freelan
  !Number.isSafeInteger(offer.paymentMinor)||offer.paymentMinor<=0||offer.paymentMinor>999999999||
  offer.occurrenceId||app.occurrenceId||offer.startedAt||app.startedAt||offer.completedAt||app.completedAt||
  offer.completionRequestedAt||app.completionRequestedAt||offer.cancelledAt||app.cancelledAt||
- !sameFreelancePaymentTerms(offer.paymentTerms,app.paymentTerms,offer.paymentMinor))return conflict();
+ !sameFreelancePaymentTerms(offer.paymentTerms,app.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,app.workTerms,offer.paymentMinor))return conflict();
+ assertFreelanceWorkExecutionReady(offer.workTerms);
  const terms=readFreelancePaymentTerms(offer.paymentTerms,offer.paymentMinor);
  if(!terms)return conflict();
  return {schemaVersion:1,offerId:offer.id,requesterUid:offer.ownerUid,beneficiaryUid:app.applicantUid,
