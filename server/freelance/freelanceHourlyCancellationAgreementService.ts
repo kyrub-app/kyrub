@@ -18,7 +18,7 @@ async function context(tx:Transaction,uid:string,id:string){
  let proposal:Proposal|null=null;
  if(raw){
   if(Object.keys(raw).length!==2||raw.schemaVersion!==1||!validFreelanceId(raw.proposalId))return fail();
-  proposal=(await tx.get(direct.doc('hourlyCancellationAgreement-'+raw.proposalId))).data() as Proposal|undefined??null;
+  proposal=((await tx.get(direct.doc('hourlyCancellationAgreement-'+raw.proposalId))).data() as Proposal|undefined)??null;
   if(!proposal||proposal.schemaVersion!==1||proposal.id!==raw.proposalId||proposal.sourceDigest!==record.sourceDigest||
    !Number.isSafeInteger(proposal.recognizedServiceMinor)||proposal.recognizedServiceMinor<0||proposal.recognizedServiceMinor>capMinor||
    !['worker','requester'].includes(proposal.proposedBy)||!iso(proposal.proposedAt)||Date.parse(proposal.proposedAt)<Date.parse(record.cancelledAt)||
@@ -51,7 +51,7 @@ export async function changeHourlyCancellationAgreement(uid:string,id:string,act
    const amount=input.recognizedServiceMinor;
    if(typeof amount!=='number'||!Number.isSafeInteger(amount)||amount<0||amount>capMinor)throw Error('FREELANCE_INVALID');
    if(p?.id===proposalId){if(p.proposedBy!==c.actor||p.recognizedServiceMinor!==amount)return fail();return {changed:false};}
-   if(p&&['pending','accepted'].includes(p.status)||(await tx.get(ref)).exists)return fail();
+   if((p&&['pending','accepted'].includes(p.status))||(await tx.get(ref)).exists)return fail();
    const next:Proposal={schemaVersion:1,id:proposalId,sourceDigest:record.sourceDigest,recognizedServiceMinor:amount,proposedBy:c.actor,proposedAt:now,status:'pending'};
    tx.create(ref,next);tx.set(pointer,{schemaVersion:1,proposalId});
    writeFreelanceFinancialNotices(tx,record.commitment,'hourly_cancellation_proposed',now,recipient,proposalId);
