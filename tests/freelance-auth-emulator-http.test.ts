@@ -756,7 +756,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal((await inbox(worker.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_closed').length,1);
  const declined=await accounting(worker,200,completionId);
  assert.equal(declined.proposal.closure,'declined');assert.equal(declined.restrictionActive,false);
- const restriction=(a:Actor)=>finance(a,200,completionId,undefined,{},'restrictions');
+ const restriction=async(a:Actor)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v;};
  const df={snapshot:declined.snapshot};
  await finance(other,403,completionId,'dispute_fixed_cancellation',df);
  await finance(worker,409,completionId,'dispute_fixed_cancellation',{snapshot:'0'.repeat(64)});
