@@ -3,9 +3,9 @@ import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import FreelaPixSharing from './FreelaPixSharing';
 type Statement={role:'requester'|'freelancer';statement:'paid'|'received'|'not_received';recordedAt:string};
-type Case={offerId:string;role:'requester'|'freelancer';amountMinor:number;currency:'BRL';timing:'advance'|'on_completion';financialState:string;restrictionActive:boolean;reviewStatus:string|null;reviewOutcome:string|null;bankVerified:false;statements:Statement[];ownNotes:{id:string;note:string;recordedAt:string}[];ownReceipts:{id:string;size:number;recordedAt:string;mimeType:'image/png'}[];canRequestReview:boolean;canSubmitEvidence:boolean};
+type Case={offerId:string;role:'requester'|'freelancer';amountMinor:number;currency:'BRL';timing:'advance'|'on_completion';due:boolean;financialState:string;restrictionActive:boolean;reviewStatus:string|null;reviewOutcome:string|null;bankVerified:false;statements:Statement[];ownNotes:{id:string;note:string;recordedAt:string}[];ownReceipts:{id:string;size:number;recordedAt:string;mimeType:'image/png'}[];canRequestReview:boolean;canSubmitEvidence:boolean};
 type Action={action:string;confirmed:true;eventId?:string;statement?:Statement['statement'];evidenceId?:string;note?:string;receiptId?:string;pngBase64?:string};
-const states:Record<string,string>={awaiting_payment:'Aguardando pagamento',awaiting_receipt:'Aguardando confirmação de recebimento',nonreceipt_reported:'Não recebimento informado',disputed:'Divergência financeira',receipt_reported:'Recebimento informado',bilaterally_reported_received:'Recebimento confirmado pelas partes'};
+const states:Record<string,string>={not_due:'Pagamento previsto para a conclusão',awaiting_payment:'Aguardando pagamento',awaiting_receipt:'Aguardando confirmação de recebimento',nonreceipt_reported:'Não recebimento informado',disputed:'Divergência financeira',receipt_reported:'Recebimento informado',bilaterally_reported_received:'Recebimento confirmado pelas partes'};
 const statements:Record<string,string>={paid:'Pagamento informado',received:'Recebimento confirmado',not_received:'Recebimento negado'};
 const reviews:Record<string,string>={pending:'Análise administrativa solicitada',resolved_voluntarily:'Regularização voluntária registrada',resolved_administratively:'Análise administrativa encerrada'};
 const outcomes:Record<string,string>={payment_evidence_accepted:'Evidências favoráveis ao pagamento',nonreceipt_evidence_accepted:'Evidências favoráveis ao não recebimento',inconclusive:'Inconclusivo'};
@@ -16,7 +16,7 @@ function valid(v:unknown,id:string,role:Case['role']):v is Case{
  if(!v||typeof v!=='object')return false;
  const c=v as Case;
  return c.offerId===id&&c.role===role&&c.bankVerified===false&&c.currency==='BRL'&&Number.isSafeInteger(c.amountMinor)&&c.amountMinor>0&&
- ['advance','on_completion'].includes(c.timing)&&Object.hasOwn(states,c.financialState)&&typeof c.restrictionActive==='boolean'&&
+ ['advance','on_completion'].includes(c.timing)&&typeof c.due==='boolean'&&(c.due?c.financialState!=='not_due':c.financialState==='not_due')&&Object.hasOwn(states,c.financialState)&&typeof c.restrictionActive==='boolean'&&
  (c.reviewStatus===null||Object.hasOwn(reviews,c.reviewStatus))&&(c.reviewOutcome===null||Object.hasOwn(outcomes,c.reviewOutcome))&&
  typeof c.canRequestReview==='boolean'&&typeof c.canSubmitEvidence==='boolean'&&Array.isArray(c.statements)&&c.statements.length<=3&&
  c.statements.every(s=>['requester','freelancer'].includes(s.role)&&Object.hasOwn(statements,s.statement)&&typeof s.recordedAt==='string')&&
@@ -80,9 +80,9 @@ export default function FreelaFinancialPanel({user,offerId,role}:{user:User;offe
    {data.restrictionActive&&<p className="text-amber-300">Novas contratações temporariamente indisponíveis para ambas as partes.</p>}
    {data.statements.map((s,i)=><p key={i} className="break-words">{s.role==='requester'?'Contratante':'Contratado'}: {statements[s.statement]} · {new Date(s.recordedAt).toLocaleString('pt-BR')}</p>)}
    <div className="flex flex-wrap gap-2">
-    {role==='requester'&&!paid&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>statement('Informar pagamento','paid')}>Informar pagamento</button>}
-    {role==='freelancer'&&!received&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>statement('Confirmar recebimento','received')}>Confirmar recebimento</button>}
-    {role==='freelancer'&&!received&&!denied&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>statement('Informar não recebimento','not_received')}>Informar não recebimento</button>}
+    {data.due&&role==='requester'&&!paid&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>statement('Informar pagamento','paid')}>Informar pagamento</button>}
+    {data.due&&role==='freelancer'&&!received&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>statement('Confirmar recebimento','received')}>Confirmar recebimento</button>}
+    {data.due&&role==='freelancer'&&!received&&!denied&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>statement('Informar não recebimento','not_received')}>Informar não recebimento</button>}
     {data.canRequestReview&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('Solicitar análise administrativa',{action:'request_review',confirmed:true})}>Solicitar análise administrativa</button>}
    </div>
    {data.canSubmitEvidence&&<div className="space-y-2">

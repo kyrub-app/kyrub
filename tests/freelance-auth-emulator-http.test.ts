@@ -501,7 +501,7 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
  assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).exists,false);
 });
 
-test('direct publication HTTP: canonical terms, explicit acceptance, immutable obligation, execution still gated',async()=>{
+test('direct publication HTTP: canonical terms, explicit acceptance, immutable obligation and completion payment execution',async()=>{
  const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
  const payer=await account('terms-payer',['requester']),worker=await account('terms-worker',['freelancer']);
  const id='http-direct-terms-'+suffix,base={title:'Freela Pix fictício',description:'Somente emulador',requirements:'',paymentMinor:15000};
@@ -523,5 +523,43 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  const ref=db.doc('freelanceOffersV1/'+id);
  assert.deepEqual((await ref.collection('directPayment').doc('obligation').get()).get('terms'),terms);
  assert.deepEqual((await ref.collection('applications').doc(worker.uid).get()).get('paymentTerms'),terms);
- assert.equal((await act(worker,id,'start',409,{confirmed:true})).code,'FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+ assert.equal((await act(worker,id,'start',409,{confirmed:true})).code,'FREELANCE_PIX_DESTINATION_REQUIRED');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'execution-'+suffix+'@example.invalid'}});
+ const url='http://127.0.0.1:'+address.port+'/api/freelance/finance';
+ const finance=async(a:Actor,status:number,offerId:string,action?:string,extra:Record<string,unknown>={})=>{
+  const r=await fetch(url+(action?'':'?view=case&offerId='+offerId),{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,...(action?{'content-type':'application/json'}:{})},...(action?{body:JSON.stringify({action,offerId,confirmed:true,...extra})}:{})});
+  const b=await r.json();assert.equal(r.status,status,JSON.stringify(b));return b;
+ };
+ await finance(worker,200,id,'bind_pix',{expectedRevision:1});
+ assert.equal((await act(worker,id,'start',409,{confirmed:true})).code,'FREELANCE_PIX_SHARING_REQUIRED');
+ await finance(worker,200,id,'authorize_pix_share',{expectedRevision:1});
+ assert.equal((await finance(payer,200,id)).financialState,'not_due');
+ await finance(payer,409,id,'statement',{eventId:'early-paid',statement:'paid'});
+ await finance(payer,409,id,'reveal_pix',{expectedRevision:1});
+ await act(payer,id,'start',403,{confirmed:true});
+ await act(worker,id,'start',200,{confirmed:true});await act(worker,id,'start',200,{confirmed:true});
+ await act(worker,id,'request_completion',200,{confirmed:true});await act(payer,id,'confirm_completion',200,{confirmed:true});
+ assert.equal((await finance(payer,200,id)).financialState,'awaiting_payment');
+ assert.equal((await finance(payer,200,id,'reveal_pix',{expectedRevision:1})).bankVerified,false);
+ await finance(payer,200,id,'statement',{eventId:'paid',statement:'paid'});
+ await finance(worker,200,id,'statement',{eventId:'received',statement:'received'});
+ const completed=await finance(worker,200,id);assert.equal(completed.financialState,'bilaterally_reported_received');assert.equal(completed.bankVerified,false);
+ assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).get('confirmedServiceMinor'),15000);
+ const advanceId='http-advance-execution-'+suffix;
+ await act(payer,advanceId,'publish',200,{terms:{...base,paymentTerms:advance}});
+ await act(worker,advanceId,'apply',200,{expectedPaymentTerms:advance});
+ await act(payer,advanceId,'select',200,{applicantUid:worker.uid});
+ await act(worker,advanceId,'confirm',200,{confirmed:true,expectedPaymentTerms:advance});
+ await finance(worker,200,advanceId,'bind_pix',{expectedRevision:1});await finance(worker,200,advanceId,'authorize_pix_share',{expectedRevision:1});
+ assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');
+ await finance(payer,200,advanceId,'statement',{eventId:'paid',statement:'paid'});
+ assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');
+ await finance(worker,200,advanceId,'statement',{eventId:'denied',statement:'not_received'});
+ assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');
+ await finance(worker,200,advanceId,'statement',{eventId:'received',statement:'received'});
+ await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:1,confirmed:true});
+ await act(worker,advanceId,'start',200,{confirmed:true});
+ await act(worker,advanceId,'request_completion',200,{confirmed:true});await act(payer,advanceId,'confirm_completion',200,{confirmed:true});
+ assert.equal((await db.doc('freelanceOffersV1/'+advanceId).get()).get('status'),'completed');
 });

@@ -354,6 +354,12 @@ try{
  await financialAction(receiverPanel,'Confirmar recebimento');await waitText(receiverPanel,'Regularização voluntária registrada');
  await button(payerPanel,'Consultar situação financeira').click();await waitText(payerPanel,'Recebimento confirmado pelas partes');
  for(const a of [fp,fw])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
+ const workerModal=receiverPage.getByRole('dialog',{name:'Fazer Freelas',exact:true}),payerModal=payerPage.getByRole('dialog',{name:'Solicitar Freelas',exact:true});
+ await action(workerModal,'Iniciar serviço');await directDetail(workerModal,'Fazendo');await action(workerModal,'Solicitar conclusão');
+ await directDetail(payerModal,'Publicados');await action(payerModal,'Confirmar conclusão');
+ assert.equal((await db.doc('freelanceOffersV1/'+directId).get()).get('status'),'completed');
+ assert.equal((await db.doc('freelanceOffersV1/'+directId+'/financialBasis/remuneration').get()).get('settlement'),'not_verified');
+ console.log('PASS direct advance execution after bilateral receipt and voluntary release');
  for(const page of [payerPage,receiverPage]){
   const modal=page.getByRole('dialog',{name:page===payerPage?'Solicitar Freelas':'Fazer Freelas',exact:true});
   await button(modal,'Fechar').click();
