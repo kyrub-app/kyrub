@@ -71,7 +71,7 @@ export function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFree
   const d=r.decision;
   if(!d||Object.keys(d).length!==6||!validFreelanceId(d.actorUid)||[r.requesterUid,r.beneficiaryUid].includes(d.actorUid)||
    !isFinancialReviewOutcome(d.outcome)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||
-   d.decidedAt!==r.resolvedAt||d.bankVerified!==false||!Number.isSafeInteger(d.evidenceRevision)||d.evidenceRevision<0||d.evidenceRevision>4)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+   d.decidedAt!==r.resolvedAt||d.bankVerified!==false||!Number.isSafeInteger(d.evidenceRevision)||d.evidenceRevision<0||d.evidenceRevision>6)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  }else if(r.decision!==undefined)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  return r;
 }
