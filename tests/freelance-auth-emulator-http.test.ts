@@ -20,6 +20,7 @@ const auth=getAuth(app),db=getFirestore(app);
 const {handleFreelanceWorkspace,freelanceWorkspaceEnabled}=await import('../server/freelance/freelanceWorkspaceTransport.js');
 const {confirmSimulatedFreelanceFunding}=await import('../server/freelance/freelanceFundingService.js');
 const {listFreelanceReviews,decideFreelanceReview}=await import('../server/admin/freelanceReviewService.js');
+const {handleFreelanceFinancialReview}=await import('../server/admin/freelanceFinancialReviewTransport.js');
 assert.equal(freelanceWorkspaceEnabled(),true);
 const {handlePersonalPix,personalPixTransportEnabled,personalPixRecentLogin}=await import('../server/payments/personalPixTransport.js');
 assert.equal(personalPixTransportEnabled(),true);
@@ -27,13 +28,13 @@ assert.equal(personalPixTransportEnabled(),true);
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url??'/','http://127.0.0.1');
-  if(!['/api/freelance/workspace','/api/personal-finance/pix'].includes(url.pathname)){res.statusCode=404;res.end();return;}
+  if(!['/api/freelance/workspace','/api/personal-finance/pix','/api/admin/freelance-financial-review'].includes(url.pathname)){res.statusCode=404;res.end();return;}
   const chunks:Buffer[]=[];
   for await(const chunk of req)chunks.push(Buffer.from(chunk));
   const raw=Buffer.concat(chunks).toString('utf8');
   const response={setHeader:(k:string,v:string)=>res.setHeader(k,v),status:(code:number)=>{res.statusCode=code;return response;},json:(value:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));}};
   const request={method:req.method,headers:req.headers,query:Object.fromEntries(url.searchParams),body:raw?JSON.parse(raw):undefined};
-  if(url.pathname==='/api/personal-finance/pix')await handlePersonalPix(request,response);else await handleFreelanceWorkspace(request,response);
+  if(url.pathname==='/api/admin/freelance-financial-review')await handleFreelanceFinancialReview(request,response);else if(url.pathname==='/api/personal-finance/pix')await handlePersonalPix(request,response);else await handleFreelanceWorkspace(request,response);
  }catch{res.statusCode=500;res.end(JSON.stringify({code:'TEST_HTTP_ERROR'}));}
 });
 server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -276,4 +277,46 @@ test('CID Pix import HTTP: private list, explicit confirmation, account isolatio
   assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),pix.key);
   console.log('PASS CID Pix HTTP: own masked list, foreign account rejected, recent session, stale source, explicit replacement, independent destination');
  }finally{await tag.delete();}
+});
+
+test('financial Control Plane queue: actual Auth emulator token, synthetic MFA, active admin only, private bounded read',async(t)=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer=await account('finqueue-payer',['requester']),worker=await account('finqueue-worker',['freelancer']),admin=await account('finqueue-admin',[]),inactive=await account('finqueue-inactive',[]);
+ for(const [a,status] of [[admin,'active'],[inactive,'inactive'],[payer,'active']] as const)await db.doc('kyrub_admin/control_plane/admins/'+a.uid).set({uid:a.uid,role:'super_admin',status});
+ const id='finqueue-'+suffix;
+ await publishFreelanceOffer(payer.uid,id,{title:'Freela financeiro fictício',description:'Teste isolado',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
+ await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
+ await record(worker.uid,id,{eventId:'denied',statement:'not_received',confirmed:true});
+ await request(worker.uid,id,{confirmed:true});
+ const url='http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review';
+ const call=async(a:Actor|null,status:number,query='',method='GET')=>{
+  const r=await fetch(url+query,{method,headers:a?{authorization:'Bearer '+a.token}:{}});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));assert.match(r.headers.get('cache-control')??'',/no-store/);return data;
+ };
+ await call(null,401);await call(admin,405,'','POST');
+ assert.equal((await call(admin,403)).code,'second_factor_required');
+ const original=auth.verifyIdToken.bind(auth),tokens=new Set([payer.token,worker.token,admin.token,inactive.token]);let stale=false;
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+  const decoded=await original(token,checkRevoked);
+  if(!tokens.has(token))return decoded;
+  assert.equal(checkRevoked,true);
+  return {...decoded,auth_time:Math.floor(Date.now()/1000)-(stale?301:0),firebase:{...decoded.firebase,sign_in_second_factor:'totp'}};
+ });
+ try{
+  stale=true;assert.equal((await call(admin,403)).code,'reauthentication_required');stale=false;
+  await call(worker,403);await call(inactive,403);await call(admin,400,'?uid='+worker.uid);
+  const mine=await call(payer,200);assert.ok(!mine.items.some(x=>x.offerId===id));
+  const list=await call(admin,200),item=list.items.find(x=>x.offerId===id);
+  assert.ok(item);assert.equal(item.amountMinor,15000);assert.equal(item.restrictionActive,true);assert.equal(item.bankVerified,false);
+  assert.deepEqual(item.statements.map(x=>x.statement),['paid','not_received']);assert.equal(item.requestedByRole,'freelancer');
+  assert.ok(!JSON.stringify(item).includes('@example.invalid'));assert.equal('events' in item,false);
+  await record(worker.uid,id,{eventId:'received',statement:'received',confirmed:true});
+  assert.ok(!(await call(admin,200)).items.some(x=>x.offerId===id));
+  const flag=process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;
+  try{delete process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;await call(admin,503);}finally{process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION=flag;}
+ }finally{t.mock.restoreAll();}
+ console.log('PASS private financial review queue: real emulator auth, synthetic TOTP policy, active admin, no self, voluntary removal; genuine MFA not tested');
 });
