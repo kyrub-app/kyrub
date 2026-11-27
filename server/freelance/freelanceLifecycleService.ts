@@ -1,3 +1,4 @@
+import {sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from '../../shared/freelanceWorkTerms.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb,getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
@@ -17,7 +18,9 @@ const assertApproved = (data: Record<string, unknown> | undefined, profile: 'req
 
 /** Transport always supplies acceptance, including undefined for legacy.
  * Internal fixture callers retain their existing service contract. */
-function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown}){
+function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown;expectedWorkTerms?:unknown}){
+ assertFreelanceWorkExecutionReady(offer.workTerms);
+ if(!sameFreelanceWorkTerms(offer.workTerms,acceptance?.expectedWorkTerms,offer.paymentMinor))throw Error('FREELANCE_CONFLICT');
  if(!acceptance)return;
  if(offer.paymentTerms!==undefined&&(!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||
  process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
@@ -27,6 +30,8 @@ function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:u
 /** Service-only candidate: no client writes and no migration of legacy records. */
 export async function publishFreelanceOffer(actorUid: string, offerId: string, input: unknown): Promise<{offer:FreelanceOffer;created:boolean}> {
   const proposed = createFreelanceOffer(offerId, actorUid, input, new Date().toISOString());
+  assertFreelanceWorkExecutionReady(proposed.workTerms);
+  if(proposed.workTerms&&!proposed.paymentTerms)throw Error('FREELANCE_INVALID');
   if(proposed.paymentTerms!==undefined&&(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
   const ref = adminDb.doc(offers + '/' + offerId);
   return adminDb.runTransaction(async tx => {
@@ -37,7 +42,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
       if (saved.id !== proposed.id || saved.ownerUid !== actorUid || saved.status !== 'open' ||
           saved.title !== proposed.title || saved.description !== proposed.description ||
           saved.requirements !== proposed.requirements || saved.paymentMinor !== proposed.paymentMinor ||
-          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,proposed.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,proposed.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,proposed.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
       return {offer:saved,created:false};
     }
     await assertFreelanceEngagementAllowed(tx,actorUid);
@@ -45,7 +50,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
     return {offer:proposed,created:true};
   });
 }
-export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
+export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId)) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
@@ -59,7 +64,7 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string, a
     if (applicationSnap.exists) {
       const saved = applicationSnap.data() as FreelanceApplication;
       if (saved.offerId !== offerId || saved.applicantUid !== actorUid || saved.ownerUid !== offer.ownerUid || saved.status !== 'pending' ||
-          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,offer.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
       return {application:saved,created:false};
     }
     await assertFreelanceEngagementAllowed(tx,actorUid,offer.ownerUid);
@@ -90,7 +95,7 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
   });
 }
 /** The selected worker must explicitly confirm; the owner cannot confirm for them. */
-export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown}): Promise<FreelanceSelectionResult> {
+export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown}): Promise<FreelanceSelectionResult> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
