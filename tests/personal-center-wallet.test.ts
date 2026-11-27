@@ -168,3 +168,14 @@ test('private experience and reputation are outside reward wallet and verify min
  assert.match(ui,/data\?\.state==='verified_snapshot'&&p/);
  assert.doesNotMatch(ui,/method:'POST'|localStorage|rewardXp/);
 });
+
+test('store reputation is operational only and team access does not grant financial authority',()=>{
+ const menu=read('src/components/MobileErpMenu.tsx'),runtime=read('src/components/MobileErpMenuRuntime.tsx'),router=read('src/components/RetailerPanelRuntimeRouter.tsx');
+ assert.match(menu,/id: 'reputacoes', label: 'Reputações', icon: Star, section: 'operacao'/);
+ assert.match(menu,/itemId === 'ponto' \|\| itemId === 'reputacoes'/);
+ assert.match(runtime,/storeReputationCandidateEnabled\(\)/);
+ assert.match(router,/props.activeSubTab === 'reputacoes'/);
+ const ui=read('src/components/store/StoreReputationWorkspace.tsx');
+ assert.match(ui,/view=reputation_team&storeId=/);assert.match(ui,/method:'GET'/);assert.match(ui,/cache:'no-store'/);
+ assert.doesNotMatch(ui,/method:'POST'|localStorage|contest_reputation|submit_reputation/);
+});
