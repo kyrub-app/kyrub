@@ -631,6 +631,11 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   const {auditOwnFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexAudit.js');
   const audited=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
   assert.equal(audited.state,'verified_snapshot');assert.equal(audited.projection?.completedContracts,1);assert.equal(audited.projection?.aggregate.mean,5);
+  const privateView=await call(worker,'?view=reputation_verified_professional',200);
+  assert.deepEqual(privateView,{subject:audited.subject,state:audited.state,projection:audited.projection});
+  await call(null,'?view=reputation_verified_professional',401);
+  await call(worker,'?view=reputation_verified_professional&uid='+payer.uid,400);
+  await call(worker,'?view=reputation_verified_professional&cursor='+id,400);
   const requesterAudit=await auditOwnFreelanceReputationIndex(payer.uid,'personal_requester');
   assert.equal(requesterAudit.state,'verified_snapshot');assert.equal(requesterAudit.projection?.aggregate.mean,4);
   assert.equal((await auditOwnFreelanceReputationIndex(outsider.uid,'professional')).projection?.completedContracts,0);
@@ -638,6 +643,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await indexRef.update({'accumulator.ratingUnits':1680});
   const mismatch=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
   assert.equal(mismatch.state,'repair_required');assert.equal(mismatch.projection,null);
+  assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
   await indexRef.update({accumulator:before});
   const receiptRef=db.doc('freelanceReputationIndexReceiptsV1/'+id),originalReceipt=(await receiptRef.get()).data()!;
   await receiptRef.update({releaseDigest:null});
@@ -646,6 +652,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await receiptRef.set(originalReceipt);
   delete process.env[indexGate];
   await assert.rejects(auditOwnFreelanceReputationIndex(worker.uid,'professional'),/FORBIDDEN/);
+  await call(worker,'?view=reputation_verified_professional',403);
   process.env[indexGate]='true';
   const replay=await Promise.all([reconcileFreelanceReputationIndex(payer.uid,id),reconcileFreelanceReputationIndex(worker.uid,id)]);
   assert.ok(replay.every(r=>!r.experienceAdded&&!r.ratingsAdded&&r.coverage==='unverified'));

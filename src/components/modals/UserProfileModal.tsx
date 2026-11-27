@@ -1,3 +1,4 @@
+import {PersonalReputationPanel,personalReputationCandidateEnabled} from './PersonalReputationPanel';
 import React, { useEffect, useState } from 'react';
 import {
   ArrowLeftRight,
@@ -336,6 +337,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                 </div>
               </div>
             </section>
+
+            {currentUser && personalReputationCandidateEnabled() && <div className="p-4 sm:p-5"><PersonalReputationPanel key={currentUserId} user={currentUser} /></div>}
 
             <section className="space-y-4 border-b border-slate-900 bg-slate-950 p-4 sm:p-5" id="profile-personal-center">
               <div>
