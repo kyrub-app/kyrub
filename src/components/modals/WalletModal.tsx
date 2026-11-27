@@ -1,6 +1,8 @@
 import React from 'react';
 import { Wallet } from 'lucide-react';
 import {PersonalPixSettings,personalFinanceCandidateEnabled} from './PersonalPixSettings';
+import FreelaMovements from './FreelaMovements';
+import {useLocalFreelaCandidate} from './CanonicalFreelaWorkspace';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -12,6 +14,7 @@ interface WalletModalProps {
 export const WalletMovementsPanel: React.FC<{ walletHistory: any[];onPersonalFinanceActivity?:(uid:string,active:boolean)=>void }> = ({ walletHistory,onPersonalFinanceActivity }) => (
   <div className="space-y-4" id="wallet-movements-panel">
     {personalFinanceCandidateEnabled() && <PersonalPixSettings onActivity={onPersonalFinanceActivity} /> }
+    {personalFinanceCandidateEnabled() && useLocalFreelaCandidate() && <FreelaMovements/>}
     <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
       <span className="block text-xs font-bold uppercase text-amber-300">Movimentações reais em preparação</span>
       <p className="mt-2 text-sm leading-relaxed text-slate-300">

@@ -24,7 +24,7 @@ function readEvents(raw:unknown,offerId:string):ExternalPixEvent[]{
  typeof e.recordedAt==='string'&&['paid','received','not_received'].includes(e.statement)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
  return r.events;
 }
-export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:string,offerId:string){
+export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:string,offerId:string,allowNotDue=false){
  const ref=adminDb.doc('freelanceOffersV1/'+offerId),direct=ref.collection('directPayment'),statementRef=direct.doc('externalStatements');
   const [o,ob,history]=await tx.getAll(ref,direct.doc('obligation'),statementRef);
   const offer=o.data() as FreelanceOffer|undefined;
@@ -36,17 +36,19 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
   const obligation=buildFreelancePaymentObligation(contractSnapshot(offer),contractSnapshot(app));
   if(obligation.terms.method!=='external_pix'||!matchesFreelancePaymentObligation(ob.data(),obligation))
    throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
-  if(obligation.dueTrigger==='bilateral_service_completion'&&offer.status!=='completed')throw Error('FREELANCE_PAYMENT_NOT_DUE');
+  const due=obligation.dueTrigger==='contract_confirmation'||offer.status==='completed';
+  if(!due&&!allowNotDue)throw Error('FREELANCE_PAYMENT_NOT_DUE');
   if(offer.status==='completed'){
    const basis=buildFreelanceRemunerationBasis(offer,app);
    const saved=await tx.get(ref.collection('financialBasis').doc('remuneration'));
    if(!matchesFreelanceRemunerationBasis(saved.data(),basis))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
   }
   const events=readEvents(history.data(),offerId);
+  if(!due&&events.length)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   const projection=projectExternalPixStatements(obligation,events);
-  if(obligation.dueTrigger==='bilateral_service_completion'&&events.some(e=>Date.parse(e.recordedAt)<Date.parse(offer.completedAt!)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+  if(due&&obligation.dueTrigger==='bilateral_service_completion'&&events.some(e=>Date.parse(e.recordedAt)<Date.parse(offer.completedAt!)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
 
- return {offer,obligation,events,projection,statementRef};
+ return {offer,obligation,events,projection,statementRef,due};
 }
 export type FinancialReviewOutcome='payment_evidence_accepted'|'nonreceipt_evidence_accepted'|'inconclusive';
 export type FinancialReviewDecision={actorUid:string;outcome:FinancialReviewOutcome;reason:string;decidedAt:string;bankVerified:false;evidenceRevision:number};

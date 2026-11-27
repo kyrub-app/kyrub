@@ -1,4 +1,5 @@
 import {adminAuth} from '../firebaseAdmin.js';
+import {readOwnFreelanceMovements} from './freelanceMovementsService.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {freelanceWorkspaceEnabled} from './freelanceWorkspaceTransport.js';
 import {readFinancialContext,checkedReview,recordFreelanceExternalPaymentStatement,requestFreelanceFinancialReview} from './freelanceExternalPaymentStatementService.js';
@@ -51,6 +52,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
+   if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
    if(q.view==='restrictions'&&keys.length===1){res.status(200).json(await readOwnFreelanceRestrictions(uid));return;}
    if(q.view==='case'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCase(uid,q.offerId));return;}
    if(q.view==='receipt'&&keys.length===3&&validFreelanceId(q.offerId)&&validFreelanceId(q.receiptId)){res.status(200).json(await readCase(uid,q.offerId,q.receiptId));return;}
