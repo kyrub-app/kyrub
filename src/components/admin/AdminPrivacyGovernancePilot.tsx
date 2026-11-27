@@ -17,7 +17,7 @@ function PrivacyQueue({adapter}:{adapter?:PrivacyAdminAdapter}){
   lock.current=true;setBusy(true);setNotice('');setRows([]);setLoaded(false);setMore(false);reset();
   let committed=false;
   try{
-   if(action){await action();committed=true;}
+   if(action){const receipt=await action() as {simulation?:boolean;actionStatus?:string}|null;if(receipt?.simulation!==true||receipt.actionStatus!=='not-executed')throw Error('UNCONFIRMED');committed=true;}
    const r=await adapter.list();
    if(r.simulation!==true||!Array.isArray(r.items)||r.items.length>50||r.items.some(x=>x.identityStatus!=='pending-verification'||x.actionStatus!=='not-executed'))throw Error('UNCONFIRMED');
    setRows(r.items);setMore(r.hasMore);setLoaded(true);
