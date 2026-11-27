@@ -73,7 +73,8 @@ test('authenticated HTTP journey: two parties, independent outsider, funding bar
  assert.equal(candidates.applications.length,2);
  const own=await call(worker,'?view=detail&offerId='+offerId,200);
  assert.deepEqual(own.applications.map((a:{applicantUid:string})=>a.applicantUid),[worker.uid]);
- await act(worker,offerId,'select',403,{applicantUid:worker.uid});
+ assert.equal((await act(worker,offerId,'select',400,{applicantUid:worker.uid})).code,'FREELANCE_INVALID');
+ assert.equal((await act(worker,offerId,'select',403,{applicantUid:outsider.uid})).code,'FREELANCE_FORBIDDEN');
  await act(owner,offerId,'select',200,{applicantUid:worker.uid});
  await act(outsider,offerId,'confirm',403,{confirmed:true});
  await act(worker,offerId,'confirm',200,{confirmed:true});
