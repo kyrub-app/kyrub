@@ -1,3 +1,4 @@
+import {readHourlyReviewNotes} from './freelanceHourlyReviewNotes.js';
 import {prepareExcessRestriction} from './freelanceEngagementRestrictionService.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
@@ -32,7 +33,7 @@ export async function readHourlyExcessContext(tx:Transaction,uid:string,id:strin
  }
  if(dispute?.status==='resolved_administratively'){
   const d=dispute.decision;
-  if(!d||Object.keys(d).length!==5||!validFreelanceId(d.actorUid)||[record.commitment.requesterUid,record.commitment.beneficiaryUid].includes(d.actorUid)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||!iso(d.decidedAt)||Date.parse(d.decidedAt)<Date.parse(dispute.requestedAt!)||d.proposalDigest!==digestVariablePaymentSources(proposal))return fail();
+  if(!d||Object.keys(d).length!==6||!validFreelanceId(d.actorUid)||[record.commitment.requesterUid,record.commitment.beneficiaryUid].includes(d.actorUid)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||!iso(d.decidedAt)||Date.parse(d.decidedAt)<Date.parse(dispute.requestedAt!)||d.proposalDigest!==digestVariablePaymentSources(proposal)||typeof d.evidenceDigest!=='string'||!/^[a-f0-9]{64}$/.test(d.evidenceDigest))return fail();
   resolved=buildHourlyExcessAdministrativeResolution(record,d);
  }
  if(resolved?(!resolution.exists||canonicalVariablePaymentRecord(resolution.data())!==canonicalVariablePaymentRecord(resolved)):resolution.exists)return fail();
@@ -43,10 +44,12 @@ export async function readHourlyExcessContext(tx:Transaction,uid:string,id:strin
  if(dispute?.requestedAt){
   if(!queue||Object.keys(queue).length!==6||queue.offerId!==id||queue.requesterUid!==record.commitment.requesterUid||queue.beneficiaryUid!==record.commitment.beneficiaryUid||queue.sourceDigest!==record.sourceDigest||queue.requestedAt!==dispute.requestedAt||queue.status!==(restricted?'pending':dispute.status))return fail();
  }else if(queue)return fail();
+ const evidence=await readHourlyReviewNotes(tx,queueRef,record.commitment,record.sourceDigest,dispute?.requestedAt);
+ if(dispute?.decision&&dispute.decision.evidenceDigest!==evidence.digest)return fail();
  await prepareExcessRestriction(tx,record.commitment,restricted,restricted);
- return {s,record,c,direct,pointer,proposal,resolutionRef,resolved,dispute,disputeRef,restricted,queueRef,obligation,finalRef:final.ref,statementRef:history.ref,history};
+ return {s,record,c,direct,pointer,proposal,resolutionRef,resolved,dispute,disputeRef,restricted,queueRef,obligation,finalRef:final.ref,statementRef:history.ref,history,evidence};
 }
-export type HourlyExcessAdminDecision={actorUid:string;recognizedExcessMs:number;reason:string;decidedAt:string;proposalDigest:string};
+export type HourlyExcessAdminDecision={actorUid:string;recognizedExcessMs:number;reason:string;decidedAt:string;proposalDigest:string;evidenceDigest:string};
 export function buildHourlyExcessAdministrativeResolution(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],d:HourlyExcessAdminDecision){
  return {schemaVersion:1,kind:'hourly_excess_resolution',offerId:record.commitment.offerId,baseDigest:record.sourceDigest,sourceDigest:digestVariablePaymentSources({base:record.sourceDigest,decision:d}),resolvedAt:d.decidedAt,...calculateHourlyExcessResolution(record,d.recognizedExcessMs),payable:false};
 }
