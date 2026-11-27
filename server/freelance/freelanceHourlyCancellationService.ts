@@ -28,8 +28,7 @@ export async function prepareHourlyCancellation(tx:Transaction,uid:string,id:str
  const {target,record}=await validateHourlyCancellation(tx,uid,id,r);
  return ()=>{if(r.changed)tx.create(target,record);};
 }
-export async function readHourlyCancellation(uid:string,id:string){
- return adminDb.runTransaction(async tx=>{
+export async function readHourlyCancellationContext(tx:Transaction,uid:string,id:string){
   const c=await readAttendanceContext(tx,uid,id);
   if(c.offer.status!=='cancelled'||c.terms?.mode!=='hourly')return fail();
   const saved=await tx.get(c.ref.collection('financialBasis').doc('hourlyCancellation'));
@@ -38,6 +37,11 @@ export async function readHourlyCancellation(uid:string,id:string){
   const occurrence=(await tx.get(c.ref.collection('occurrences').doc(occurrenceId))).data() as FreelanceOccurrence|undefined;
   if(!occurrence)return fail();
   const {record}=await validateHourlyCancellation(tx,uid,id,{offer:c.offer,application:c.application,occurrence,changed:false});
+  return {c,record};
+}
+export async function readHourlyCancellation(uid:string,id:string){
+ return adminDb.runTransaction(async tx=>{
+  const {c,record}=await readHourlyCancellationContext(tx,uid,id);
   return {offerId:id,role:c.actor,estimatedMinor:record.commitment.estimatedMinor,cancelledAt:record.cancelledAt,suspendedAt:record.suspendedAt,accounting:record.accounting,recognizedServiceMinor:null,finalAmountMinor:null,disposition:record.disposition,payable:false,bankVerified:false};
  },{readOnly:true});
 }
