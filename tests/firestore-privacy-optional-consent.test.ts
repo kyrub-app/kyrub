@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict';
+import {test,after} from 'node:test';
+import {initializeApp,getApps,deleteApp} from 'firebase-admin/app';
+import {getAuth} from 'firebase-admin/auth';
+import {getFirestore} from 'firebase-admin/firestore';
+import {assertPrivacyEmulator,PRIVACY_EMULATOR_PROJECT} from '../server/governance/privacyRightsEmulator';
+import {createPrivacyOptionalConsentEmulator} from '../server/governance/privacyOptionalConsentEmulator';
+import {prepareOptionalConsent,projectOptionalConsent} from '../server/governance/privacyOptionalConsentPolicy';
+assertPrivacyEmulator();
+const app=initializeApp({projectId:PRIVACY_EMULATOR_PROJECT},'privacy-consent-fixtures'),auth=getAuth(app),db=getFirestore(app);
+after(async()=>{for(const a of getApps().filter(a=>['privacy-consent-fixtures','privacy-optional-consent-local-emulator'].includes(a.name)))await deleteApp(a);});
+test('optional choices start disabled and can be independently revoked',async()=>{
+ async function account(uid:string){
+  const email=uid+'@example.invalid',password='LocalFixturePassword123!';
+  await auth.createUser({uid,email,password,emailVerified:true});
+  const response=await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,returnSecureToken:true})});
+  assert.equal(response.status,200);return (await response.json() as {idToken:string}).idToken;
+ }
+ const uid='privacy-consent-fixture',token=await account(uid),other=await account('privacy-consent-other'),clock=()=>Date.now()+1000;
+ const service=createPrivacyOptionalConsentEmulator(),purpose='fixture-product-news' as const,version='fixture-1',grant={purpose,version,expectedRevision:0,decision:'grant',confirmed:true};
+ assert.ok((await service.list(token,clock())).every(x=>!x.effective&&x.state==='not-granted'));
+ await assert.rejects(service.change(token,{...grant,confirmed:false},clock()));
+ await assert.rejects(service.change(token,{...grant,uid:'privacy-consent-other'},clock()));
+ await assert.rejects(service.change(token,{...grant,purpose:'terms'},clock()));
+ await assert.rejects(service.change(token,{...grant,version:'old'},clock()));
+ const outcomes=await Promise.allSettled([service.change(token,grant,clock()),service.change(token,grant,clock())]);
+ assert.equal(outcomes.filter(x=>x.status==='fulfilled').length,1);
+ assert.equal((await service.list(token,clock())).find(x=>x.purpose===purpose)?.effective,true);
+ assert.ok((await service.list(other,clock())).every(x=>!x.effective));
+ assert.equal((await service.list(token,clock())).find(x=>x.purpose==='fixture-personalization')?.effective,false);
+ const withdrawn=await service.change(token,{...grant,expectedRevision:1,decision:'withdraw'},clock());
+ assert.equal(withdrawn.effective,false);assert.equal(withdrawn.state,'withdrawn');assert.equal(withdrawn.revision,2);
+ await assert.rejects(service.change(token,{...grant,expectedRevision:1},clock()));
+ const events=await db.collection('privacy_emulator_optional_consents').doc(uid).collection('events').get();assert.equal(events.size,2);
+ const old={...prepareOptionalConsent(grant,undefined,clock()),version:'old'};
+ assert.equal(projectOptionalConsent(purpose,old).effective,false);
+ assert.equal(projectOptionalConsent(purpose,old).canWithdraw,true);
+ assert.equal(prepareOptionalConsent({...grant,expectedRevision:1,decision:'withdraw'},old,clock()).state,'withdrawn');
+ await auth.updateUser(uid,{disabled:true});await assert.rejects(service.list(token,clock()));
+});
