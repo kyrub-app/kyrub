@@ -1530,6 +1530,8 @@ test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparatio
   await act(worker,id,'confirm',200,{confirmed:true,...expected});
   assert.equal((await ref.collection('directPayment').doc('hourlyCommitment').get()).get('estimatedMinor'),360000);
   assert.equal((await ref.collection('directPayment').doc('obligation').get()).exists,false);
+  const movement=async(a:Actor,role:string)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=movements&role='+role,{headers:{authorization:'Bearer '+a.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));assert.equal(v.bankVerifiedMinor,null);return v.hourlyEntries.find((e:any)=>e.offerId===id);};
+  const before=await movement(owner,'requester');assert.equal(before.estimatedMinor,360000);assert.equal(before.recognizedMinor,null);assert.equal(before.reason,'attendance_pending');
   const finance=async(a:Actor,status:number,action?:string,extra:Record<string,unknown>={},view='case')=>{
    const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view='+view+'&offerId='+id);
    const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
@@ -1559,6 +1561,7 @@ test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparatio
   await finance(owner,200,'statement',{eventId:'paid',statement:'paid',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
   await finance(worker,200,'statement',{eventId:'received',statement:'received',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
   assert.equal((await finance(owner,200)).financialState,'bilaterally_reported_received');
+  for(const [actor,role] of [[owner,'requester'],[worker,'freelancer']] as const){const row=await movement(actor,role);assert.equal(row.recognizedMinor,final.amountMinor);assert.equal(row.reason,'final');assert.equal(row.financialState,'bilaterally_reported_received');assert.equal(row.bankVerified,false);assert.equal(row.workMs,basis.accounting.workMs);}
  }finally{if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
 });
 
