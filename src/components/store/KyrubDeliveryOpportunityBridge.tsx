@@ -107,7 +107,7 @@ export function KyrubDeliveryOpportunityBridge({
               status: status as DeliveryJob['status'],
               requestedBy: clean(data.requestedBy),
               acceptedBy:
-                clean(data.acceptedByName) || clean(data.acceptedBy) || undefined,
+                clean(data.acceptedBy) || undefined,
               source: clean(data.source),
               sourceOrderId: clean(data.sourceOrderId),
               orderStatus: clean(data.orderStatus),
