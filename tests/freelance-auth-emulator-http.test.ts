@@ -829,6 +829,44 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
  await finance(worker,200,completionId,'revoke_adjustment_pix',additionalInput);
  assert.equal((await pix(worker,200,completionId)).revoked,true);
+ // The adjustment is a separate obligation with direction-specific declarations.
+ const adj=(a:Actor,status:number,target:string)=>finance(a,status,target,undefined,{},'fixed_adjustment_statements');
+ const refundStatement={sourceDigest:refund.resolution.sourceDigest,expectedAmountMinor:10000};
+ const additionalStatement={sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000};
+ await adj(other,403,id);
+ assert.equal((await adj(worker,200,id)).role,'payer');
+ assert.equal((await adj(payer,200,id)).role,'recipient');
+ await finance(payer,403,id,'statement_adjustment',{...refundStatement,eventId:'wrong-payer',statement:'paid'});
+ await finance(worker,409,id,'statement_adjustment',{...refundStatement,expectedAmountMinor:10001,eventId:'wrong-amount',statement:'paid'});
+ await finance(worker,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-paid',statement:'paid'});
+ await finance(worker,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-paid',statement:'paid'});
+ assert.equal((await adj(payer,200,id)).state,'awaiting_receipt');
+ await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-denied',statement:'not_received'});
+ assert.equal((await adj(worker,200,id)).state,'disputed');
+ for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[id]});
+ await finance(payer,200,id,'request_adjustment_review',refundStatement);
+ await finance(worker,200,id,'request_adjustment_review',refundStatement);
+ assert.equal((await adj(worker,200,id)).reviewStatus,'pending');
+ // Simulated independent restrictions on the same offer must survive voluntary closure.
+ for(const a of [payer,worker])await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).update({openExcessOfferIds:[id]});
+ await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-received',statement:'received'});
+ await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-received',statement:'received'});
+ const done=await adj(worker,200,id);assert.equal(done.state,'bilaterally_reported_received');assert.equal(done.reviewStatus,'resolved_voluntarily');assert.equal(done.bankVerified,false);assert.equal(done.restrictionActive,false);
+ for(const a of [payer,worker]){
+  assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[id]});
+  const root=db.doc('freelanceEngagementRestrictionsV1/'+a.uid);
+  assert.equal((await root.get()).get('openAdjustmentOfferIds'),undefined);
+  await root.set({schemaVersion:1,uid:a.uid,openOfferIds:[]});
+ }
+ await finance(worker,409,id,'request_adjustment_review',refundStatement);
+ assert.equal((await accounting(payer,200,id)).resolution.sourceDigest,refund.resolution.sourceDigest);
+ // Complement reverses the refund roles; no original consent or amount is reused.
+ await finance(worker,403,completionId,'statement_adjustment',{...additionalStatement,eventId:'wrong-complement',statement:'paid'});
+ await finance(payer,200,completionId,'statement_adjustment',{...additionalStatement,eventId:'complement-paid',statement:'paid'});
+ await finance(worker,200,completionId,'statement_adjustment',{...additionalStatement,eventId:'complement-received',statement:'received'});
+ assert.equal((await adj(payer,200,completionId)).state,'bilaterally_reported_received');
+ assert.equal((await adj(worker,200,completionId)).role,'recipient');
+ await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
  // Independent fixed-price administrative case, synthetic MFA only in emulator.
  await propose(worker,200,adminId,'first-admin-proposal',6000,0);
  await finance(payer,200,adminId,'close_cancellation_accounting',{proposalId:'first-admin-proposal'});
@@ -861,6 +899,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  const zero=await accounting(worker,200,zeroId);assert.equal(zero.resolution.direction,'none');assert.equal(zero.resolution.amountMinor,0);
  assert.equal(await adjustment(zeroId),undefined);
  await pix(payer,409,zeroId);
+ await adj(payer,409,zeroId);
  assert.equal((await finance(payer,200,zeroId)).originalHistoryFrozen,true);
  await finance(payer,409,zeroId,'statement',{eventId:'late-original-paid',statement:'paid'});
  assert.equal((await accounting(worker,200,zeroId)).resolution.sourceDigest,zero.resolution.sourceDigest);

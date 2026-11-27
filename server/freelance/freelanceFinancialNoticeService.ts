@@ -5,6 +5,11 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ fixed_cancellation_adjustment_statement:['Manifestação de regularização registrada','Consulte as declarações da obrigação específica. Nenhuma transferência foi verificada.'],
+ fixed_cancellation_adjustment_disputed:['Divergência na regularização','Novas contratações temporariamente restritas. Regularize ou solicite análise.'],
+ fixed_cancellation_adjustment_released:['Regularização confirmada pelas partes','A restrição deste caso foi removida. Não representa confirmação bancária.'],
+ fixed_cancellation_adjustment_received:['Recebimento da regularização informado pelas partes','Consulte o histórico. Nenhum pagamento foi verificado pelo banco.'],
+ fixed_cancellation_adjustment_review_requested:['Análise de regularização solicitada','A restrição permanece até resolução. Consulte o protocolo.'],
  fixed_cancellation_adjustment_pix_authorized:['Pix de regularização autorizado','Consulte a obrigação específica. Se já transferiu, não repita o pagamento.'],
  fixed_cancellation_adjustment_pix_revoked:['Pix de regularização revogado','Novas consultas foram bloqueadas. Não utilize a chave anterior.'],
  fixed_cancellation_admin_resolved:['Análise de cancelamento concluída','Consulte os valores reconhecidos e a fundamentação. Nenhum pagamento ou devolução foi confirmado.'],
