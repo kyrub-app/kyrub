@@ -92,7 +92,7 @@ function view(x:Awaited<ReturnType<typeof readFreelanceReputationContext>>){
  return {offerId:x.parties.offerId,role,own:own?project(own):null,received:released?project(peer!):null,publicationState:released?'bilateral_released':'waiting_bilateral',rewardsGranted:false};
 }
 export async function readFreelanceReputation(uid:string,id:string){
- return adminDb.runTransaction(async tx=>view(await readFreelanceReputationContext(tx,uid,id)),{readOnly:true});
+ return adminDb.runTransaction(async tx=>{const x=await readFreelanceReputationContext(tx,uid,id);await requireContestationAuthority(tx,x,uid);return view(x);},{readOnly:true});
 }
 export async function submitFreelanceReputation(uid:string,id:string,input:unknown){
  assertFreelanceReputationLocal();
@@ -101,6 +101,7 @@ export async function submitFreelanceReputation(uid:string,id:string,input:unkno
  if(Object.keys(b).length!==2||b.confirmed!==true||!stars(b.stars))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const x=await readFreelanceReputationContext(tx,uid,id),role=x.c.actor,prior=x.slots[role];
+  await requireContestationAuthority(tx,x,uid);
   if(prior){if(prior.stars!==b.stars)return fail();return {...view(x),changed:false};}
   const submittedAt=new Date().toISOString();
   if(Date.parse(submittedAt)<Date.parse(x.parties.completedAt))return fail();
