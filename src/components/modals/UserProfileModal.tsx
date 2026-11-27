@@ -338,7 +338,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               </div>
             </section>
 
-            {currentUser && personalReputationCandidateEnabled() && <div className="p-4 sm:p-5"><PersonalReputationPanel key={currentUserId} user={currentUser} /></div>}
+            {currentUser && personalReputationCandidateEnabled() && <div className="p-4 sm:p-5"><PersonalReputationPanel key={currentUserId} user={currentUser} visibleIdentifier={profileVisibilityReady&&isProfileVisible&&!visibilityBusy&&personalIdentifier?.status==='ready'?personalIdentifier.identifier:null} /></div>}
 
             <section className="space-y-4 border-b border-slate-900 bg-slate-950 p-4 sm:p-5" id="profile-personal-center">
               <div>

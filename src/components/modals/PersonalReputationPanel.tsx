@@ -1,3 +1,4 @@
+import {buildPublicDestinationUrl} from '../../../shared/publicDestinationRoutes';
 import {useEffect,useRef,useState} from 'react';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -11,13 +12,17 @@ const button='min-h-11 rounded-xl border border-slate-700 px-3 py-2 text-sm font
 export function personalReputationCandidateEnabled(){
  return freelaReputationCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY==='true';
 }
-export function PersonalReputationPanel({user}:{user:User}){
+export function PersonalReputationPanel({user,visibleIdentifier=null}:{user:User;visibleIdentifier?:string|null}){
  const [kind,setKind]=useState<Kind>('professional'),[data,setData]=useState<VerifiedReputationView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[authorized,setAuthorized]=useState(auth.currentUser===user);
  const pending=useRef<AbortController|null>(null);
+ const [shareNotice,setShareNotice]=useState('');
+ const shareUrl=visibleIdentifier?buildPublicDestinationUrl('profile',visibleIdentifier):null;
+ const shareReady=!!shareUrl&&import.meta.env.VITE_KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY==='true'&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_CERTIFIED_READ_TEST_ONLY==='true';
+ useEffect(()=>{setShareNotice('');},[user,visibleIdentifier]);
  useEffect(()=>{
   const unsub=onAuthStateChanged(auth,next=>{
    const same=next===user;setAuthorized(same);
-   if(!same){pending.current?.abort();pending.current=null;setData(null);setError('');setBusy(false);}
+   if(!same){pending.current?.abort();pending.current=null;setData(null);setError('');setBusy(false);setShareNotice('');}
   });
   return()=>{pending.current?.abort();pending.current=null;unsub();};
  },[user]);
@@ -38,6 +43,17 @@ export function PersonalReputationPanel({user}:{user:User}){
    setData(v);
   }catch(e){if(live())setError(e instanceof Error?e.message:'Indicadores indisponíveis.');}
   finally{if(pending.current===ctl){if(live())setBusy(false);pending.current=null;}}
+ }
+ async function copyForSquare(){
+  if(!shareReady||!shareUrl||auth.currentUser!==user||!personalReputationCandidateEnabled())return;
+  const draft='Conheça minha Experiência e Reputações na Kyrub: '+shareUrl;
+  try{
+   if(!navigator.clipboard?.writeText)throw Error('COPY_UNAVAILABLE');
+   await navigator.clipboard.writeText(draft);
+   if(auth.currentUser===user)setShareNotice('Texto copiado. Abra a Praça, cole na publicação e confirme o envio.');
+  }catch{
+   if(auth.currentUser===user)setShareNotice('Não foi possível copiar automaticamente. Selecione o endereço abaixo e copie manualmente.');
+  }
  }
  if(!authorized||auth.currentUser!==user||!personalReputationCandidateEnabled())return null;
  const p=data?.projection;
@@ -61,6 +77,7 @@ export function PersonalReputationPanel({user}:{user:User}){
     return <div key={key} className="rounded-lg border border-slate-800 p-2"><div className="flex justify-between gap-2"><dt className="font-bold text-white">{label}</dt><dd className="shrink-0 text-amber-300">{c.mean===null?'—':format(c.mean)+' / 5'}</dd></div><dd className="text-slate-400">{reputationCriterionDescriptions(kind)[key]}</dd><dd className="text-slate-400">{format(c.count)} avaliações aplicáveis</dd></div>;
    })}</dl>
    <p className="text-slate-400">Conferido nesta consulta. Não altera Cocares, Pitangas ou saldo de sementes.</p>
+   {shareReady&&shareUrl&&<div className="space-y-2 rounded-xl border border-slate-700 p-3"><h4 className="font-bold text-white">Compartilhar na Praça</h4><p className="text-slate-400">Compartilhe o endereço do seu perfil visível. Os indicadores são consultados no destino, sem copiar notas ou contratos para a publicação.</p><button type="button" className={button} onClick={()=>void copyForSquare()}>Copiar texto para publicação</button><p className="select-all break-all text-orange-300">{shareUrl}</p>{shareNotice&&<p role="status">{shareNotice}</p>}</div>}
   </div>}
  </section>;
 }
