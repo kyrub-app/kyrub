@@ -574,7 +574,14 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await finance(payer,409,id,'reveal_pix',{expectedRevision:1});
  await act(payer,id,'start',403,{confirmed:true});
  await act(worker,id,'start',200,{confirmed:true});await act(worker,id,'start',200,{confirmed:true});
- await act(worker,id,'request_completion',200,{confirmed:true});await act(payer,id,'confirm_completion',200,{confirmed:true});
+ await act(worker,id,'request_completion',200,{confirmed:true});
+ const indexGate='KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY',indexPrior=process.env[indexGate],ratingGate='KYRUB_FREELANCE_REPUTATION_TEST_ONLY',ratingPrior=process.env[ratingGate];
+ try{
+  process.env[indexGate]='true';process.env[ratingGate]='true';
+  await Promise.all([act(payer,id,'confirm_completion',200,{confirmed:true}),act(payer,id,'confirm_completion',200,{confirmed:true})]);
+  const receipt=(await db.doc('freelanceReputationIndexReceiptsV1/'+id).get()).data();
+  assert.equal(receipt?.releaseDigest,null);
+ }finally{if(indexPrior===undefined)delete process.env[indexGate];else process.env[indexGate]=indexPrior;if(ratingPrior===undefined)delete process.env[ratingGate];else process.env[ratingGate]=ratingPrior;}
  assert.equal((await finance(payer,200,id)).financialState,'awaiting_payment');
  assert.equal((await finance(payer,200,id,'reveal_pix',{expectedRevision:1})).bankVerified,false);
  await finance(payer,200,id,'statement',{eventId:'paid',statement:'paid'});
@@ -587,7 +594,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   delete process.env[rg];
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,scores:reputationFixture('professional',5)}),/FORBIDDEN/);
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'personal_requester'),/FORBIDDEN/);
-  process.env[rg]='true';
+  process.env[rg]='true';process.env[indexGate]='true';
   const outsider=await account('reputation-outsider',[]);
   await call(null,'?view=reputation&offerId='+id,401);
   await call(outsider,'?view=reputation&offerId='+id,403);
@@ -615,6 +622,17 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,scores:reputationFixture('professional',3)}),/CONFLICT/);
   await act(worker,id,'submit_reputation',200,{confirmed:true,scores:reputationFixture('personal_requester',4)});
   const mutual=await call(worker,'?view=reputation&offerId='+id,200);
+  const {reconcileFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexService.js');
+  const {digestVariablePaymentSources:hash}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
+  const indexRef=db.doc('freelanceReputationIndexesV1/'+hash({subject:{kind:'professional',id:worker.uid},representativeUid:worker.uid}));
+  const before=(await indexRef.get()).get('accumulator');
+  assert.equal(before.completedContracts,1);assert.equal(before.ratingCount,1);assert.equal(before.ratingUnits,2100);
+  assert.equal(before.criteria.courtesy.count,1);
+  const replay=await Promise.all([reconcileFreelanceReputationIndex(payer.uid,id),reconcileFreelanceReputationIndex(worker.uid,id)]);
+  assert.ok(replay.every(r=>!r.experienceAdded&&!r.ratingsAdded&&r.coverage==='unverified'));
+  assert.deepEqual((await indexRef.get()).get('accumulator'),before);
+  await act(worker,id,'submit_reputation',200,{confirmed:true,scores:reputationFixture('personal_requester',4)});
+  assert.deepEqual((await indexRef.get()).get('accumulator'),before);
   assert.equal(mutual.publicationState,'bilateral_released');assert.equal(mutual.received?.mean,5);assert.equal(mutual.rewardsGranted,false);
   const personal=await readFreelanceReputation(payer.uid,id);
   assert.equal(personal.received?.mean,4);assert.deepEqual(personal.received?.subject,{kind:'personal_requester',id:payer.uid});
@@ -691,7 +709,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await assert.rejects(readOwnFreelanceReputationContestation(payer.uid,id),/CONFLICT/);
   await ref.collection('reputationPrivateV1').doc('worker').update({contractDigest:'0'.repeat(64)});
   await assert.rejects(readFreelanceReputation(payer.uid,id),/CONFLICT/);
- }finally{if(priorGate===undefined)delete process.env[rg];else process.env[rg]=priorGate;}
+ }finally{if(priorGate===undefined)delete process.env[rg];else process.env[rg]=priorGate;if(indexPrior===undefined)delete process.env[indexGate];else process.env[indexGate]=indexPrior;}
  const advanceId='http-advance-execution-'+suffix;
  await act(payer,advanceId,'publish',200,{terms:{...base,paymentTerms:advance}});
  await act(worker,advanceId,'apply',200,{expectedPaymentTerms:advance});

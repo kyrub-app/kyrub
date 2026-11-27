@@ -1,3 +1,4 @@
+import {prepareFreelanceReputationIndex,reputationIndexEnabled,reputationContractContext} from './freelanceReputationIndexPreparation.js';
 import {normalizeReputationScores,projectReputationRating,projectReputationAggregate,type ReputationScores} from '../../shared/freelanceReputationCriteria.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {FieldPath} from 'firebase-admin/firestore';
@@ -20,8 +21,7 @@ const reasonText=(value:unknown)=>{
 type Slot={schemaVersion:2;offerId:string;contractDigest:string;role:Role;authorUid:string;subject:ReputationSubject;scores:ReputationScores;submittedAt:string};
 export async function readFreelanceReputationContext(tx:Transaction,uid:string,id:string){
  assertFreelanceReputationLocal();
- const c=await readAttendanceContext(tx,uid,id),parties=freelanceReputationParties(c.offer,c.application);
- const contractDigest=digestVariablePaymentSources({parties,selectedAt:c.offer.selectedAt,contractedAt:c.offer.contractedAt,startedAt:c.offer.startedAt,completionRequestedAt:c.offer.completionRequestedAt,paymentMinor:c.offer.paymentMinor,paymentTerms:c.offer.paymentTerms??null,workTerms:c.offer.workTerms??null,requesterStore:c.offer.requesterStore??null});
+ const c=await readAttendanceContext(tx,uid,id),{parties,contractDigest}=reputationContractContext(c.offer,c.application);
  const collection=c.ref.collection('reputationPrivateV1'),refs={requester:collection.doc('requester'),worker:collection.doc('worker')};
  const [a,b]=await tx.getAll(refs.requester,refs.worker);
  function checked(raw:unknown,role:Role):Slot|undefined{
@@ -107,7 +107,9 @@ export async function submitFreelanceReputation(uid:string,id:string,input:unkno
   const submittedAt=new Date().toISOString();
   if(Date.parse(submittedAt)<Date.parse(x.parties.completedAt))return fail();
   const slot:Slot={schemaVersion:2,offerId:id,contractDigest:x.contractDigest,role,authorUid:uid,subject,scores,submittedAt};
-  tx.create(x.refs[role],slot);
+  const next={...x,slots:{...x.slots,[role]:slot}};
+  const plan=reputationIndexEnabled()?await prepareFreelanceReputationIndex(tx,next):null;
+  tx.create(x.refs[role],slot);plan?.write();
   return {...view({...x,slots:{...x.slots,[role]:slot}}),changed:true};
  });
 }
