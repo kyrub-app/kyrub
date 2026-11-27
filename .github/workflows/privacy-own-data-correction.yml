@@ -1,0 +1,39 @@
+name: Privacy own data correction emulator
+on:
+  pull_request:
+    paths:
+      - 'server/governance/privacyRights*.ts'
+      - 'shared/privacyIdentityReview.ts'
+      - 'shared/privacyRightsAssessment.ts'
+      - 'shared/privacyRightsResponse.ts'
+      - 'shared/privacyOwnDataExport.ts'
+      - 'shared/privacyOwnDataCorrection.ts'
+      - 'server/governance/privacyOwnDataExport*.ts'
+      - 'tests/firestore-privacy-own-correction.test.ts'
+      - '.github/workflows/privacy-own-data-correction.yml'
+permissions:
+  contents: read
+jobs:
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run firestore:compose
+      - name: Verify synthetic confirmation and correction locally
+        env:
+          KYRUB_PRIVACY_EMULATOR: 'true'
+          GCLOUD_PROJECT: demo-kyrub-privacy
+          FIREBASE_PROJECT_ID: demo-kyrub-privacy
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-privacy --only firestore,auth "node --test --test-concurrency=1 --import tsx tests/firestore-privacy-own-correction.test.ts"
