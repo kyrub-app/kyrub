@@ -85,12 +85,12 @@ export function createFreelanceOffer(id: string, ownerUid: string, input: unknow
   if (!validFreelanceId(id) || !validFreelanceId(ownerUid) || !Number.isFinite(Date.parse(now))) throw new Error('FREELANCE_INVALID');
   return { ...normalizeFreelanceOffer(input), id, ownerUid, status:'open', createdAt:now };
 }
-export function createFreelanceApplication(offer: FreelanceOffer, applicantUid: string, now: string): FreelanceApplication {
+export function createFreelanceApplication(offer: FreelanceOffer, applicantUid: string, now: string, hourlyCandidate=false): FreelanceApplication {
   if (!validFreelanceId(offer.id) || !validFreelanceId(offer.ownerUid) || !validFreelanceId(applicantUid) || !Number.isFinite(Date.parse(now))) throw new Error('FREELANCE_INVALID');
   if (offer.ownerUid === applicantUid || offer.status !== 'open') throw new Error('FREELANCE_FORBIDDEN');
   const paymentTerms=readFreelancePaymentTerms(offer.paymentTerms,offer.paymentMinor);
   const workTerms=readFreelanceWorkTerms(offer.workTerms,offer.paymentMinor);
-  assertFreelanceWorkExecutionReady(workTerms);
+  if(!hourlyCandidate)assertFreelanceWorkExecutionReady(workTerms);
   const requesterStore=readFreelanceStoreRepresentation(offer.requesterStore);
   return {offerId:offer.id,ownerUid:offer.ownerUid,applicantUid,status:'pending',createdAt:now,...(requesterStore?{requesterStore}:{}),...(paymentTerms?{paymentTerms}:{}),...(workTerms?{workTerms}:{})};
 }
@@ -182,13 +182,13 @@ export function cancelOpenFreelanceOffer(offer: FreelanceOffer, actorUid: string
   if (offer.status !== 'open' || offer.selectedApplicantUid || offer.contractedAt) throw new Error('FREELANCE_CONFLICT');
   return {...offer,status:'cancelled',cancelledAt:now};
 }
-export function advanceFreelanceExecution(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string, action: FreelanceExecutionAction, confirmed: unknown, now: string): FreelanceSelectionResult {
+export function advanceFreelanceExecution(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string, action: FreelanceExecutionAction, confirmed: unknown, now: string, hourlyCandidate=false): FreelanceSelectionResult {
   validatePair(offer,application,now);
   if (!Object.prototype.hasOwnProperty.call(transition,action)) throw new Error('FREELANCE_INVALID');
   const rule = transition[action];
   if (confirmed !== true || !isSelectedPair(offer,application) ||
       actorUid !== (rule.actor === 'owner' ? offer.ownerUid : application.applicantUid)) throw new Error('FREELANCE_FORBIDDEN');
-  assertFreelanceWorkExecutionReady(offer.workTerms);
+  if(!hourlyCandidate)assertFreelanceWorkExecutionReady(offer.workTerms);
   const fields = ['contractedAt','startedAt','completionRequestedAt','completedAt'] as const;
   const step = fields.indexOf(rule.at);
   for(let i=0;i<step;i++){
