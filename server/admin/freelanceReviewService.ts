@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {FieldPath,FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
+import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {resolveFreelanceOccurrence,validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
 
@@ -33,6 +34,15 @@ export async function decideFreelanceReview(authorization:string,input:unknown){
     const application=(await tx.get(applicationRef)).data() as FreelanceApplication|undefined;
     if(!application||application.applicantUid!==offer.selectedApplicantUid)throw Error('FREELANCE_CONFLICT');
     const result=resolveFreelanceOccurrence(offer,application,occurrence,uid,b.outcome,b.reason,b.confirmed,new Date().toISOString());
+    if(result.occurrence.decision?.outcome==='cancel'){
+      const basis=buildFreelanceRemunerationBasis(result.offer,result.application,result.occurrence);
+      const basisRef=offerRef.collection('financialBasis').doc('remuneration');
+      const saved=await tx.get(basisRef);
+      if(result.changed){
+        if(saved.exists||audit.exists)throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+        tx.create(basisRef,basis);
+      }else if(!matchesFreelanceRemunerationBasis(saved.data(),basis))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+    }
     if(!result.changed){
       if(!audit.exists||audit.get('actorId')!==uid||audit.get('targetId')!==b.offerId||audit.get('occurrenceId')!==b.occurrenceId)throw Error('FREELANCE_CONFLICT');
       return {decision:result.occurrence.decision,replay:true};
