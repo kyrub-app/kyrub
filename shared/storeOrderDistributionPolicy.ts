@@ -9,3 +9,10 @@ export function isIntegratedStoreDelivery(delivery: {id?:unknown;source?:unknown
 export function mayAcceptNewDelivery(delivery: {id?:unknown;source?:unknown}): boolean {
  return !isIntegratedStoreDelivery(delivery)||storeOrderDistributionEnabled();
 }
+
+/** Preserve exact retries of an already accepted integrated order, never create a new commitment. */
+export function assertStoreOrderDeliveryChoice(input:{requestedProvider:unknown;persistedProvider:unknown;currentStatus:unknown}):void {
+ if(input.requestedProvider==='kyrub'&&!storeOrderDistributionEnabled()&&
+   !(input.currentStatus==='accepted'&&input.persistedProvider==='kyrub'))
+  throw Error('STORE_ORDER_DISTRIBUTION_DISABLED');
+}

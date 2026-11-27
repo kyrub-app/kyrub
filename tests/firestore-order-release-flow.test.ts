@@ -421,3 +421,26 @@ test('commercial candidate: actual Free provisioning and first publication join 
   assert.equal((await db.collection('users/seller/rewardLedger').get()).size,0);
   assert.equal((await inventoryRef.get()).get('catalog')[0].currentQuantity,875);
 });
+
+test('V1 suspended integrated routing: real transaction blocks new Kyrub choice without mutations, merchant acceptance remains available',async()=>{
+ await db.doc(path).update({fulfillmentType:'delivery'});
+ const before=await read();
+ const paymentBefore=(await db.doc(paymentPath).get()).data();
+ const jobsBefore=(await db.collection('hub/renda/deliveries').get()).size;
+ const queueBefore=(await db.collection('deliveryEscalationQueue').get()).size;
+ await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'kyrub'}),/STORE_ORDER_DISTRIBUTION_DISABLED/);
+ assert.deepEqual(await read(),before);
+ assert.deepEqual((await db.doc(paymentPath).get()).data(),paymentBefore);
+ await service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'merchant'});
+ const accepted=await read();
+ assert.equal(accepted.status,'accepted');
+ assert.equal(accepted.deliveryProvider,'merchant');
+ assert.ok(Number.isFinite(Date.parse(accepted.deliveryProviderChosenAt)));
+ await service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'merchant'});
+ assert.equal((await read()).deliveryProviderChosenAt,accepted.deliveryProviderChosenAt);
+ await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'kyrub'}),/modalidade de entrega já foi definida/);
+ assert.equal((await read()).deliveryProvider,'merchant');
+ assert.equal((await db.collection('hub/renda/deliveries').get()).size,jobsBefore);
+ assert.equal((await db.collection('deliveryEscalationQueue').get()).size,queueBefore);
+ assert.deepEqual((await db.doc(paymentPath).get()).data(),paymentBefore);
+});

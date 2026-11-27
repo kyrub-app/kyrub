@@ -25,3 +25,20 @@ test('new claim gate is before transaction create, after existing replay; UI pre
  for(const path of ['src/components/tabs/RendaTab.tsx','src/components/modals/DeliveryManagerModal.tsx'])assert.match(readFileSync(path,'utf8'),/mayAcceptNewDelivery/);
  assert.match(readFileSync('src/components/store/KyrubDeliveryOpportunityBridge.tsx','utf8'),/if\(storeOrderDistributionEnabled\(\)\)unsubscribeOrders = onSnapshot/);
 });
+
+test('new store-order acceptance cannot select integrated routing while exact accepted replay survives',async()=>{
+ const {assertStoreOrderDeliveryChoice}=await import('../shared/storeOrderDistributionPolicy.js');
+ for(const persistedProvider of ['', 'kyrub','merchant']){
+  assert.throws(()=>assertStoreOrderDeliveryChoice({requestedProvider:'kyrub',persistedProvider,currentStatus:'pending'}),/STORE_ORDER_DISTRIBUTION_DISABLED/);
+ }
+ assert.doesNotThrow(()=>assertStoreOrderDeliveryChoice({requestedProvider:'merchant',persistedProvider:'',currentStatus:'pending'}));
+ assert.doesNotThrow(()=>assertStoreOrderDeliveryChoice({requestedProvider:'kyrub',persistedProvider:'kyrub',currentStatus:'accepted'}));
+ assert.throws(()=>assertStoreOrderDeliveryChoice({requestedProvider:'kyrub',persistedProvider:'merchant',currentStatus:'accepted'}),/STORE_ORDER_DISTRIBUTION_DISABLED/);
+ const {mapOrderStatusExecutionError}=await import('../server/inventory/orderStatusExecutionServiceBase.js');
+ assert.equal(mapOrderStatusExecutionError(new Error('STORE_ORDER_DISTRIBUTION_DISABLED')).status,409);
+ const svc=readFileSync('server/inventory/orderInventoryService.ts','utf8');
+ assert.match(svc,/adminDb\.runTransaction[\s\S]*?assertStoreOrderDeliveryChoice\(\{requestedProvider,persistedProvider,currentStatus:order.status\}\)/);
+ const ui=readFileSync('src/components/customer/CustomerOrderInbox.tsx','utf8');
+ assert.match(ui,/storeOrderDistributionEnabled\(\) && <button[^\n]*confirmDeliveryProvider\('kyrub'\)/);
+ assert.match(ui,/confirmDeliveryProvider\('merchant'\)/);
+});
