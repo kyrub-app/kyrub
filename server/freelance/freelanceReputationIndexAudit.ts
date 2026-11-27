@@ -1,4 +1,4 @@
-import {coverageRef,indexDigest,checkedCoverage,writeCoverage} from './freelanceReputationCoverage.js';
+import {coverageRef,indexDigest,checkedCoverage,writeCoverage,readReputationMaintenance} from './freelanceReputationCoverage.js';
 import type {Transaction,QueryDocumentSnapshot} from 'firebase-admin/firestore';
 import {isStoreRole} from '../../src/utils/storeSecurity.js';
 import {FieldPath} from 'firebase-admin/firestore';
@@ -26,6 +26,7 @@ async function auditInTransaction(tx:Transaction,uid:string,kind:'professional'|
   const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
   if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
   const subject:ReputationSubject={kind,id:store?.storeId??uid};
+  if((await readReputationMaintenance(tx)).active)return {subject,state:'repair_required' as const,missingReceipts:null,staleReceipts:null,projection:null};
   const docs=await tx.get(adminDb.collection('freelanceOffersV1').where(kind==='professional'?'selectedApplicantUid':'ownerUid','==',uid)
    .where('status','==','completed').orderBy(FieldPath.documentId()).limit(REPUTATION_HISTORY_SCAN_LIMIT+1));
   if(docs.size>REPUTATION_HISTORY_SCAN_LIMIT)return {subject,state:'requires_batched_audit' as const,missingReceipts:null,staleReceipts:null,projection:null};
@@ -101,10 +102,12 @@ export async function auditOwnFreelanceReputationIndexBatched(uid:string,kind:un
   if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
   const subject:ReputationSubject={kind,id:store?.storeId??uid};
   const ref=adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources({subject,representativeUid:uid}));
+  const maintenance=await readReputationMaintenance(tx);
+  if(maintenance.active)throw Error('FREELANCE_REPUTATION_INDEX_CONFLICT');
   const [snapshot,witness]=await tx.getAll(ref,coverageRef({subject,representativeUid:uid}));
-  return {subject,readTime:snapshot.readTime,baselineDigest:indexDigest(snapshot.data()),baselineWitness:indexDigest(witness.data())};
+  return {subject,readTime:snapshot.readTime,baselineDigest:indexDigest(snapshot.data()),baselineWitness:indexDigest(witness.data()),epoch:maintenance.epoch};
  },{readOnly:true});
- const {subject,readTime,baselineDigest,baselineWitness}=scope;
+ const {subject,readTime,baselineDigest,baselineWitness,epoch}=scope;
  let after:string|undefined,expected=emptyReputationAccumulator(kind),missingReceipts=0,staleReceipts=0;
  const readOptions={readOnly:true as const,readTime};
  for(let page=0;page<maxPages;page++){
@@ -126,10 +129,10 @@ export async function auditOwnFreelanceReputationIndexBatched(uid:string,kind:un
     const store=await readOwnedFreelanceStore(tx,uid);
     if(!store||store.storeId!==subject.id)throw Error('FREELANCE_STORE_FORBIDDEN');
    },{readOnly:true});
-   return {...result,pages:page+1,asOf:readTime.toDate().toISOString(),baselineDigest,baselineWitness};
+   return {...result,pages:page+1,asOf:readTime.toDate().toISOString(),baselineDigest,baselineWitness,epoch};
   }
  }
- return {subject,state:'requires_batched_audit' as const,missingReceipts:null,staleReceipts:null,projection:null,pages:maxPages,asOf:readTime.toDate().toISOString(),baselineDigest,baselineWitness};
+ return {subject,state:'requires_batched_audit' as const,missingReceipts:null,staleReceipts:null,projection:null,pages:maxPages,asOf:readTime.toDate().toISOString(),baselineDigest,baselineWitness,epoch};
 }
 
 /** Internal certification is conditional on the exact index and source
@@ -143,13 +146,15 @@ export async function certifyOwnFreelanceReputationIndex(uid:string,kind:unknown
    const store=await readOwnedFreelanceStore(tx,uid);
    if(!store||store.storeId!==subject.id)throw Error('FREELANCE_STORE_FORBIDDEN');
   }
+  const maintenance=await readReputationMaintenance(tx);
+  if(maintenance.active||maintenance.epoch!==audited.epoch)return {certified:false,state:'snapshot_changed' as const};
   const [index,witness]=await tx.getAll(adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources(scope)),coverageRef(scope));
   if(indexDigest(index.data())!==audited.baselineDigest||indexDigest(witness.data())!==audited.baselineWitness)return {certified:false,state:'snapshot_changed' as const};
   if(audited.state!=='verified_snapshot'){
    writeCoverage(tx,scope,null);
    return {certified:false,state:audited.state};
   }
-  writeCoverage(tx,scope,audited.baselineDigest);
+  writeCoverage(tx,scope,audited.baselineDigest,maintenance.epoch);
   return {certified:true,state:'verified_snapshot' as const};
  });
 }
@@ -169,9 +174,11 @@ export async function readCertifiedFreelanceReputationIndex(uid:string,kind:unkn
 }
 async function readCertifiedInTransaction(tx:Transaction,uid:string,subject:ReputationSubject){
  const kind=subject.kind,scope={subject,representativeUid:uid};
+  const maintenance=await readReputationMaintenance(tx);
+  if(maintenance.active)return {subject,state:'repair_required' as const,projection:null};
   const [index,witness]=await tx.getAll(adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources(scope)),coverageRef(scope));
   const raw=index.data(),w=checkedCoverage(scope,witness.data());
-  if(!w||w.verifiedDigest!==indexDigest(raw))return {subject,state:'repair_required' as const,projection:null};
+  if(!w||w.epoch!==maintenance.epoch||w.verifiedDigest!==indexDigest(raw))return {subject,state:'repair_required' as const,projection:null};
   try{
    if(raw&&(Object.keys(raw).length!==4||raw.schemaVersion!==1||raw.representativeUid!==uid||!equal(raw.subject,subject)))throw Error('FREELANCE_REPUTATION_INDEX_CONFLICT');
    const a=raw?validateReputationAccumulator(kind,raw.accumulator):emptyReputationAccumulator(kind);
