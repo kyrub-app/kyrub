@@ -113,12 +113,18 @@ export async function importPersonalCidPixDestination(uid:string,input:unknown){
  });
 }
 
-/** Server transaction helper: never returns a raw key or grants bank verification. */
-export async function readPersonalPixForContract(tx:FirebaseFirestore.Transaction,uid:string){
+/** Internal only: never expose outside the explicit contract disclosure service. */
+export async function readPersonalPixSecretForContract(tx:FirebaseFirestore.Transaction,uid:string){
  const parent=profileRef(uid);
  const [p,d]=await tx.getAll(parent,parent.collection('receiving').doc('externalPix'));
  if(p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))throw Error('PERSONAL_PIX_CONFLICT');
  const destination=checked(d.data(),uid);
  if(!p.exists||destination?.status!=='declared'||!destination.keyType||!destination.key)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
- return {revision:destination.revision,keyType:destination.keyType,maskedKey:'••••'+destination.key.slice(-4),ownershipVerified:false as const};
+ return {revision:destination.revision,keyType:destination.keyType,key:destination.key,maskedKey:'••••'+destination.key.slice(-4),ownershipVerified:false as const};
+}
+
+/** Ordinary contract binding never returns a raw key. */
+export async function readPersonalPixForContract(tx:FirebaseFirestore.Transaction,uid:string){
+ const {key,...masked}=await readPersonalPixSecretForContract(tx,uid);
+ return masked;
 }

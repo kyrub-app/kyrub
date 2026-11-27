@@ -5,7 +5,8 @@ import {freelanceWorkspaceEnabled} from './freelanceWorkspaceTransport.js';
 import {readFinancialContext,checkedReview,recordFreelanceExternalPaymentStatement,requestFreelanceFinancialReview} from './freelanceExternalPaymentStatementService.js';
 import {submitFreelanceFinancialEvidence,readFinancialEvidence} from './freelanceFinancialEvidenceService.js';
 import {submitFreelanceFinancialReceipt,readFinancialReceiptManifest,readFinancialReceiptBytes} from './freelanceFinancialReceiptService.js';
-import {bindFreelancePixDestination} from './freelancePixDestinationService.js';
+import {personalPixRecentLogin} from '../payments/personalPixTransport.js';
+import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination} from './freelancePixDestinationService.js';
 import {readOwnFreelanceRestrictions,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 import {adminDb} from '../firebaseAdmin.js';
 
@@ -45,14 +46,15 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  if(req.method!=='GET'&&req.method!=='POST'){res.setHeader('Allow','GET, POST');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;}
  const h=req.headers.authorization,token=typeof h==='string'&&h.length<=8199?/^Bearer (\S+)$/i.exec(h)?.[1]:undefined;
  if(!token){res.status(401).json({code:'AUTH_REQUIRED'});return;}
- let uid:string;
- try{const identity=await adminAuth.verifyIdToken(token,true);uid=identity.uid;if(!validFreelanceId(uid))throw Error();
+ let uid:string,authTime:unknown;
+ try{const identity=await adminAuth.verifyIdToken(token,true);uid=identity.uid;authTime=identity.auth_time;if(!validFreelanceId(uid))throw Error();
   if(identity.email_verified!==true){res.status(403).json({code:'FREELANCE_FORBIDDEN'});return;}
  }catch{res.status(401).json({code:'AUTH_REQUIRED'});return;}
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
+   if(q.view==='pix_sharing'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixSharing(uid,q.offerId));return;}
    if(q.view==='restrictions'&&keys.length===1){res.status(200).json(await readOwnFreelanceRestrictions(uid));return;}
    if(q.view==='case'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCase(uid,q.offerId));return;}
    if(q.view==='receipt'&&keys.length===3&&validFreelanceId(q.offerId)&&validFreelanceId(q.receiptId)){res.status(200).json(await readCase(uid,q.offerId,q.receiptId));return;}
@@ -66,8 +68,11 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const max=b.action==='submit_receipt'?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
+  if(['bind_pix','authorize_pix_share','reveal_pix'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
   switch(b.action){
    case 'bind_pix':exact(['expectedRevision','confirmed']);await bindFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
+   case 'authorize_pix_share':exact(['expectedRevision','confirmed']);await authorizeFreelancePixSharing(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
+   case 'reveal_pix':exact(['expectedRevision','confirmed']);res.status(200).json(await revealFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed}));return;
    case 'statement':exact(['eventId','statement','confirmed']);await recordFreelanceExternalPaymentStatement(uid,b.offerId,{eventId:b.eventId,statement:b.statement,confirmed:b.confirmed});break;
    case 'request_review':exact(['confirmed']);await requestFreelanceFinancialReview(uid,b.offerId,{confirmed:b.confirmed});break;
    case 'submit_note':exact(['evidenceId','note','confirmed']);await submitFreelanceFinancialEvidence(uid,b.offerId,{evidenceId:b.evidenceId,note:b.note,confirmed:b.confirmed});break;
@@ -79,7 +84,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const code=e instanceof Error?e.message:'';
   const status=['FREELANCE_INVALID','FREELANCE_RECEIPT_INVALID'].includes(code)?400:
    ['FREELANCE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_FINANCE_UNAVAILABLE':code});
  }
 }
