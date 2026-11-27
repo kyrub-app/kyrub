@@ -1112,6 +1112,7 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
   await review(admin,409,{...decision,proposalDigest:fresh.proposalDigest});
   const latest=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
   assert.equal(latest.notes.length,1);assert.equal(latest.notes[0].note,note.note);assert.equal('actorUid' in latest.notes[0],false);
+  const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.js');
   const attachment={kind:'excess',sourceDigest:ax.sourceDigest,attachmentId:'attachment-one',pngBase64:receiptFixture()};
   await excessApi(worker,400,'submit_hourly_review_attachment',{...attachment,pngBase64:'YWJjZA=='},adminId);
   await excessApi(other,403,'submit_hourly_review_attachment',attachment,adminId);
