@@ -46,6 +46,7 @@ const parsePreferences = (
         ...(categories as UserCommunicationCategoryPreferences),
         community_group_invite: categories.community_group_invite !== false,
         user_forward: categories.user_forward !== false,
+        note_invitation: categories.note_invitation !== false,
       },
     },
   };

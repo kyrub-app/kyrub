@@ -38,6 +38,12 @@ const CATEGORY_ITEMS: Array<{
     icon: MessageSquareText,
   },
   {
+    key: 'note_invitation',
+    label: 'Convites de notas e tarefas',
+    description: 'Quando alguém convidar você para colaborar numa nota.',
+    icon: BellRing,
+  },
+  {
     key: 'order',
     label: 'Pedidos',
     description: 'Mudanças e eventos operacionais de pedidos quando forem conectados à central.',

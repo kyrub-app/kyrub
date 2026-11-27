@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { issueNoteInvitationNotification } from './noteInvitationNotificationService.js';
 import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueService.js';
 import { issueCommunityPostForwardNotification } from './communityPostForwardNotificationService.js';
 import { respondToCommunityGroupInvitation } from './communityGroupInvitationResponseService.js';
@@ -87,6 +88,27 @@ export const createUserNotificationRouter = (): Router => {
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/note-invitations/received', async (request, response) => {
+    try {
+      const identity = await requireIdentity(request.get('authorization') ?? '');
+      const result = await issueNoteInvitationNotification({
+        ownerId: identity.uid,
+        invitationId: clean(request.body?.invitationId),
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'NOTE_INVITATION_NOTIFICATION_INVALID') {
+        response.status(400).json({ error: 'Convite inválido.' });
+      } else if (code.startsWith('NOTE_INVITATION_NOTIFICATION_')) {
+        response.status(403).json({ error: 'Este convite não está disponível.' });
+      } else {
+        const mapped = mapError(error);
+        response.status(mapped.status).json({ error: mapped.message });
+      }
     }
   });
 

@@ -570,6 +570,11 @@ export default function App() {
 
   // Notes Edit & Share state
   const [showSharedNotesModal, setShowSharedNotesModal] = useState(false);
+  useEffect(() => {
+    const openSharedNotesFromNotification = () => setShowSharedNotesModal(true);
+    window.addEventListener('kyrub:open-shared-notes', openSharedNotesFromNotification);
+    return () => window.removeEventListener('kyrub:open-shared-notes', openSharedNotesFromNotification);
+  }, []);
   const [showUserSearchModal, setShowUserSearchModal] = useState(false);
   const [userSearchEmail, setUserSearchEmail] = useState('');
   const [showFazerEntregasModal, setShowFazerEntregasModal] = useState(false);

@@ -55,6 +55,7 @@ describe('user communication preferences', () => {
       system: true,
       community_group_invite: true,
       user_forward: true,
+      note_invitation: true,
     });
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'store_chat'), true);
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'marketing'), false);
@@ -241,4 +242,30 @@ describe('user communication preferences', () => {
     );
     assert.doesNotMatch(service, /campaign/i);
   });
+});
+
+test('note invitation uses the existing private People inbox and browser opt-in', async () => {
+  const { userNotificationOrigin } = await import('../shared/userNotificationOrigins');
+  const notice = buildUserNotification({
+    recipientUserId: 'recipient', category: 'note_invitation', eventType: 'invited',
+    sourceId: 'fixture', actorPrincipalId: 'owner', title: 'Convite',
+    body: 'Abra suas notas compartilhadas.',
+    target: { kind: 'note_invitation', noteInvitationId: 'owner__note__recipient' },
+    createdAt: '2026-11-27T00:00:00.000Z',
+  });
+  assert.equal(userNotificationOrigin(notice.category), 'people');
+  assert.equal(notice.target.noteInvitationId, 'owner__note__recipient');
+  assert.equal(notice.readAt, '');
+  assert.equal(shouldDeliverUserNotificationToBrowser(buildDefaultUserCommunicationPreferences('recipient'), notice), false);
+  const service = readFileSync('server/notifications/noteInvitationNotificationService.ts', 'utf8');
+  assert.match(service, /invite\.ownerId !== ownerId/);
+  assert.match(service, /task\.sharedWith\.includes\(targetId\)/);
+  assert.match(service, /transaction\.create\(notificationRef, notification\)/);
+  assert.match(service, /notificationSnap\.exists/);
+  const router = readFileSync('server/notifications/userNotificationRouter.ts', 'utf8');
+  assert.match(router, /ownerId: identity\.uid/);
+  const bridge = readFileSync('src/components/NoteInvitationOutboxBridge.tsx', 'utf8');
+  assert.match(bridge, /existing\.status === 'pending'\) notifyInvitation/);
+  assert.match(bridge, /auth\.currentUser\?\.uid !== ownerId/);
+  assert.match(readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8'), /kyrub:open-shared-notes/);
 });

@@ -11,6 +11,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
+import { issueNoteInvitationReceivedNotification } from '../utils/userNotifications';
 
 interface CollaboratorRecord {
   uid: string;
@@ -111,6 +112,24 @@ export function NoteInvitationOutboxBridge() {
     let ownerInvitations = new Map<string, InvitationRecord>();
     const pendingCreateIds = new Set<string>();
     const pendingUpdateIds = new Set<string>();
+    let notificationSession = 0;
+    let inFlightNotificationIds = new Set<string>();
+    let deliveredNotificationIds = new Set<string>();
+    const notifyInvitation = (expected: ExpectedInvitation) => {
+      const ownerId = expected.payload.ownerId;
+      const invitationId = expected.id;
+      if (cancelled || auth.currentUser?.uid !== ownerId ||
+          inFlightNotificationIds.has(invitationId) || deliveredNotificationIds.has(invitationId)) return;
+      const session = notificationSession;
+      const pending = inFlightNotificationIds;
+      pending.add(invitationId);
+      void issueNoteInvitationReceivedNotification(invitationId, ownerId)
+        .then(() => {
+          if (!cancelled && session === notificationSession) deliveredNotificationIds.add(invitationId);
+        })
+        .catch(error => console.warn('Convite salvo, mas aviso ainda não confirmado.', error))
+        .finally(() => pending.delete(invitationId));
+    };
 
     const reconcileRevokedInvitations = () => {
       if (
@@ -181,6 +200,8 @@ export function NoteInvitationOutboxBridge() {
           continue;
         }
 
+        if (existing.status === 'pending') notifyInvitation(expected);
+
         if (
           pendingUpdateIds.has(expected.id) ||
           (
@@ -226,6 +247,9 @@ export function NoteInvitationOutboxBridge() {
       ownerInvitations = new Map<string, InvitationRecord>();
       pendingCreateIds.clear();
       pendingUpdateIds.clear();
+      notificationSession += 1;
+      inFlightNotificationIds = new Set<string>();
+      deliveredNotificationIds = new Set<string>();
 
       if (!user) return;
 
