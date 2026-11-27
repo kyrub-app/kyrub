@@ -961,6 +961,8 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await ref.collection('attendance').doc('timeline').set({scheduleId:'schedule',events});
  await ref.collection('attendance').doc('extensions').set({scheduleId:'schedule',records:[{id:'ext1',extraMinutes:120,proposedBy:'worker',proposedAt:at('12:00'),status:'accepted',decidedBy:'requester',decidedAt:at('12:05')}]});
  await assert.rejects(recordFreelanceVariablePaymentBasis(other.uid,id),/FORBIDDEN/);
+ const {issueFreelanceHourlyFinalObligation}=await import('../server/freelance/freelanceHourlyFinalObligationService.js');
+ await assert.rejects(issueFreelanceHourlyFinalObligation(worker.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  const first=await recordFreelanceVariablePaymentBasis(worker.uid,id);
  assert.equal(first.replay,false);assert.equal(first.basis.commitment.estimatedMinor,12000);
  assert.equal(first.basis.accounting.authorizedCapMinor,16000);
@@ -973,7 +975,41 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await ref.collection('financialBasis').doc('hourlyCompletion').delete();
  const excess=await recordFreelanceVariablePaymentBasis(owner.uid,id);
  assert.equal(excess.basis.disposition,'requires_review');assert.equal(excess.basis.finalAmountMinor,null);assert.equal(excess.basis.payable,false);
+ await assert.rejects(issueFreelanceHourlyFinalObligation(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  await ref.collection('directPayment').doc('obligation').set({fixture:true});
  await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  await act(owner,id,'record_hourly_basis',400,{confirmed:true});
+ // Restore the synthetic positive fixture before testing issuance; no production records.
+ await ref.collection('directPayment').doc('obligation').delete();
+ await ref.collection('financialBasis').doc('hourlyCompletion').delete();
+ await ref.collection('attendance').doc('extensions').set({scheduleId:'schedule',records:[{id:'ext1',extraMinutes:120,proposedBy:'worker',proposedAt:at('12:00'),status:'accepted',decidedBy:'requester',decidedAt:at('12:05')}]});
+ await recordFreelanceVariablePaymentBasis(owner.uid,id);
+ await assert.rejects(issueFreelanceHourlyFinalObligation(other.uid,id),/FORBIDDEN/);
+ const issued=await issueFreelanceHourlyFinalObligation(owner.uid,id);
+ assert.equal(issued.final.amountMinor,14000);assert.equal(issued.replay,false);
+ assert.equal((await issueFreelanceHourlyFinalObligation(worker.uid,id)).replay,true);
+ const finance=async(a:Actor,status:number,action?:string,extra:Record<string,unknown>={},view='case')=>{
+  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view='+view+(view==='restrictions'?'':'&offerId='+id));
+  const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
+  const body=await res.json();assert.equal(res.status,status,JSON.stringify(body));return body;
+ };
+ await finance(other,403);
+ const financial=await finance(owner,200);assert.equal(financial.amountMinor,14000);assert.equal(financial.amountMode,'hourly_final');
+ const statement={eventId:'hourly-paid',statement:'paid',expectedAmountMinor:14000,sourceDigest:issued.final.sourceDigest};
+ await finance(owner,409,'statement',{eventId:'legacy',statement:'paid'});
+ await finance(owner,409,'statement',{...statement,expectedAmountMinor:12000});
+ await finance(owner,409,'statement',{...statement,sourceDigest:'0'.repeat(64)});
+ await finance(worker,403,'statement',statement);
+ await finance(owner,200,'statement',statement);await finance(owner,200,'statement',statement);
+ await finance(worker,200,'statement',{...statement,eventId:'hourly-denied',statement:'not_received'});
+ for(const a of [owner,worker])assert.deepEqual(await finance(a,200,undefined,{},'restrictions'),{restricted:true,openOfferIds:[id]});
+ await finance(worker,200,'request_review');
+ await finance(worker,200,'statement',{...statement,eventId:'hourly-received',statement:'received'});
+ assert.equal((await finance(owner,200)).reviewStatus,'resolved_voluntarily');
+ for(const a of [owner,worker])assert.deepEqual(await finance(a,200,undefined,{},'restrictions'),{restricted:false,openOfferIds:[]});
+ const stored=(await ref.collection('directPayment').doc('hourlyStatements').get()).data()!;
+ assert.equal(stored.amountMinor,14000);assert.equal(stored.sourceDigest,issued.final.sourceDigest);assert.equal(stored.events.length,3);
+ assert.equal((await ref.collection('directPayment').doc('externalStatements').get()).exists,false);
+ await ref.collection('attendance').doc('extensions').delete();await finance(owner,409);
+
 });
