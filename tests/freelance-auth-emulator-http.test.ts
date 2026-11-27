@@ -296,7 +296,7 @@ test('financial Control Plane queue: actual Auth emulator token, synthetic MFA, 
   const r=await fetch(url+query,{method,headers:a?{authorization:'Bearer '+a.token}:{}});
   const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));assert.match(r.headers.get('cache-control')??'',/no-store/);return data;
  };
- await call(null,401);await call(admin,405,'','POST');
+ await call(null,401);await call(admin,405,'','PUT');await call(admin,415,'','POST');
  assert.equal((await call(admin,403)).code,'second_factor_required');
  const original=auth.verifyIdToken.bind(auth),tokens=new Set([payer.token,worker.token,admin.token,inactive.token]);let stale=false;
  t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
@@ -319,4 +319,53 @@ test('financial Control Plane queue: actual Auth emulator token, synthetic MFA, 
   try{delete process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;await call(admin,503);}finally{process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION=flag;}
  }finally{t.mock.restoreAll();}
  console.log('PASS private financial review queue: real emulator auth, synthetic TOTP policy, active admin, no self, voluntary removal; genuine MFA not tested');
+});
+
+test('financial administrative decision: protected, audited, no bank proof, one case only, later receipt preserved',async(t)=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer=await account('findec-payer',['requester']),worker=await account('findec-worker',['freelancer']),admin=await account('findec-admin',[]);
+ for(const a of [admin,payer])await db.doc('kyrub_admin/control_plane/admins/'+a.uid).set({uid:a.uid,role:'super_admin',status:'active'});
+ const ids=['findec-first-'+suffix,'findec-second-'+suffix];
+ for(const id of ids){
+  await publishFreelanceOffer(payer.uid,id,{title:'Teste decisão financeira',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
+  await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ }
+ for(const id of ids){
+  await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});await record(worker.uid,id,{eventId:'denied',statement:'not_received',confirmed:true});await request(worker.uid,id,{confirmed:true});
+ }
+ const id=ids[0],ref=db.doc('freelanceFinancialReviewsV1/'+id),history=db.doc('freelanceOffersV1/'+id+'/directPayment/externalStatements');
+ const initial=(await history.get()).data(),requestedAt=(await ref.get()).get('requestedAt');
+ const body={offerId:id,expectedRequestedAt:requestedAt,outcome:'inconclusive',reason:'Evidências fictícias insuficientes para conclusão bancária.',confirmed:true};
+ const call=async(a:Actor,status:number,input:Record<string,unknown>)=>{
+  const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review',{method:'POST',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},body:JSON.stringify(input)});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));return data;
+ };
+ assert.equal((await call(admin,403,body)).code,'second_factor_required');
+ const original=auth.verifyIdToken.bind(auth),tokens=new Set([payer.token,worker.token,admin.token]);let stale=false;
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+  const decoded=await original(token,checkRevoked);
+  if(!tokens.has(token))return decoded;
+  assert.equal(checkRevoked,true);return {...decoded,auth_time:Math.floor(Date.now()/1000)-(stale?301:0),firebase:{...decoded.firebase,sign_in_second_factor:'totp'}};
+ });
+ try{
+  stale=true;assert.equal((await call(admin,403,body)).code,'reauthentication_required');stale=false;
+  await call(payer,403,body);await call(worker,403,body);
+  await call(admin,400,{...body,reason:'curto'});await call(admin,400,{...body,confirmed:false});
+  await call(admin,409,{...body,expectedRequestedAt:'2020-01-01T00:00:00Z'});
+  const results=await Promise.all([call(admin,200,body),call(admin,200,body)]);
+  assert.deepEqual(results.map(x=>x.replay).sort(),[false,true]);assert.ok(results.every(x=>x.bankVerified===false));
+  assert.equal((await ref.get()).get('status'),'resolved_administratively');
+  assert.equal((await ref.get()).get('decision.reason'),body.reason);
+  assert.deepEqual((await history.get()).data(),initial);
+  const audit=await db.collection('kyrub_admin/control_plane/audit_logs').where('targetId','==',id).get();
+  assert.equal(audit.size,1);assert.equal(audit.docs[0].get('actorId'),admin.uid);assert.equal(audit.docs[0].get('bankVerified'),false);
+  for(const a of [payer,worker])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[ids[1]]);
+  await call(admin,409,{...body,outcome:'payment_evidence_accepted'});
+  await record(worker.uid,id,{eventId:'received',statement:'received',confirmed:true});
+  assert.equal((await history.get()).get('events').length,3);assert.equal((await ref.get()).get('status'),'resolved_administratively');
+  await record(worker.uid,ids[1],{eventId:'received',statement:'received',confirmed:true});
+  for(const a of [payer,worker])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
+ }finally{t.mock.restoreAll();}
 });

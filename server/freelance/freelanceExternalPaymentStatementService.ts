@@ -3,7 +3,7 @@ import {validFreelanceId,type FreelanceOffer,type FreelanceApplication} from '..
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import {appendExternalPixStatement,projectExternalPixStatements,type ExternalPixEvent,type ExternalPixStatement} from '../../shared/freelanceExternalPaymentStatements.js';
-import {prepareVoluntaryDisputeRestriction} from './freelanceEngagementRestrictionService.js';
+import {prepareVoluntaryDisputeRestriction,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 
 function assertLocal(){
  if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
@@ -47,9 +47,14 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
 
  return {offer,obligation,events,projection,statementRef};
 }
+export type FinancialReviewOutcome='payment_evidence_accepted'|'nonreceipt_evidence_accepted'|'inconclusive';
+export type FinancialReviewDecision={actorUid:string;outcome:FinancialReviewOutcome;reason:string;decidedAt:string;bankVerified:false};
+export function isFinancialReviewOutcome(v:unknown):v is FinancialReviewOutcome{
+ return v==='payment_evidence_accepted'||v==='nonreceipt_evidence_accepted'||v==='inconclusive';
+}
 type FinancialReview={
  schemaVersion:1;offerId:string;requesterUid:string;beneficiaryUid:string;requestedBy:string;
- requestedAt:string;status:'pending'|'resolved_voluntarily';resolvedAt?:string;
+ requestedAt:string;status:'pending'|'resolved_voluntarily'|'resolved_administratively';resolvedAt?:string;decision?:FinancialReviewDecision;
 };
 const reviewRef=(offerId:string)=>adminDb.doc('freelanceFinancialReviewsV1/'+offerId);
 export function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFreelancePaymentObligation>):FinancialReview|undefined{
@@ -59,9 +64,15 @@ export function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFree
  if(r.schemaVersion!==1||r.offerId!==obligation.offerId||r.requesterUid!==obligation.requesterUid||r.beneficiaryUid!==obligation.beneficiaryUid||
  ![r.requesterUid,r.beneficiaryUid].includes(r.requestedBy)||!Number.isFinite(Date.parse(r.requestedAt))||
  Date.parse(r.requestedAt)<Date.parse(obligation.contractedAt)||
- !['pending','resolved_voluntarily'].includes(r.status)||Object.keys(r).length!==(r.status==='pending'?7:8)||
+ !['pending','resolved_voluntarily','resolved_administratively'].includes(r.status)||Object.keys(r).length!==(r.status==='pending'?7:r.status==='resolved_voluntarily'?8:9)||
  (r.status==='pending'?r.resolvedAt!==undefined:!r.resolvedAt||!Number.isFinite(Date.parse(r.resolvedAt))||Date.parse(r.resolvedAt)<Date.parse(r.requestedAt)))
  throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+ if(r.status==='resolved_administratively'){
+  const d=r.decision;
+  if(!d||Object.keys(d).length!==5||!validFreelanceId(d.actorUid)||[r.requesterUid,r.beneficiaryUid].includes(d.actorUid)||
+   !isFinancialReviewOutcome(d.outcome)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||
+   d.decidedAt!==r.resolvedAt||d.bankVerified!==false)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+ }else if(r.decision!==undefined)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  return r;
 }
 /** Explicit escalation by either participant, one queue entry per disputed obligation. */
@@ -73,6 +84,7 @@ export async function requestFreelanceFinancialReview(uid:string,offerId:string,
   const {obligation,events,projection}=await readFinancialContext(tx,uid,offerId);
   const ref=reviewRef(offerId),existing=checkedReview((await tx.get(ref)).data(),obligation);
   if(projection.state!=='disputed')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+  await assertFinancialCaseRestrictions(tx,obligation);
   if(existing){
    if(existing.status!=='pending')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    return {created:false,status:'pending' as const};
@@ -104,15 +116,20 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
    (Date.parse(now)<Date.parse(offer.completedAt!)||events.some(e=>Date.parse(e.recordedAt)<Date.parse(offer.completedAt!))))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   const next=appendExternalPixStatement(obligation,events,{id:b.eventId as string,actorUid:uid,statement:b.statement as ExternalPixStatement,recordedAt:now});
   if(next.changed){
-   const writeRestrictions=await prepareVoluntaryDisputeRestriction(tx,obligation,events,next.events);
    const review=reviewRef(offerId);
    const existing=checkedReview((await tx.get(review)).data(),obligation);
-   if(existing&&existing.status!=='pending')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+   const administrativelyClosed=existing?.status==='resolved_administratively';
+   // Actual receipt may be recorded later without reopening or rewriting the decision.
+   if(administrativelyClosed){
+    if(next.state!=='bilaterally_reported_received'||Date.parse(now)<Date.parse(existing!.resolvedAt!))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+    await assertFinancialCaseRestrictions(tx,obligation,false);
+   }else if(existing&&existing.status!=='pending')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+   const writeRestrictions=administrativelyClosed?()=>{}:await prepareVoluntaryDisputeRestriction(tx,obligation,events,next.events);
    if(existing&&next.state!=='disputed'&&next.state!=='bilaterally_reported_received')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    if(existing&&next.state==='bilaterally_reported_received'&&Date.parse(now)<Date.parse(existing.requestedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    tx.set(statementRef,{schemaVersion:1,offerId,events:next.events});
    writeRestrictions();
-   if(existing&&next.state==='bilaterally_reported_received')tx.update(review,{status:'resolved_voluntarily',resolvedAt:now});
+   if(existing?.status==='pending'&&next.state==='bilaterally_reported_received')tx.update(review,{status:'resolved_voluntarily',resolvedAt:now});
   }
   return {changed:next.changed,state:next.state,hadDisagreement:next.hadDisagreement,bankVerified:false as const,settlementEvidence:next.settlementEvidence};
  });
