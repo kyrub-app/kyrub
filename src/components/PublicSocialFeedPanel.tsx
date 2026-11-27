@@ -382,8 +382,8 @@ export function PublicSocialFeedPanel({
                 }`}
               />
               <div className="min-w-0 flex-1">
-                <h4 className="truncate text-xs font-black text-slate-100">
-                  {post.user}{summary&&<PublicationCocarLabel count={summary.cocaresAtPublication}/>}
+                <h4 className="flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs font-black text-slate-100">
+                  <span className="min-w-0 truncate">{post.user}</span>{summary&&<PublicationCocarLabel count={summary.cocaresAtPublication}/>}
                 </h4>
                 <span className="font-mono text-[9px] text-slate-500">
                   {post.time}
