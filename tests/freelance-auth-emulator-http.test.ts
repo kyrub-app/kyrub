@@ -1056,3 +1056,57 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await ref.collection('attendance').doc('extensions').delete();await finance(owner,409);
 
 });
+
+test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparation, agenda and atomic completion',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const owner=await account('hourly-flow-owner',['requester']),worker=await account('hourly-flow-worker',['freelancer']);
+ const id='http-hourly-flow-'+suffix,ref=db.doc('freelanceOffersV1/'+id);
+ const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:360000});
+ const workTerms={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:360000};
+ const terms={title:'Jornada horária fictícia',description:'Emulador',requirements:'',paymentMinor:360000,paymentTerms,workTerms};
+ const expected={expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms};
+ const gate='KYRUB_FREELANCE_HOURLY_LIFECYCLE_TEST_ONLY',previous=process.env[gate];
+ delete process.env[gate];
+ try{
+  await act(owner,id,'publish',409,{terms});
+  process.env[gate]='true';
+  await act(owner,id,'publish',200,{terms});
+  await act(worker,id,'apply',200,expected);
+  await act(owner,id,'select',200,{applicantUid:worker.uid});
+  assert.equal((await ref.collection('directPayment').doc('hourlyCommitment').get()).exists,false);
+  await act(worker,id,'confirm',200,{confirmed:true,...expected});
+  await act(worker,id,'confirm',200,{confirmed:true,...expected});
+  assert.equal((await ref.collection('directPayment').doc('hourlyCommitment').get()).get('estimatedMinor'),360000);
+  assert.equal((await ref.collection('directPayment').doc('obligation').get()).exists,false);
+  const finance=async(a:Actor,status:number,action?:string,extra:Record<string,unknown>={},view='case')=>{
+   const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view='+view+'&offerId='+id);
+   const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
+   const body=await res.json();assert.equal(res.status,status,JSON.stringify(body));return body;
+  };
+  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'hourly-flow-'+suffix+'@example.invalid'}});
+  await finance(worker,200,'bind_pix',{expectedRevision:1});await finance(worker,200,'authorize_pix_share',{expectedRevision:1});
+  await finance(owner,409,'reveal_pix',{expectedRevision:1});
+  await act(worker,id,'start',409,{confirmed:true});
+  const future=new Date(Date.now()+86400000).toISOString();
+  await act(owner,id,'propose_schedule',200,{proposalId:'schedule',scheduledStartAt:future,confirmed:true});
+  await act(worker,id,'accept_schedule',200,{proposalId:'schedule',confirmed:true});
+  await act(owner,id,'attendance_event',200,{kind:'authorize_early_start',eventId:'early',expectedSequence:0,confirmed:true});
+  await act(worker,id,'start',200,{confirmed:true});
+  await new Promise(resolve=>setTimeout(resolve,100));
+  await act(worker,id,'request_completion',200,{confirmed:true});
+  assert.equal((await ref.collection('financialBasis').doc('hourlyCompletion').get()).exists,false);
+  await act(owner,id,'confirm_completion',200,{confirmed:true});
+  await act(owner,id,'confirm_completion',200,{confirmed:true});
+  const basis=(await ref.collection('financialBasis').doc('hourlyCompletion').get()).data()!;
+  const final=(await ref.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;
+  assert.ok(final.amountMinor>0&&final.amountMinor<360000);
+  assert.equal(final.amountMinor,basis.finalAmountMinor);assert.equal(final.sourceDigest,basis.sourceDigest);
+  assert.equal((await ref.get()).get('status'),'completed');
+  assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).exists,false);
+  const reveal=await finance(owner,200,'reveal_pix',{expectedRevision:1});assert.equal(reveal.amountMinor,final.amountMinor);
+  await finance(owner,200,'statement',{eventId:'paid',statement:'paid',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
+  await finance(worker,200,'statement',{eventId:'received',statement:'received',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
+  assert.equal((await finance(owner,200)).financialState,'bilaterally_reported_received');
+ }finally{if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
+});
