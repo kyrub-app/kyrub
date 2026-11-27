@@ -1,3 +1,4 @@
+import {readOwnStoreRefundDestination,changeOwnStoreRefundDestination} from '../payments/storeRefundDestinationService.js';
 import {readAdjustmentStatements,recordAdjustmentStatement,requestAdjustmentReview} from './freelanceFixedAdjustmentStatementService.js';
 import {readAdjustmentPix,changeAdjustmentPix,changeAdjustmentPixReplacement,readAdjustmentStoreDestination,changeAdjustmentStoreDestination} from './freelanceFixedAdjustmentPixService.js';
 import {readOwnHourlyReviewNotes,submitHourlyReviewNote,submitHourlyReviewAttachment,readOwnHourlyReviewAttachment} from './freelanceHourlyReviewEvidenceService.js';
@@ -83,6 +84,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
    if(q.view==='hourly_cancellation_agreement'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellationAgreement(uid,q.offerId));return;}
    if(q.view==='hourly_cancellation'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellation(uid,q.offerId));return;}
    if(q.view==='fixed_adjustment_statements'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readAdjustmentStatements(uid,q.offerId));return;}
+   if(q.view==='own_store_refund_destination'&&keys.length===1){res.status(200).json(await readOwnStoreRefundDestination(uid));return;}
    if(q.view==='fixed_adjustment_store_destination'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readAdjustmentStoreDestination(uid,q.offerId));return;}
    if(q.view==='fixed_adjustment_pix'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readAdjustmentPix(uid,q.offerId));return;}
    if(q.view==='cancellation_accounting'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCancellationAccounting(uid,q.offerId));return;}
@@ -99,7 +101,17 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   const b=req.body as Record<string,unknown>|undefined;
-  if(!b||typeof b!=='object'||Array.isArray(b)||!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
+  if(!b||typeof b!=='object'||Array.isArray(b))throw Error('FREELANCE_INVALID');
+  if(b.action==='declare_own_store_refund_pix'||b.action==='revoke_own_store_refund_pix'){
+   if(Buffer.byteLength(JSON.stringify(b),'utf8')>2048){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
+   const declare=b.action==='declare_own_store_refund_pix';
+   const fields=declare?['action','expectedRevision','confirmed','destination','businessAccountDeclared']:['action','expectedRevision','confirmed'];
+   if(Object.keys(b).length!==fields.length||Object.keys(b).some(k=>!fields.includes(k)))throw Error('FREELANCE_INVALID');
+   if(!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
+   await changeOwnStoreRefundDestination(uid,{...b,action:declare?'declare':'revoke'},'Bearer '+token);
+   res.status(200).json({confirmed:true});return;
+  }
+  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
   const max=['submit_receipt','submit_hourly_review_attachment'].includes(String(b.action))?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};

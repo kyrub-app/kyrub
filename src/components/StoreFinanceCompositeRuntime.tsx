@@ -1,3 +1,4 @@
+import StoreRefundDestination from './modals/StoreRefundDestination';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowLeftRight, ChartNoAxesCombined, ChartPie, ClipboardCheck, FileChartColumn, HandCoins, History, Receipt } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -16,6 +17,7 @@ const modules=[
   {id:'results',label:'Resultados e margens',detail:'Rentabilidade da operação',icon:ChartNoAxesCombined},
   {id:'reconciliation',label:'Conciliação',detail:'Pagamentos e liquidações',icon:ClipboardCheck},
   {id:'history',label:'Histórico financeiro',detail:'Movimentações e documentos fiscais',icon:History},
+  {id:'refund_destination',label:'Pix de devoluções',detail:'Destino empresarial dos Freelas',icon:HandCoins},
   {id:'reports',label:'Relatórios',detail:'Períodos e centros de custo',icon:FileChartColumn},
 ] as const;
 type ModuleId=typeof modules[number]['id'];
@@ -30,7 +32,9 @@ function FinanceNavigation({storeId}:{storeId:string}){
   const [active,setActive]=useState<ModuleId|null>(null);
   const [historyTab,setHistoryTab]=useState<'history'|'movements'>('history');
   const anchor=useRef<HTMLDivElement>(null);
-  const selected=modules.find(m=>m.id===active);
+  const localHomologation=import.meta.env.VITE_KYRUB_FREELANCE_LOCAL_HOMOLOGATION==='true'&&import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'&&['localhost','127.0.0.1'].includes(window.location.hostname);
+  const visibleModules=modules.filter(m=>m.id!=='refund_destination'||localHomologation);
+  const selected=visibleModules.find(m=>m.id===active);
   const navigate=(id:ModuleId|null)=>{setHistoryTab('history');setActive(id);};
   useEffect(()=>{if(anchor.current)anchor.current.scrollIntoView({block:'start',behavior:'auto'});},[active,historyTab]);
   return <div ref={anchor} className="min-w-0 space-y-3 scroll-mt-20" data-kyrub-finance-navigation="modules">
@@ -38,7 +42,7 @@ function FinanceNavigation({storeId}:{storeId:string}){
       <h2 className="text-base font-bold text-white">Financeiro</h2>
       <p className="mt-1 text-sm text-slate-400">Selecione uma área da gestão financeira da loja.</p>
       <div className="mt-3 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
-        {modules.map(m=><button key={m.id} type="button" onClick={()=>navigate(m.id)} className="flex min-w-0 min-h-28 flex-col items-start gap-2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left hover:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
+        {visibleModules.map(m=><button key={m.id} type="button" onClick={()=>navigate(m.id)} className="flex min-w-0 min-h-28 flex-col items-start gap-2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-left hover:border-amber-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-amber-400">
           <m.icon aria-hidden="true" className="h-6 w-6 shrink-0 text-[#F27429]"/>
           <span className="break-words text-sm font-semibold leading-snug text-white">{m.label}</span>
           <span className="break-words text-xs leading-snug text-slate-400">{m.detail}</span>
@@ -49,6 +53,7 @@ function FinanceNavigation({storeId}:{storeId:string}){
         <button type="button" onClick={()=>navigate(null)} className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-700 px-3 text-sm text-slate-200"><ArrowLeft className="h-4 w-4"/>Financeiro</button>
         <h2 className="min-w-0 flex-1 break-words text-base font-bold text-white">{selected?.label}</h2>
       </div>
+      {active==='refund_destination'&&localHomologation&&auth.currentUser?.uid===storeId&&<StoreRefundDestination user={auth.currentUser} onChanged={()=>{}}/>}
       {active==='overview'&&<StoreFinanceRuntime storeId={storeId} section="overview"/>}
       {active==='payables'&&<StoreFinanceRuntime storeId={storeId} section="payables"/>}
       {active==='receivables'&&<StoreFinanceRuntime storeId={storeId} section="receivables"/>}

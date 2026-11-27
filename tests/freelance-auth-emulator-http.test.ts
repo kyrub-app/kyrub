@@ -865,20 +865,29 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal((await pix(payer,200,storeOffer)).storeRefund,true);assert.equal((await pix(payer,200,storeOffer)).destination,null);
  await finance(payer,403,storeOffer,'authorize_adjustment_pix',businessInput);
  const setup={expectedRevision:0,destination:{keyType:'email',key:'business-'+suffix+'@example.invalid'},businessAccountDeclared:true};
+ const erp=async(a:Actor,status:number,input?:Record<string,unknown>,query='?view=own_store_refund_destination')=>{const r=await fetch(url+(input?'':query),{method:input?'POST':'GET',headers:{authorization:'Bearer '+a.token,...(input?{'content-type':'application/json'}:{})},...(input?{body:JSON.stringify({confirmed:true,...input})}:{})});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ const erpSetup={action:'declare_own_store_refund_pix',...setup};
+ assert.equal((await erp(payer,200)).status,'not_configured');await erp(worker,403);await erp(other,403);
+ await erp(payer,400,undefined,'?view=own_store_refund_destination&storeId='+storeId);
+ await erp(payer,400,{...erpSetup,storeId});await erp(payer,403,erpSetup);
  await finance(payer,403,storeOffer,'declare_store_refund_pix',setup);
  await finance(worker,403,storeOffer,undefined,{},'fixed_adjustment_store_destination');
  t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===payer.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
  try{
   await finance(payer,400,storeOffer,'declare_store_refund_pix',{...setup,businessAccountDeclared:false});
-  await finance(payer,200,storeOffer,'declare_store_refund_pix',setup);
+  await erp(payer,200,erpSetup);
+  const erpView=await erp(payer,200);assert.equal(erpView.storeId,storeId);assert.equal(erpView.revision,1);assert.equal('key' in erpView,false);
+  await erp(payer,409,erpSetup);
   const privateView=await finance(payer,200,storeOffer,undefined,{},'fixed_adjustment_store_destination');assert.equal(privateView.revision,1);assert.equal(privateView.ownershipVerified,false);assert.equal('key' in privateView,false);
   assert.equal((await pix(worker,200,storeOffer)).destination,null);
   await finance(payer,200,storeOffer,'authorize_adjustment_pix',businessInput);
   const storeKey=await finance(worker,200,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});assert.equal(storeKey.key,'business-'+suffix+'@example.invalid');
   await storeMember.update({status:'inactive'});
+  await erp(payer,403);await erp(payer,403,{action:'revoke_own_store_refund_pix',expectedRevision:1});
   await finance(worker,403,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});
   await storeMember.update({status:'active'});
   await finance(payer,200,storeOffer,'revoke_store_refund_pix',{expectedRevision:1});
+  const revoked=await erp(payer,200);assert.equal(revoked.status,'revoked');assert.equal(revoked.revision,2);assert.equal('maskedKey' in revoked,false);
   await finance(worker,409,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});
  }finally{t.mock.restoreAll();}
  // Complement still points to the professional, with new consent.
