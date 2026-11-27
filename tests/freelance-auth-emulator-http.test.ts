@@ -1097,16 +1097,28 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  const mock=t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
  try{
   const item=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(item);
-  const decision={action:'decide_hourly_excess',offerId:adminId,sourceDigest:ax.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,recognizedExcessMs:1800000,reason:'Decisão fictícia fundamentada do excedente',confirmed:true};
+  const decision={action:'decide_hourly_excess',offerId:adminId,sourceDigest:ax.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedExcessMs:1800000,reason:'Decisão fictícia fundamentada do excedente',confirmed:true};
   await excessApi(owner,200,'propose_hourly_excess',{...af,proposalId:'second',recognizedExcessMs:0},adminId);
   await review(admin,409,decision);
   const fresh=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
-  const next={...decision,proposalDigest:fresh.proposalDigest};
+  const note={kind:'excess',sourceDigest:ax.sourceDigest,evidenceId:'note-one',note:'Manifestação fictícia privada do profissional.'};
+  await excessApi(other,403,'submit_hourly_review_note',note,adminId);
+  await excessApi(worker,200,'submit_hourly_review_note',note,adminId);
+  await excessApi(worker,200,'submit_hourly_review_note',note,adminId);
+  const own=async(actor:Actor,kind:string,target:string,status=200)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=hourly_review_notes&kind='+kind+'&offerId='+target,{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+  assert.equal((await own(worker,'excess',adminId)).notes.length,1);
+  assert.deepEqual((await own(owner,'excess',adminId)).notes,[]);
+  await own(other,'excess',adminId,403);
+  await review(admin,409,{...decision,proposalDigest:fresh.proposalDigest});
+  const latest=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
+  assert.equal(latest.notes.length,1);assert.equal(latest.notes[0].note,note.note);assert.equal('actorUid' in latest.notes[0],false);
+  const next={...decision,proposalDigest:latest.proposalDigest,evidenceDigest:latest.evidenceDigest};
   await review(admin,409,{...next,recognizedExcessMs:3600001});
   await review(other,403,next);
   assert.equal((await review(admin,200,next)).replay,false);assert.equal((await review(admin,200,next)).replay,true);
   await review(admin,409,{...next,recognizedExcessMs:0});
   await excessApi(worker,409,'accept_hourly_excess',{...af,proposalId:'second'},adminId);
+  await excessApi(worker,409,'submit_hourly_review_note',{...note,evidenceId:'late'},adminId);
   const av=await excessApi(worker,200,undefined,{},adminId);
   assert.equal(av.dispute.status,'resolved_administratively');assert.equal(av.resolved.recognizedServiceMinor,13000);assert.equal(av.restrictionActive,false);assert.equal(av.payable,true);
   assert.equal('actorUid' in av.dispute.decision,false);
@@ -1341,7 +1353,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    await adminReview(other,403);
    const queue=await adminReview(admin,200),item=queue.items.find((v:any)=>v.offerId===id);
    assert.ok(item);assert.equal(item.sourceDigest,a.sourceDigest);
-   const adminDecision={action:'decide_hourly_cancellation',offerId:id,sourceDigest:a.sourceDigest,expectedRequestedAt:item.requestedAt,recognizedServiceMinor:proposal.recognizedServiceMinor,reason:'Decisão fictícia fundamentada',confirmed:true};
+   const adminDecision={action:'decide_hourly_cancellation',offerId:id,sourceDigest:a.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedServiceMinor:proposal.recognizedServiceMinor,reason:'Decisão fictícia fundamentada',confirmed:true};
    if(started){
     await adminReview(admin,409,{...adminDecision,sourceDigest:'0'.repeat(64)});
     await adminReview(admin,409,{...adminDecision,recognizedServiceMinor:a.capMinor+1});
