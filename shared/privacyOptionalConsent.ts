@@ -6,7 +6,7 @@ export const OPTIONAL_CONSENT_PURPOSES={
 export type OptionalConsentPurpose=keyof typeof OPTIONAL_CONSENT_PURPOSES;
 export type OptionalConsentRecord={purpose:OptionalConsentPurpose;version:string;noticeHash:string;revision:number;state:'granted'|'withdrawn';changedAt:number;simulation:true};
 export type OptionalConsentChoice={purpose:OptionalConsentPurpose;expectedRevision:number;decision:'grant'|'withdraw';version:string;confirmed:true};
-export type OptionalConsentView={purpose:OptionalConsentPurpose;label:string;description:string;version:string;revision:number;state:'not-granted'|'granted'|'withdrawn';effective:boolean;simulation:true};
+export type OptionalConsentView={purpose:OptionalConsentPurpose;label:string;description:string;version:string;revision:number;state:'not-granted'|'granted'|'withdrawn';effective:boolean;canWithdraw:boolean;simulation:true};
 export type OptionalConsentAdapter={list:()=>Promise<OptionalConsentView[]>;change:(choice:OptionalConsentChoice)=>Promise<OptionalConsentView>};
 export function normalizeOptionalConsentChoice(input:unknown):OptionalConsentChoice{
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('OPTIONAL_CONSENT_INVALID');
