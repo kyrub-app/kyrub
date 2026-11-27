@@ -14,7 +14,7 @@ const actors:Record<FreelanceAttendanceKind,FreelanceAttendanceEvent['actor']>={
 export function projectFreelanceAttendance(schedule:FreelanceAttendanceSchedule,events:readonly FreelanceAttendanceEvent[]){
  const scheduled=time(schedule.scheduledStartAt);
  if(!['on_site','remote'].includes(schedule.location)||!Number.isSafeInteger(schedule.agreedMinutes)||schedule.agreedMinutes<1||schedule.agreedMinutes>10080||!Array.isArray(events)||events.length>512)return fail();
- let arrived:number|null=null,presence=false,early=false,waiting:number|null=null,work:number|null=null,breakAsked=false,pause:number|null=null,checkout:number|null=null,confirmed=false,suspended=false;
+ let arrived:number|null=null,presence=false,early=false,started=false,waiting:number|null=null,work:number|null=null,breakAsked=false,pause:number|null=null,checkout:number|null=null,confirmed=false,suspended=false;
  let workMs=0,waitMs=0,breakMs=0,last=-Infinity;
  const ids=new Set<string>();
  for(const e of events){
@@ -23,12 +23,12 @@ export function projectFreelanceAttendance(schedule:FreelanceAttendanceSchedule,
   switch(e.kind){
    case 'check_in':if(schedule.location!=='on_site'||arrived!==null||work!==null||checkout!==null)return fail();arrived=at;break;
    case 'confirm_presence':if(arrived===null||presence||checkout!==null)return fail();presence=true;break;
-   case 'authorize_early_start':if(early||at>=scheduled||work!==null||checkout!==null)return fail();early=true;break;
-   case 'acknowledge_waiting':if(schedule.location!=='on_site'||!presence||arrived===null||waiting!==null||work!==null||checkout!==null||at<scheduled)return fail();waiting=Math.max(scheduled,arrived);break;
+   case 'authorize_early_start':if(early||at>=scheduled||started||checkout!==null)return fail();early=true;break;
+   case 'acknowledge_waiting':if(schedule.location!=='on_site'||!presence||arrived===null||waiting!==null||started||checkout!==null||at<scheduled)return fail();waiting=Math.max(scheduled,arrived);break;
    case 'start':
-    if(work!==null||checkout!==null||(schedule.location==='on_site'&&!presence)||(at<scheduled&&!early))return fail();
+    if(started||pause!==null||checkout!==null||(schedule.location==='on_site'&&!presence)||(at<scheduled&&!early))return fail();
     if(waiting!==null){waitMs+=at-waiting;waiting=null;}
-    work=at;break;
+    started=true;work=at;break;
    case 'request_break':if(work===null||pause!==null||breakAsked||checkout!==null)return fail();breakAsked=true;break;
    case 'approve_break':if(work===null||!breakAsked||pause!==null||checkout!==null)return fail();workMs+=at-work;pause=at;work=null;breakAsked=false;break;
    case 'resume':if(pause===null||checkout!==null)return fail();breakMs+=at-pause;pause=null;work=at;break;
