@@ -1,3 +1,4 @@
+import {readAdjustmentStatementContext} from './freelanceFixedAdjustmentStatementService.js';
 import {readFixedCancellationContext} from './freelanceCancellationAccountingService.js';
 import {appendHourlyAttachment,readHourlyAttachment,projectHourlyAttachments} from './freelanceHourlyReviewNotes.js';
 import {sanitizeReceiptPng} from './freelanceReceiptPng.js';
@@ -42,6 +43,7 @@ export async function readOwnHourlyReviewAttachment(uid:string,id:string,kind:Ho
 }
 
 async function readReviewEvidenceContext(tx:FirebaseFirestore.Transaction,uid:string,id:string,kind:HourlyReviewKind){
+ if(kind==='fixed_adjustment'){const x=await readAdjustmentStatementContext(tx,uid,id);return {dispute:x.queue?{requestedAt:x.queue.requestedAt,status:x.queue.status==='pending'?'review_requested':x.queue.status}:undefined,restricted:x.restricted,evidence:x.evidence,sourceDigest:x.o.sourceDigest,parties:x.c.obligation};}
  if(kind==='fixed_cancellation'){const c=await readFixedCancellationContext(tx,uid,id);return {dispute:c.dispute,restricted:c.cancellationRestricted,evidence:c.evidence,sourceDigest:c.evidenceSource,parties:c.obligation};}
  const c=kind==='cancellation'?await readHourlyCancellationAgreementContext(tx,uid,id):await readHourlyExcessContext(tx,uid,id);return {dispute:c.dispute,restricted:c.restricted,evidence:c.evidence,sourceDigest:c.record.sourceDigest,parties:c.record.commitment};
 }
