@@ -456,3 +456,47 @@ test('participant finance HTTP: authenticated statements, private own evidence, 
  }
  assert.equal((await list(other.uid)).notifications.length,0);
 });
+
+test('contract Pix disclosure: explicit sharing, due, payer-only, recent session and pinned revision',async(t)=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const payer=await account('share-payer',['requester']),worker=await account('share-worker',['freelancer']),other=await account('share-other',['requester']);
+ const ids=['share-advance-'+suffix,'share-completion-'+suffix,'share-revoked-'+suffix];
+ const key='share-'+suffix+'@example.invalid';
+ await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key}});
+ for(const [i,id] of ids.entries()){
+  await publishFreelanceOffer(payer.uid,id,{title:'Pix fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:i===1?'on_completion':'advance',amountMinor:15000})});
+  await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ }
+ const url='http://127.0.0.1:'+address.port+'/api/freelance/finance';
+ const call=async(a:Actor,status:number,id:string,action?:string,extra:Record<string,unknown>={})=>{
+  const r=await fetch(url+(action?'':'?view=pix_sharing&offerId='+id),{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,...(action?{'content-type':'application/json'}:{})},...(action?{body:JSON.stringify({action,offerId:id,expectedRevision:1,confirmed:true,...extra})}:{})});
+  const b=await r.json();assert.equal(r.status,status,JSON.stringify(b));assert.match(r.headers.get('cache-control')??'',/no-store/);return b;
+ };
+ const id=ids[0];
+ await call(payer,409,id);await call(worker,200,id,'bind_pix');
+ assert.equal((await call(payer,200,id)).sharingAuthorized,false);
+ await call(payer,409,id,'reveal_pix');await call(other,403,id,'reveal_pix');await call(payer,403,id,'authorize_pix_share');
+ await call(worker,400,id,'authorize_pix_share',{confirmed:false});
+ await call(worker,200,id,'authorize_pix_share');await call(worker,200,id,'authorize_pix_share');
+ const mask=await call(payer,200,id);assert.equal(mask.sharingAuthorized,true);assert.equal(mask.due,true);assert.ok(!JSON.stringify(mask).includes(key));
+ await call(worker,403,id,'reveal_pix');await call(payer,409,id,'reveal_pix',{expectedRevision:2});
+ const original=auth.verifyIdToken.bind(auth);
+ t.mock.method(auth,'verifyIdToken',async(token:string,revoked?:boolean)=>{const decoded=await original(token,revoked);return {...decoded,auth_time:Math.floor(Date.now()/1000)-301};});
+ try{assert.equal((await call(payer,403,id,'reveal_pix')).code,'REAUTHENTICATION_REQUIRED');}finally{t.mock.restoreAll();}
+ const revealed=await call(payer,200,id,'reveal_pix');assert.equal(revealed.key,key);assert.equal(revealed.amountMinor,15000);assert.equal(revealed.bankVerified,false);
+ const direct=db.doc('freelanceOffersV1/'+id).collection('directPayment');
+ const audit=(await direct.doc('pixDisclosure').get()).data();assert.equal(audit?.requesterUid,payer.uid);assert.ok(!JSON.stringify(audit).includes(key));
+ await call(payer,200,id,'reveal_pix');assert.deepEqual((await direct.doc('pixDisclosure').get()).data(),audit);
+ const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
+ await call(payer,409,id,'reveal_pix');
+ for(const otherId of ids.slice(1)){await call(worker,200,otherId,'bind_pix');await call(worker,200,otherId,'authorize_pix_share');}
+ assert.equal((await call(payer,200,ids[1])).due,false);await call(payer,409,ids[1],'reveal_pix');
+ await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:'new-'+key}});
+ await call(payer,409,ids[2],'reveal_pix');
+ await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:2,confirmed:true});
+ await call(payer,409,ids[2],'reveal_pix');
+ assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).exists,false);
+});
