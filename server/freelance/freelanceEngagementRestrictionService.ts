@@ -71,3 +71,11 @@ export async function prepareAdministrativeDisputeRelease(tx:FirebaseFirestore.T
  });
  return ()=>{for(let i=0;i<refs.length;i++)tx.set(refs[i],updates[i]);};
 }
+
+/** Own private restriction summary; never reveals other participants. */
+export async function readOwnFreelanceRestrictions(uid:string){
+ assertLocal();
+ if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
+ const ids=readIds((await root(uid).get()).data(),uid);
+ return {restricted:ids.length>0,openOfferIds:ids};
+}

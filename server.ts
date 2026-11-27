@@ -1,6 +1,7 @@
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import {handleFreelanceWorkspace} from "./server/freelance/freelanceWorkspaceTransport.js";
+import {handleFreelanceFinance} from "./server/freelance/freelanceFinanceTransport.js";
 import {handleFreelanceFinancialReview} from "./server/admin/freelanceFinancialReviewTransport.js";
 import {handlePersonalPix} from "./server/payments/personalPixTransport.js";
 import path from "path";
@@ -293,6 +294,9 @@ app.all("/api/personal-finance/pix", integrationRateLimiter, (request,response) 
 
 app.all("/api/admin/freelance-financial-review", integrationRateLimiter, (request,response) => {
   void handleFreelanceFinancialReview(request,response);
+});
+app.all("/api/freelance/finance", integrationRateLimiter, (request,response) => {
+  void handleFreelanceFinance(request,response);
 });
 app.all("/api/freelance/workspace", integrationRateLimiter, (request,response) => {
   void handleFreelanceWorkspace(request,response);

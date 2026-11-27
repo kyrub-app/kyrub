@@ -92,7 +92,7 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
   const decidedAt=new Date().toISOString();
   if(Date.parse(decidedAt)<Date.parse(review.requestedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   const release=await prepareAdministrativeDisputeRelease(tx,obligation);
-  const decision:FinancialReviewDecision={actorUid:uid,outcome,reason,decidedAt,bankVerified:false,evidenceRevision:evidence.revision};
+  const decision:FinancialReviewDecision={actorUid:uid,outcome,reason,decidedAt,bankVerified:false,evidenceRevision};
   tx.update(ref,{status:'resolved_administratively',resolvedAt:decidedAt,decision});
   tx.create(auditRef,{id:auditId,action:'admin.freelance.financial_review_resolved',actorId:uid,actorRole:'super_admin',
    targetType:'freelance_financial_review',targetId:offerId,outcome,reasonHash:digest,evidenceRevision,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});

@@ -1,4 +1,4 @@
-import {financialReviewAdminEnabled,listFreelanceFinancialReviews,decideFreelanceFinancialReview} from './freelanceFinancialReviewService.js';
+import {financialReviewAdminEnabled,listFreelanceFinancialReviews,decideFreelanceFinancialReview,getFreelanceFinancialReceipt} from './freelanceFinancialReviewService.js';
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
 export async function handleFreelanceFinancialReview(req:Request,res:Response){
@@ -8,9 +8,10 @@ export async function handleFreelanceFinancialReview(req:Request,res:Response){
  if(req.method!=='GET'&&req.method!=='POST'){res.setHeader('Allow','GET, POST');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;}
  const h=req.headers.authorization;
  if(typeof h!=='string'||h.length>8199||!/^Bearer [^\s]+$/i.test(h)){res.status(401).json({code:'AUTH_REQUIRED'});return;}
- if(Object.keys(req.query??{}).some(k=>req.method==='POST'||k!=='cursor')){res.status(400).json({code:'FREELANCE_INVALID'});return;}
+ const q=req.query??{},keys=Object.keys(q),receipt=q.view==='receipt';
+ if(req.method==='POST'?keys.length!==0:receipt?(keys.length!==3||keys.some(k=>!['view','offerId','receiptId'].includes(k))):keys.some(k=>k!=='cursor')){res.status(400).json({code:'FREELANCE_INVALID'});return;}
  try{
-  if(req.method==='GET'){res.status(200).json(await listFreelanceFinancialReviews(h,req.query?.cursor));return;}
+  if(req.method==='GET'){res.status(200).json(receipt?await getFreelanceFinancialReceipt(h,q.offerId,q.receiptId):await listFreelanceFinancialReviews(h,q.cursor));return;}
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>8192){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
