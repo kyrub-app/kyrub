@@ -1,3 +1,4 @@
+import {isReputationSquarePost,reputationSquarePublishEnabled,ReputationSquarePostGate,ReputationPublicationIndicators,type Summary} from './ReputationSquarePreview';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
@@ -254,6 +255,7 @@ export function PublicSocialFeedPanel({
     return currentNamePosts.filter(post => {
       // The 24h window affects only discovery in Praça, never the source post.
       if (!withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow)) return false;
+      if (isReputationSquarePost(post.id)&&!reputationSquarePublishEnabled())return false;
       if (normalizedSearch) {
         const matches =
           matchesSearch(post.user, normalizedSearch) ||
@@ -359,7 +361,7 @@ export function PublicSocialFeedPanel({
         const suggestedAuthor = suggestedUsers.find(friend => friend.id === post.authorId);
         const canReport = Boolean(post.authorId && post.authorId !== currentUserId);
 
-        return (
+        const renderPost=(summary?:Summary)=>(
           <article
             key={post.id}
             className={`space-y-3 rounded-3xl border p-4 shadow-lg ${
@@ -476,7 +478,7 @@ export function PublicSocialFeedPanel({
               </p>
             )}
 
-            {post.content && !post.storePromotion && (
+            {summary?<ReputationPublicationIndicators summary={summary}/>:post.content && !post.storePromotion && (
               <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
                 {post.content}
               </p>
@@ -659,6 +661,7 @@ export function PublicSocialFeedPanel({
             )}
           </article>
         );
+        return isReputationSquarePost(post.id)?<ReputationSquarePostGate key={post.id+':'+currentUserId} postId={post.id} viewerId={currentUserId} createdAt={post.createdAt||''} render={renderPost}/>:renderPost();
       })}
 
       {feedRows.length === 0 && (
