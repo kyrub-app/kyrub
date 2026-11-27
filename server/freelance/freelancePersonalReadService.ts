@@ -44,6 +44,21 @@ export async function readFreelancePersonalSummary(uid:string,view:'alerts'|'ear
    }
   }
   if(view==='alerts'){
+   const ownApplications=await tx.get(adminDb.collectionGroup('applications').where('applicantUid','==',uid).limit(51));
+   if(ownApplications.size>50)throw Error('FREELANCE_PAGE_LIMIT');
+   for(const d of ownApplications.docs){
+    const parent=d.ref.parent.parent;
+    if(!parent||parent.parent.path!=='freelanceOffersV1'||d.id!==uid)throw Error('FREELANCE_CONFLICT');
+    const a=d.data() as FreelanceApplication;
+    const o=(await tx.get(parent)).data() as FreelanceOffer|undefined;
+    if(!o||o.id!==parent.id||a.offerId!==o.id||a.ownerUid!==o.ownerUid||a.applicantUid!==uid||o.ownerUid===uid||
+       typeof o.title!=='string'||!o.title.trim()||o.title.length>120)throw Error('FREELANCE_CONFLICT');
+    if(o.selectedApplicantUid===uid)continue;
+    const state=a.status==='pending'?(o.status==='open'||o.status==='selected'?'application_pending':'not_selected'):
+      a.status==='withdrawn'?'withdrawn':a.status==='released'?'released':null;
+    if(!state)throw Error('FREELANCE_CONFLICT');
+    alerts.push({offerId:o.id,role:'freelancer',title:o.title,state});
+   }
    const owner=await tx.get(collection().where('ownerUid','==',uid).limit(51));
    if(owner.size>50)throw Error('FREELANCE_PAGE_LIMIT');
    for(const d of owner.docs){
