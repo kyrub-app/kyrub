@@ -8,8 +8,9 @@ const offers=()=>adminDb.collection('freelanceOffersV1');
 function project(id:string,raw:unknown,uid:string){
  const o=raw as FreelanceOffer;
  if(!o||o.id!==id||!validFreelanceId(o.ownerUid)||!['open','selected','contracted','in_progress','completion_requested','completed','cancelled','under_review'].includes(o.status))throw Error('FREELANCE_CONFLICT');
- const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:o.paymentMinor,...(o.paymentTerms!==undefined?{paymentTerms:o.paymentTerms}:{}),...(o.workTerms!==undefined?{workTerms:o.workTerms}:{})});
  const participant=o.ownerUid===uid||o.selectedApplicantUid===uid;
+ const visibleTerms=!participant&&o.originalOfferTerms?o.originalOfferTerms:o;
+ const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:visibleTerms.paymentMinor,...(visibleTerms.paymentTerms!==undefined?{paymentTerms:visibleTerms.paymentTerms}:{}),...(visibleTerms.workTerms!==undefined?{workTerms:visibleTerms.workTerms}:{})});
  const proposal=participant?readFreelanceCounterproposal(o.selectedCounterproposal,o.originalOfferTerms??o):undefined;
  return {id,...terms,...(proposal?{selectedCounterproposal:proposal}:{}),status:o.status,isOwner:o.ownerUid===uid,isSelected:o.selectedApplicantUid===uid,createdAt:o.createdAt};
 }
