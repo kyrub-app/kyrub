@@ -579,7 +579,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await finance(worker,200,id,'statement',{eventId:'received',statement:'received'});
  const completed=await finance(worker,200,id);assert.equal(completed.financialState,'bilaterally_reported_received');assert.equal(completed.bankVerified,false);
  assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).get('confirmedServiceMinor'),15000);
- const {readFreelanceReputation,submitFreelanceReputation,readOwnFreelanceReputationProfile}=await import('../server/freelance/freelanceReputationService.js');
+ const {readFreelanceReputation,submitFreelanceReputation,readOwnFreelanceReputationProfile,readOwnFreelanceReputationContestation,contestFreelanceReputation}=await import('../server/freelance/freelanceReputationService.js');
  const rg='KYRUB_FREELANCE_REPUTATION_TEST_ONLY',priorGate=process.env[rg];
  try{
   delete process.env[rg];
@@ -594,6 +594,8 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.equal(submitted.filter(v=>v.changed).length,1);
   assert.equal((await readFreelanceReputation(worker.uid,id)).received,null);
   assert.equal((await readFreelanceReputation(worker.uid,id)).own,null);
+  assert.equal((await readOwnFreelanceReputationContestation(worker.uid,id)).ratingDigest,null);
+  await assert.rejects(contestFreelanceReputation(worker.uid,id,{confirmed:true,ratingDigest:'0'.repeat(64),reason:'Contestação fictícia.'}),/CONFLICT/);
   assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).releasedCountOnPage,0);
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:3}),/CONFLICT/);
   const mutual=await submitFreelanceReputation(worker.uid,id,{confirmed:true,stars:4});
@@ -611,6 +613,25 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.ok(!JSON.stringify(professional).includes('authorUid'));
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'store_requester'),/FORBIDDEN/);
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'other'),/INVALID/);
+  const candidate=await readOwnFreelanceReputationContestation(payer.uid,id);assert.equal(candidate.eligible,true);
+  const challenge={confirmed:true,ratingDigest:candidate.ratingDigest,reason:'Contestação fictícia da avaliação recebida.'};
+  await assert.rejects(contestFreelanceReputation(outsider.uid,id,challenge),/FORBIDDEN/);
+  await assert.rejects(contestFreelanceReputation(payer.uid,id,{...challenge,ratingDigest:'0'.repeat(64)}),/CONFLICT/);
+  await assert.rejects(contestFreelanceReputation(payer.uid,id,{...challenge,reason:''}),/INVALID/);
+  const opened=await Promise.all([contestFreelanceReputation(payer.uid,id,challenge),contestFreelanceReputation(payer.uid,id,challenge)]);
+  assert.equal(opened.filter(v=>v.created).length,1);
+  await assert.rejects(contestFreelanceReputation(payer.uid,id,{...challenge,reason:'Outra contestação.'}),/CONFLICT/);
+  const pending=await readOwnFreelanceReputationContestation(payer.uid,id);assert.equal(pending.contestation?.status,'pending');
+  assert.equal((await readOwnFreelanceReputationContestation(worker.uid,id)).contestation,null);
+  assert.equal((await readFreelanceReputation(payer.uid,id)).received?.stars,4);
+  assert.equal((await readOwnFreelanceReputationProfile(payer.uid,'personal_requester')).entries[0].stars,4);
+  const {readOwnFreelanceRestrictions}=await import('../server/freelance/freelanceEngagementRestrictionService.js');
+  assert.equal((await readOwnFreelanceRestrictions(payer.uid)).restricted,false);
+  assert.equal((await readOwnFreelanceRestrictions(worker.uid)).restricted,false);
+  const {digestVariablePaymentSources}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
+  const contestRef=db.doc('freelanceReputationContestsV1/'+digestVariablePaymentSources([id,'worker']));
+  await contestRef.update({ratingDigest:'0'.repeat(64)});
+  await assert.rejects(readOwnFreelanceReputationContestation(payer.uid,id),/CONFLICT/);
   await ref.collection('reputationPrivateV1').doc('worker').update({contractDigest:'0'.repeat(64)});
   await assert.rejects(readFreelanceReputation(payer.uid,id),/CONFLICT/);
  }finally{if(priorGate===undefined)delete process.env[rg];else process.env[rg]=priorGate;}
@@ -1191,7 +1212,10 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
   assert.equal((await readOwnFreelanceReputationProfile(owner.uid,'personal_requester')).releasedCountOnPage,0);
   assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).entries[0].stars,5);
   await assert.rejects(readOwnFreelanceReputationProfile(manager.uid,'store_requester'),/FORBIDDEN/);
+  const {readOwnFreelanceReputationContestation,contestFreelanceReputation}=await import('../server/freelance/freelanceReputationService.js');
+  const challenge=await readOwnFreelanceReputationContestation(owner.uid,id);assert.equal(challenge.eligible,true);
   await member.update({status:'inactive'});
+  await assert.rejects(contestFreelanceReputation(owner.uid,id,{confirmed:true,ratingDigest:challenge.ratingDigest,reason:'Contestação fictícia empresarial.'}),/FORBIDDEN/);
   await assert.rejects(readOwnFreelanceReputationProfile(owner.uid,'store_requester'),/FORBIDDEN/);
  }finally{if(previous===undefined)delete process.env[rg];else process.env[rg]=previous;}
 
