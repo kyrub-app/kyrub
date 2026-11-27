@@ -4,7 +4,7 @@ import {getPrimaryUserStoreDocumentPath} from '../../src/utils/storePaths.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {projectStoreInstitutionalIdentity} from '../../shared/storeInstitutionalIdentity.js';
 
-export type FreelanceStoreRepresentation={storeId:string;displayName:string;representativeRole:'owner'};
+import type {FreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
 /** No generic ERP permission authorizes assuming a freelance obligation.
  * Owner-only candidate; no plan check, no store wallet or bank authority. */
 export async function readOwnedFreelanceStore(tx:Transaction,uid:string):Promise<FreelanceStoreRepresentation|null>{
