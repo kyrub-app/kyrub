@@ -1111,6 +1111,33 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
   assert.ok(!(await review(admin,200)).items.some((x:any)=>x.offerId===adminId));
  }finally{mock.mock.restore();}
  await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);
+ // Positive contracted estimate rounded to zero on a short, bilaterally confirmed journey.
+ const zeroId=id+'-zero',zr=db.doc('freelanceOffersV1/'+zeroId);
+ const zeroPayment=createDirectPaymentTerms({method:'external_pix',amountMinor:1}),zeroWork={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:1};
+ const zeroFields={paymentTerms:zeroPayment,workTerms:zeroWork,completionRequestedAt:at('08:01'),completedAt:at('08:02')};
+ await zr.set({...offer,...zeroFields,id:zeroId,paymentMinor:1});
+ await zr.collection('applications').doc(worker.uid).set({...application,...zeroFields,offerId:zeroId});
+ await zr.collection('attendance').doc('schedule').set({proposalId:'schedule'});
+ await zr.collection('attendance').doc('schedule-schedule').set({id:'schedule',schedule:{location:'remote',scheduledStartAt:at('08:00'),agreedMinutes:60},proposedBy:'requester',proposedAt:at('07:20'),status:'accepted',decidedBy:'worker',decidedAt:at('07:25')});
+ await zr.collection('attendance').doc('timeline').set({scheduleId:'schedule',events:[events[0],{...events[1],at:at('08:01')},{...events[2],at:at('08:02')}]});
+ const zero=await recordFreelanceVariablePaymentBasis(worker.uid,zeroId);
+ assert.equal(zero.basis.disposition,'no_payment_required');assert.equal(zero.basis.finalAmountMinor,0);
+ assert.equal((await recordFreelanceVariablePaymentBasis(owner.uid,zeroId)).replay,true);
+ await excessFinance(other,403,undefined,{},zeroId);
+ for(const actor of [owner,worker]){
+  const z=await excessFinance(actor,200,undefined,{},zeroId);
+  assert.equal(z.amountMode,'hourly_zero');assert.equal(z.amountMinor,0);assert.equal(z.due,false);assert.equal(z.financialState,'no_payment_required');assert.equal(z.bankVerified,false);assert.equal(z.canRequestReview,false);assert.deepEqual(z.statements,[]);
+ }
+ await excessFinance(owner,409,'reveal_pix',{expectedRevision:2},zeroId);
+ await excessFinance(owner,409,'statement',{eventId:'zero-paid',statement:'paid',expectedAmountMinor:1,sourceDigest:zero.basis.sourceDigest},zeroId);
+ await excessFinance(worker,409,'request_review',{},zeroId);
+ assert.equal((await zr.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+ assert.equal((await zr.collection('directPayment').doc('hourlyStatements').get()).exists,false);
+ await zr.collection('directPayment').doc('hourlyFinalObligation').set({fixture:true});
+ await excessFinance(owner,409,undefined,{},zeroId);
+ await zr.collection('directPayment').doc('hourlyFinalObligation').delete();
+ await zr.collection('attendance').doc('timeline').delete();await excessFinance(worker,409,undefined,{},zeroId);
+
  await ref.collection('directPayment').doc('obligation').set({fixture:true});
  await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  await act(owner,id,'record_hourly_basis',400,{confirmed:true});
