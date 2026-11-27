@@ -234,3 +234,15 @@ test('reputation square publication renders verified indicators only in the visi
  assert.match(preview,/VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY/);
  assert.match(feed,/<SemearButton kind="personal"/);assert.match(feed,/toggleComments\(post.id\)/);
 });
+
+test('reputation forwarding uses one original post and separate distribution time',()=>{
+ const feed=read('src/components/PublicSocialFeedPanel.tsx'),preview=read('src/components/ReputationSquarePreview.tsx'),hook=read('src/hooks/usePublicSocialFeed.ts');
+ assert.match(hook,/reputationSquareDistribution:/);assert.match(hook,/squareDistributedAtIso/);
+ assert.match(feed,/createdAt: squareDistributionTime\(post\), post/);
+ assert.match(feed,/createdAt=\{squareDistributionTime\(post\)\}/);
+ assert.match(feed,/Encaminhada à Praça por/);
+ assert.match(feed,/<ReputationSquareForwardButton postId=\{post.id\}/);
+ assert.match(preview,/action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true/);
+ assert.match(preview,/VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY/);
+ assert.doesNotMatch(preview,/setDoc\(|addDoc\(|localStorage/);
+});
