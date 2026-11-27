@@ -1424,7 +1424,10 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
   for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:false,openOfferIds:[]});
   assert.ok(!(await review(admin,200)).items.some((x:any)=>x.offerId===adminId));
  }finally{mock.mock.restore();}
- await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);
+ const hourlyPage=async(actor:Actor,role:string,status=200)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=movements&role='+role,{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ const page=await hourlyPage(owner,'requester');const unresolved=page.hourlyEntries.find((e:any)=>e.offerId===id),resolvedExcess=page.hourlyEntries.find((e:any)=>e.offerId===excessId);assert.equal(unresolved.reason,'excess_review');assert.equal(unresolved.recognizedMinor,null);assert.equal(resolvedExcess.recognizedMinor,13000);assert.equal(resolvedExcess.recognizedExcessMs,1800000);assert.equal(resolvedExcess.financialState,'bilaterally_reported_received');
+ await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);await hourlyPage(owner,'requester',409);
+ await er.collection('attendance').doc('timeline').set({scheduleId:'schedule',events});
  // Positive contracted estimate rounded to zero on a short, bilaterally confirmed journey.
  const zeroId=id+'-zero',zr=db.doc('freelanceOffersV1/'+zeroId);
  const zeroPayment=createDirectPaymentTerms({method:'external_pix',amountMinor:1}),zeroWork={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:1};
@@ -1456,6 +1459,7 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  assert.deepEqual(await withdrawal(worker,200),{revision:2,sharingAuthorized:false,sharingRevoked:true,sharingSequence:1});
  await excessFinance(worker,409,'restore_pix_share',{expectedRevision:2,expectedSequence:1},zeroId);
  assert.equal((await excessFinance(worker,200,undefined,{},zeroId)).financialState,'no_payment_required');
+ const zeroMovement=(await hourlyPage(worker,'freelancer')).hourlyEntries.find((e:any)=>e.offerId===zeroId);assert.equal(zeroMovement.recognizedMinor,0);assert.equal(zeroMovement.financialState,'no_payment_required');assert.equal(zeroMovement.estimatedMinor,1);
  await zr.collection('directPayment').doc('hourlyFinalObligation').set({fixture:true});
  await excessFinance(owner,409,undefined,{},zeroId);
  await zr.collection('directPayment').doc('hourlyFinalObligation').delete();
@@ -1616,6 +1620,8 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
    const financeRestrictions=async(a:Actor)=>{const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
    await agreement(other,403);
+   const hourlyMovement=async()=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=movements&role=requester',{headers:{authorization:'Bearer '+owner.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v.hourlyEntries.find((e:any)=>e.offerId===id);};
+   const unresolvedMovement=await hourlyMovement();assert.equal(unresolvedMovement.reason,'cancellation_review');assert.equal(unresolvedMovement.recognizedMinor,null);
    const a=await agreement(worker,200);
    assert.equal(a.agreedMinor,null);assert.equal(a.payable,false);
    const proposal={proposalId:'p1',sourceDigest:a.sourceDigest,recognizedServiceMinor:started?Math.min(100,a.capMinor):0};
@@ -1708,6 +1714,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
     await finance(owner,409,'reveal_pix',{expectedRevision:1});await finance(owner,409,undefined,{},'case');
     await finance(owner,409,'statement',{eventId:'zero-paid',statement:'paid',expectedAmountMinor:0,sourceDigest:resolution.sourceDigest});
    }
+   const settledMovement=await hourlyMovement();assert.equal(settledMovement.recognizedMinor,proposal.recognizedServiceMinor);assert.equal(settledMovement.financialState,started?'bilaterally_reported_received':'no_payment_required');assert.equal(settledMovement.bankVerified,false);
    await finance(owner,409,'propose_hourly_cancellation',{...proposal,proposalId:'p3'});
    if(started){
     await ref.collection('attendance').doc('timeline').delete();
