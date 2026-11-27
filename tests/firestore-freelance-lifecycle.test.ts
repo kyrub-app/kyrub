@@ -444,3 +444,47 @@ test('external statements persist with bilateral restrictions atomically, includ
  }
  assert.equal((await ref(id).get()).get('status'),'contracted');
 });
+
+test('financial review request is unique, restricted to parties, and closes on voluntary resolution',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-finreview-payer',beneficiary='fixture-finreview-worker',outsider='fixture-finreview-other';
+ for(const uid of [payer,beneficiary,outsider])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const create=async(id:string)=>{
+  await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+  await s.applyToFreelanceOffer(beneficiary,id);await s.selectFreelanceApplication(payer,id,beneficiary);await s.confirmFreelanceContract(beneficiary,id,true);
+ };
+ const paid={eventId:'paid',statement:'paid',confirmed:true},denied={eventId:'denied',statement:'not_received',confirmed:true},received={eventId:'received',statement:'received',confirmed:true};
+ const id='fixture-financial-review',queue=adminDb.doc('freelanceFinancialReviewsV1/'+id);
+ await create(id);
+ await assert.rejects(request(payer,id,{confirmed:true}),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+ await record(beneficiary,id,denied);
+ await assert.rejects(request(beneficiary,id,{confirmed:true}),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+ await record(payer,id,paid);
+ await assert.rejects(request(outsider,id,{confirmed:true}),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(request(payer,id,{confirmed:false}),/FREELANCE_INVALID/);
+ await assert.rejects(request(payer,id,{confirmed:true,status:'resolved'}),/FREELANCE_INVALID/);
+ const results=await Promise.all([request(payer,id,{confirmed:true}),request(beneficiary,id,{confirmed:true})]);
+ assert.deepEqual(results.map(x=>x.created).sort(),[false,true]);
+ const entry=(await queue.get()).data()!;
+ assert.equal(entry.status,'pending');assert.ok([payer,beneficiary].includes(entry.requestedBy));
+ assert.equal(entry.requesterUid,payer);assert.equal(entry.beneficiaryUid,beneficiary);
+ for(const uid of [payer,beneficiary,outsider]){
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,queue.path)));await assertFails(setDoc(doc(db,queue.path),{status:'resolved_voluntarily'}));
+ }
+ await assert.rejects(s.publishFreelanceOffer(payer,'fixture-finreview-blocked',input),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await record(beneficiary,id,received);
+ const closed=(await queue.get()).data()!;
+ assert.equal(closed.status,'resolved_voluntarily');assert.ok(closed.resolvedAt);
+ assert.deepEqual({...closed,status:'pending',resolvedAt:undefined},{...entry,resolvedAt:undefined});
+ await assert.rejects(request(payer,id,{confirmed:true}),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+ await s.publishFreelanceOffer(payer,'fixture-finreview-unblocked',input);
+ const raceId='fixture-finreview-race',raceRef=adminDb.doc('freelanceFinancialReviewsV1/'+raceId);
+ await create(raceId);await record(payer,raceId,paid);await record(beneficiary,raceId,denied);
+ const race=await Promise.allSettled([request(payer,raceId,{confirmed:true}),record(beneficiary,raceId,received)]);
+ assert.equal(race[1].status,'fulfilled');
+ const raceEntry=await raceRef.get();
+ assert.ok(!raceEntry.exists||raceEntry.get('status')==='resolved_voluntarily');
+ for(const uid of [payer,beneficiary])assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+});
