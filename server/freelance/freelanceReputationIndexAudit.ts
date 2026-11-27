@@ -352,3 +352,31 @@ export async function forwardReputationSquare(uid:string,postId:unknown,destinat
   return {postId,forwardedAtIso};
  });
 }
+
+/** A private distribution uses the existing accepted-connection chat.
+ * The message contains only a trusted reference, not a copy of the card.
+ * The direct receipt and message are atomic; the public window is unchanged. */
+export async function forwardReputationToConnected(uid:string,postId:unknown,connectionId:unknown,recipientId:unknown,confirmed:unknown){
+ assertFreelanceReputationLocal();
+ if(!squarePublicationEnabled()||process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY!=='true'||process.env.KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||!validSquarePost(postId)||!validFreelanceId(connectionId)||!validFreelanceId(recipientId)||uid===recipientId||confirmed!==true||(connectionId!==uid+'_'+recipientId&&connectionId!==recipientId+'_'+uid))throw Error('FREELANCE_INVALID');
+ const receiptRef=adminDb.doc('freelanceReputationSquarePostsV1/'+postId+'/directForwards/'+digestVariablePaymentSources({uid,recipientId}));
+ const messageRef=adminDb.collection('social_chats/'+connectionId+'/messages').doc();
+ return adminDb.runTransaction(async tx=>{
+  await assertReputationSquareInteraction(tx,postId);
+  const [connection,receipt]=await tx.getAll(adminDb.doc('connections/'+connectionId),receiptRef);
+  const c=connection.data(),prior=receipt.data();
+  if(!c||c.status!=='accepted'||!Array.isArray(c.participantIds)||c.participantIds.length!==2||!c.participantIds.includes(uid)||!c.participantIds.includes(recipientId)||!((c.senderId===uid&&c.receiverId===recipientId)||(c.senderId===recipientId&&c.receiverId===uid)))throw Error('FREELANCE_FORBIDDEN');
+  const now=new Date(),forwardedAtIso=now.toISOString();
+  const scope={schemaVersion:1,postId,actorId:uid,recipientId,destination:'connected'};
+  if(prior){
+   if(typeof prior.forwardedAtIso!=='string'||!validFreelanceId(prior.messageId)||!validFreelanceId(prior.connectionId)||!equal(prior,{...scope,connectionId:prior.connectionId,messageId:prior.messageId,forwardedAtIso:prior.forwardedAtIso}))throw Error('FREELANCE_REPUTATION_CONFLICT');
+   const elapsed=now.getTime()-Date.parse(prior.forwardedAtIso);
+   if(!Number.isFinite(elapsed)||elapsed<0)throw Error('FREELANCE_REPUTATION_CONFLICT');
+   if(elapsed<squareWindow)throw Error('FREELANCE_CONFLICT');
+  }
+  tx.create(messageRef,{senderId:uid,receiverId:recipientId,text:'Encaminhou uma publicação de Experiência e Reputações.',reputationPostId:postId,createdAt:now});
+  tx.set(receiptRef,{...scope,connectionId,messageId:messageRef.id,forwardedAtIso});
+  return {messageId:messageRef.id};
+ });
+}
