@@ -1760,6 +1760,44 @@ test('hourly advance persistence: authenticated contract, private service, bilat
   for(const a of [owner,worker]){const view=await readHourlyAdvances(a.uid,id);assert.equal(view.bilateralMinor,5000);assert.equal(view.adjustment,null);assert.equal(view.bankVerified,false);assert.ok(view.events.every(e=>!('actorUid' in e)));}
   const history=ref.collection('directPayment').doc('hourlyAdvances');assert.equal((await history.get()).get('events').length,3);
   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+
+  const {readHourlyReconciliation,freezeHourlyReconciliation}=await import('../server/freelance/freelanceHourlyReconciliationService.js');
+  const {readFreelanceHourlyFinalContext}=await import('../server/freelance/freelanceHourlyFinalObligationService.js');
+  const originalDigest=(await history.get()).get('commitmentDigest');
   await history.update({commitmentDigest:'0'.repeat(64)});await assert.rejects(readHourlyAdvances(owner.uid,id),/CONFLICT/);
+  await history.update({commitmentDigest:originalDigest});
+  assert.equal((await send(owner,input('paid2','paid',3,'p2',1000))).revision,4);
+  const pre=await readHourlyReconciliation(owner.uid,id);assert.equal(pre.recognizedMinor,null);assert.equal(pre.eligible,false);
+  const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'hourly-advance-'+suffix+'@example.invalid'}});
+  for(const action of ['bind_pix','authorize_pix_share']){
+   const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance',{method:'POST',headers:{authorization:'Bearer '+worker.token,'content-type':'application/json'},body:JSON.stringify({offerId:id,action,confirmed:true,expectedRevision:1})});
+   const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));
+  }
+  const future=new Date(Date.now()+86400000).toISOString();
+  await act(owner,id,'propose_schedule',200,{proposalId:'schedule',scheduledStartAt:future,confirmed:true});
+  await act(worker,id,'accept_schedule',200,{proposalId:'schedule',confirmed:true});
+  await act(owner,id,'attendance_event',200,{kind:'authorize_early_start',eventId:'early',expectedSequence:0,confirmed:true});
+  await act(worker,id,'start',200,{confirmed:true});await new Promise(resolve=>setTimeout(resolve,100));
+  await act(worker,id,'request_completion',200,{confirmed:true});await act(owner,id,'confirm_completion',200,{confirmed:true});
+  const gross=(await ref.collection('financialBasis').doc('hourlyCompletion').get()).get('finalAmountMinor');
+  assert.ok(Number.isSafeInteger(gross)&&gross>=0&&gross<=15000);
+  const awaiting=await readHourlyReconciliation(owner.uid,id);assert.equal(awaiting.recognizedMinor,gross);assert.equal(awaiting.eligible,false);assert.equal(awaiting.adjustment,null);
+  await assert.rejects(freezeHourlyReconciliation(owner.uid,id,{confirmed:true,expectedRevision:awaiting.revision,sourceDigest:awaiting.sourceDigest,historyDigest:awaiting.historyDigest}),/CONFLICT/);
+  await assert.rejects(db.runTransaction(tx=>readFreelanceHourlyFinalContext(tx,owner.uid,id)),/CONFLICT/);
+  await assert.rejects(send(owner,input('late','paid',4,'p3')),/CONFLICT/);
+  await send(worker,input('received2','received',4,'p2',1000));
+  const ready=await readHourlyReconciliation(worker.uid,id);assert.equal(ready.eligible,true);assert.equal(ready.bilateralMinor,6000);
+  assert.equal(ready.adjustment?.amountMinor??0,Math.abs(gross-6000));
+  if(gross!==6000)assert.equal(ready.adjustment?.direction,gross>6000?'additional':'refund');
+  const freeze={confirmed:true,expectedRevision:ready.revision,sourceDigest:ready.sourceDigest,historyDigest:ready.historyDigest};
+  await assert.rejects(freezeHourlyReconciliation(other.uid,id,freeze),/FORBIDDEN/);
+  await assert.rejects(freezeHourlyReconciliation(owner.uid,id,{...freeze,historyDigest:'0'.repeat(64)}),/CONFLICT/);
+  assert.equal((await freezeHourlyReconciliation(owner.uid,id,freeze)).changed,true);
+  assert.equal((await freezeHourlyReconciliation(worker.uid,id,freeze)).changed,false);
+  assert.equal((await readHourlyReconciliation(owner.uid,id)).frozen,true);
+  const snapshot=ref.collection('directPayment').doc('hourlyReconciliation');
+  await snapshot.update({bilateralMinor:1});await assert.rejects(readHourlyReconciliation(owner.uid,id),/CONFLICT/);
+
  }finally{if(prev===undefined)delete process.env[gate];else process.env[gate]=prev;if(prevAdv===undefined)delete process.env[advGate];else process.env[advGate]=prevAdv;}
 });
