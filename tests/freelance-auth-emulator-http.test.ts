@@ -378,6 +378,8 @@ test('financial administrative decision: protected, audited, no bank proof, one 
   assert.equal((await ref.get()).get('status'),'resolved_administratively');
   assert.equal((await ref.get()).get('decision.reason'),body.reason);
   assert.equal((await ref.get()).get('decision.evidenceRevision'),2);
+  const {listUserNotifications}=await import('../server/notifications/userNotificationService.js');
+  for(const a of [payer,worker])assert.equal((await listUserNotifications({recipientUserId:a.uid})).notifications.filter(n=>n.eventType==='freelance_finance_administrative_release').length,1);
   assert.deepEqual((await history.get()).data(),initial);
   const audit=await db.collection('kyrub_admin/control_plane/audit_logs').where('targetId','==',id).get();
   assert.equal(audit.size,1);assert.equal(audit.docs[0].get('actorId'),admin.uid);assert.equal(audit.docs[0].get('bankVerified'),false);
@@ -415,6 +417,15 @@ test('participant finance HTTP: authenticated statements, private own evidence, 
  await send(worker,200,'statement',{statement:'not_received',eventId:'denied'});
  assert.equal((await call(payer,200,q)).financialState,'disputed');
  for(const a of [payer,worker])assert.deepEqual(await call(a,200,'?view=restrictions'),{restricted:true,openOfferIds:[id]});
+ const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
+ const {shouldDeliverUserNotificationToBrowser,buildDefaultUserCommunicationPreferences}=await import('../shared/userCommunicationPreferences.js');
+ const list=(uid:string)=>listUserNotifications({recipientUserId:uid});
+ const opened=(await list(payer.uid)).notifications.find(n=>n.eventType==='freelance_finance_dispute_opened')!;
+ assert.ok(opened);await markUserNotificationRead({recipientUserId:payer.uid,notificationId:opened.id});
+ await send(worker,200,'statement',{statement:'not_received',eventId:'denied'});
+ const afterReplay=await list(payer.uid);
+ assert.equal(afterReplay.notifications.filter(n=>n.eventType==='freelance_finance_dispute_opened').length,1);
+ assert.ok(afterReplay.notifications.find(n=>n.id===opened.id)?.readAt);
  await send(worker,200,'request_review');
  await send(payer,200,'submit_note',{evidenceId:'note-a',note:'Manifestação privada de teste.'});
  await send(payer,400,'submit_receipt',{receiptId:'receipt-a',pngBase64:'YWJjZA=='});
@@ -427,4 +438,13 @@ test('participant finance HTTP: authenticated statements, private own evidence, 
  const resolved=await call(payer,200,q);assert.equal(resolved.reviewStatus,'resolved_voluntarily');assert.equal(resolved.bankVerified,false);
  await call(payer,403,receiptQ);
  assert.deepEqual(await call(worker,200,'?view=restrictions'),{restricted:false,openOfferIds:[]});
+ for(const a of [payer,worker]){
+  const inbox=await list(a.uid);
+  for(const kind of ['dispute_opened','review_requested','voluntary_release'])assert.equal(inbox.notifications.filter(n=>n.eventType==='freelance_finance_'+kind).length,1);
+  const p=buildDefaultUserCommunicationPreferences(a.uid);p.browser.enabled=true;
+  for(const n of inbox.notifications){assert.equal(n.recipientUserId,a.uid);assert.equal(n.target.kind,'none');assert.equal(shouldDeliverUserNotificationToBrowser(p,n),false);}
+  assert.ok(!JSON.stringify(inbox).includes('Manifestação privada de teste.'));
+  assert.ok(!JSON.stringify(inbox).includes('pngBase64'));
+ }
+ assert.equal((await list(other.uid)).notifications.length,0);
 });

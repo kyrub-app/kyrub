@@ -325,7 +325,18 @@ try{
  await financialAction(receiverPanel,'Confirmar recebimento');await waitText(receiverPanel,'Regularização voluntária registrada');
  await button(payerPanel,'Consultar situação financeira').click();await waitText(payerPanel,'Recebimento confirmado pelas partes');
  for(const a of [fp,fw])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
- console.log('PASS direct financial UI: two authenticated contexts, reverse-order dispute, private note/PNG, voluntary release');
+ for(const page of [payerPage,receiverPage]){
+  const modal=page.getByRole('dialog',{name:page===payerPage?'Solicitar Freelas':'Fazer Freelas',exact:true});
+  await button(modal,'Fechar').click();
+  const response=page.waitForResponse(r=>r.url().includes('/api/notifications?limit=')&&r.request().method()==='GET');
+  await page.locator('#canonical-notification-trigger').click();
+  const panel=page.locator('#canonical-notification-center');
+  const inbox=await response;assert.equal(inbox.status(),200,await inbox.text());
+  await waitText(panel,'Divergência financeira em Freelas');await waitText(panel,'Regularização financeira em Freelas');
+  assert.ok(!(await panel.innerText()).includes('Relato fictício do não recebimento.'));
+  await page.screenshot({path:'freelance-browser-evidence/financial-notices-'+(page===payerPage?'payer':'worker')+'.png',fullPage:true});
+ }
+ console.log('PASS direct financial UI: two authenticated contexts, reverse-order dispute, private note/PNG, voluntary release, global bell notices');
  const adminActor=await account('financial-admin','requester','Administrador fictício');
  await db.doc('kyrub_admin/control_plane/admins/'+adminActor.uid).set({uid:adminActor.uid,email:adminActor.uid+'@example.invalid',role:'super_admin',status:'active'});
  const adminPage=await session(adminActor,1365);

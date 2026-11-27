@@ -5,6 +5,7 @@ import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {readFinancialContext,checkedReview,isFinancialReviewOutcome,type FinancialReviewDecision} from '../freelance/freelanceExternalPaymentStatementService.js';
 import {readFinancialReceiptManifest,readFinancialReceiptBytes} from '../freelance/freelanceFinancialReceiptService.js';
+import {writeFreelanceFinancialNotices} from '../freelance/freelanceFinancialNoticeService.js';
 import {readFinancialEvidence} from '../freelance/freelanceFinancialEvidenceService.js';
 import {assertFinancialCaseRestrictions,prepareAdministrativeDisputeRelease} from '../freelance/freelanceEngagementRestrictionService.js';
 
@@ -97,6 +98,7 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
   tx.create(auditRef,{id:auditId,action:'admin.freelance.financial_review_resolved',actorId:uid,actorRole:'super_admin',
    targetType:'freelance_financial_review',targetId:offerId,outcome,reasonHash:digest,evidenceRevision,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});
   release();
+  writeFreelanceFinancialNotices(tx,obligation,'administrative_release',decidedAt);
   return {status:'resolved_administratively' as const,outcome,replay:false,bankVerified:false as const};
  });
 }
