@@ -15,6 +15,7 @@ import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
+import { ErpManagementAlertsBell } from '../store/ErpManagementAlertsBell';
 
 interface RendaTabProps {
   guestReadOnly?: boolean;
@@ -345,6 +346,7 @@ export function RendaTab({
               <h3 className="text-xs font-black uppercase tracking-wider text-white">
                 Kyrub Lojas
               </h3>
+              {!guestReadOnly && hasConfiguredStore && <ErpManagementAlertsBell />}
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
               {hasConfiguredStore

@@ -17,7 +17,7 @@ import {
 } from '../../shared/userCommunicationPreferences';
 import type { UserNotification } from '../../shared/userNotifications';
 import {
-  USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, notificationOrigin,
+  USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin,
   type UserNotificationOrigin,
 } from '../../shared/userNotificationOrigins';
 import { auth } from '../utils/firebase';
@@ -422,7 +422,7 @@ export function UserNotificationCenterBridge() {
                   const count = tab.id === 'all'
                     ? unreadCount
                     : notifications.filter(item => !item.readAt &&
-                      notificationOrigin(item) === tab.id).length;
+                      userNotificationOrigin(item.category) === tab.id).length;
                   return (
                     <button key={tab.id} type="button" role="tab"
                       aria-selected={activeOrigin === tab.id}

@@ -9,7 +9,7 @@ import {
   isUserNotificationUnread,
   userNotificationPath,
 } from '../shared/userNotifications';
-import { USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, notificationOrigin, userNotificationOrigin } from '../shared/userNotificationOrigins';
+import { USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin } from '../shared/userNotificationOrigins';
 
 describe('canonical user notifications', () => {
   test('notification id and path are deterministic for one source event', () => {
@@ -149,7 +149,7 @@ describe('canonical user notifications', () => {
 
   test('existing notification categories map to the proper single-header tabs without changing the inbox', () => {
     assert.deepEqual(USER_NOTIFICATION_ORIGIN_TABS.map(tab => tab.label), [
-      'Todas', 'Comunidades', 'Lojas', 'Pessoas', 'ERP', 'Plataforma',
+      'Todas', 'Comunidades', 'Lojas', 'Pessoas', 'Plataforma',
     ]);
     assert.equal(userNotificationOrigin('community_group_invite'), 'communities');
     assert.equal(userNotificationOrigin('store_chat'), 'stores');
@@ -182,42 +182,6 @@ describe('canonical user notifications', () => {
     assert.equal(filterUserNotificationsByOrigin(items, 'stores').length, 1);
     assert.equal(filterUserNotificationsByOrigin(items, 'people').length, 1);
     assert.equal(filterUserNotificationsByOrigin(items, 'platform').length, 1);
-  });
-
-  test('ERP tab classifies existing staff events without rewriting history or mixing customer and platform alerts', () => {
-    const base = {
-      recipientUserId: 'staff-1', actorPrincipalId: 'manager-1',
-      title: 'Evento', body: 'Aviso', createdAt: '2026-11-27T12:00:00.000Z',
-    };
-    const events = ['staff_notice_published', 'staff_task_assigned', 'staff_shift_published', 'staff_shift_cancelled'];
-    const staff = events.map((eventType, i) => buildUserNotification({
-      ...base, category: 'system', eventType, sourceId: 'staff-' + i,
-      target: { kind: 'none', storeId: 'store-1' },
-    }));
-    staff[0].readAt = '2026-11-27T12:01:00.000Z';
-    const platform = buildUserNotification({ ...base, category: 'system', eventType: 'security_alert', sourceId: 'platform', target: { kind: 'none', storeId: 'store-1' } });
-    const incomplete = buildUserNotification({ ...base, category: 'system', eventType: 'staff_task_assigned', sourceId: 'incomplete' });
-    const customer = buildUserNotification({ ...base, category: 'order', eventType: 'staff_task_assigned', sourceId: 'customer', target: { kind: 'order', storeId: 'store-1' } });
-    const items = [...staff, platform, incomplete, customer];
-    const before = JSON.stringify(items);
-    assert.deepEqual(filterUserNotificationsByOrigin(items, 'erp'), staff);
-    assert.deepEqual(filterUserNotificationsByOrigin(items, 'platform'), [platform, incomplete]);
-    assert.deepEqual(filterUserNotificationsByOrigin(items, 'stores'), [customer]);
-    assert.equal(filterUserNotificationsByOrigin(items, 'all').length, items.length);
-    assert.equal(items.filter(item => !item.readAt && notificationOrigin(item) === 'erp').length, 3);
-    assert.equal(JSON.stringify(items), before);
-    const bridge = readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8');
-    assert.match(bridge, /notificationOrigin\(item\) === tab.id/);
-    for (const [path, names] of [
-      ['server/staff/staffNoticeService.ts', ['staff_notice_published']],
-      ['server/staff/staffTaskService.ts', ['staff_task_assigned']],
-      ['server/staff/staffShiftService.ts', ['staff_shift_published', 'staff_shift_cancelled']],
-    ] as const) {
-      const service = readFileSync(path, 'utf8');
-      assert.match(service, /category: 'system'/);
-      for (const name of names) assert.ok(service.includes(name));
-      assert.match(service, /kind: 'none', storeId: actor.canonicalStoreId/);
-    }
   });
 
   test('notification center preserves one global badge and actions across origin tabs', () => {
@@ -267,4 +231,26 @@ describe('canonical user notifications', () => {
     assert.match(rules, /existsAfter\(\/databases\/\$\(database\)\/documents\/social_chats/);
   });
 
+});
+
+test('ERP management bell is separate from general notifications and Staff', async () => {
+  const { buildInventoryManagementAlerts } = await import('../shared/erpManagementAlerts');
+  const item = (id: string, currentQuantity: number, minimumQuantity: number) => ({ id, name: id, unit: 'un', currentQuantity, minimumQuantity });
+  const input = [item('zero',0,5), item('minimum',5,5), item('below',3,5), item('normal',6,5), item('unconfigured',1,0), item('invalid',-1,5)];
+  const before = JSON.stringify(input);
+  const alerts = buildInventoryManagementAlerts(input);
+  assert.deepEqual(alerts.map(a => [a.id,a.severity]), [['zero','out_of_stock'],['below','low_stock'],['minimum','low_stock']]);
+  assert.equal(JSON.stringify(input), before);
+  assert.equal(buildInventoryManagementAlerts([item('zero',6,5)]).length, 0);
+  const renda = readFileSync('src/components/tabs/RendaTab.tsx','utf8');
+  assert.match(renda, /!guestReadOnly && hasConfiguredStore && <ErpManagementAlertsBell \/>/);
+  assert.match(renda, /hasConfiguredStore && <LocalServiceDashboardCards \/>/);
+  const bell = readFileSync('src/components/store/ErpManagementAlertsBell.tsx','utf8');
+  assert.match(bell, /getDocFromServer/);
+  assert.match(bell, /store.data\(\)\?\.ownerId !== uid/);
+  assert.match(bell, /getProductInventoryDocumentPath\(uid\)/);
+  assert.match(bell, /snapshot.metadata.fromCache \|\| snapshot.metadata.hasPendingWrites/);
+  assert.match(bell, /auth.currentUser\?\.uid === uid/);
+  assert.doesNotMatch(bell, /setDoc\(|addDoc\(|updateDoc\(|localStorage|loadUserNotificationInbox/);
+  assert.ok(!USER_NOTIFICATION_ORIGIN_TABS.some(tab => tab.label === 'ERP'));
 });
