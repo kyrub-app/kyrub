@@ -1,3 +1,4 @@
+import {prepareExcessRestriction} from './freelanceEngagementRestrictionService.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
@@ -25,22 +26,33 @@ export async function readHourlyExcessContext(tx:Transaction,uid:string,id:strin
  }
  const resolved=proposal?.status==='accepted'?buildResolution(record,proposal):null;
  if(resolved?(!resolution.exists||canonicalVariablePaymentRecord(resolution.data())!==canonicalVariablePaymentRecord(resolved)):resolution.exists)return fail();
- return {s,record,c,direct,pointer,proposal,resolutionRef,resolved};
+ const disputeRef=direct.doc('hourlyExcessDispute'),dispute=(await tx.get(disputeRef)).data() as {schemaVersion:1;sourceDigest:string;openedBy:Role;openedAt:string;status:'open'|'review_requested'|'resolved_voluntarily';requestedAt?:string;requestedBy?:Role;resolvedAt?:string;agreementId?:string}|undefined;
+ if(dispute){
+  const requested=dispute.requestedAt!==undefined||dispute.requestedBy!==undefined;
+  if(dispute.schemaVersion!==1||dispute.sourceDigest!==record.sourceDigest||!['worker','requester'].includes(dispute.openedBy)||!iso(dispute.openedAt)||Date.parse(dispute.openedAt)<Date.parse(record.completedAt)||!['open','review_requested','resolved_voluntarily'].includes(dispute.status)||Object.keys(dispute).length!==5+(requested?2:0)+(dispute.status==='resolved_voluntarily'?2:0)||(requested&&(!iso(dispute.requestedAt)||Date.parse(dispute.requestedAt)<Date.parse(dispute.openedAt)||!['worker','requester'].includes(dispute.requestedBy??'')))||(dispute.status==='open'&&requested)||(dispute.status==='review_requested'&&!requested)||(dispute.status==='resolved_voluntarily'?(!resolved||dispute.agreementId!==proposal?.id||dispute.resolvedAt!==proposal?.decidedAt||!iso(dispute.resolvedAt)||Date.parse(dispute.resolvedAt)<Date.parse(dispute.requestedAt??dispute.openedAt)):!!resolved))return fail();
+ }
+ const restricted=!!dispute&&dispute.status!=='resolved_voluntarily';
+ const queueRef=adminDb.doc('freelanceHourlyExcessReviewsV1/'+id),queue=(await tx.get(queueRef)).data();
+ if(dispute?.requestedAt){
+  if(!queue||Object.keys(queue).length!==6||queue.offerId!==id||queue.requesterUid!==record.commitment.requesterUid||queue.beneficiaryUid!==record.commitment.beneficiaryUid||queue.sourceDigest!==record.sourceDigest||queue.requestedAt!==dispute.requestedAt||queue.status!==(restricted?'pending':'resolved_voluntarily'))return fail();
+ }else if(queue)return fail();
+ await prepareExcessRestriction(tx,record.commitment,restricted,restricted);
+ return {s,record,c,direct,pointer,proposal,resolutionRef,resolved,dispute,disputeRef,restricted,queueRef};
 }
 function buildResolution(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],p:Proposal){
  return {schemaVersion:1,kind:'hourly_excess_resolution',offerId:record.commitment.offerId,baseDigest:record.sourceDigest,sourceDigest:digestVariablePaymentSources({base:record.sourceDigest,proposal:p}),resolvedAt:p.decidedAt!,...calculateHourlyExcessResolution(record,p.recognizedExcessMs),payable:false};
 }
 export async function readHourlyExcessReview(uid:string,id:string){
  return adminDb.runTransaction(async tx=>{
-  const {record,c,proposal,resolved}=await readHourlyExcessContext(tx,uid,id),a=record.accounting;
-  return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,hourlyRateMinor:a.hourlyRateMinor,authorizedMinor:a.withinCapReferenceMinor,excessMs:a.excessMs,recordedMs:a.compensableMs,proposal,resolved,payable:false,bankVerified:false};
+  const {record,c,proposal,resolved,dispute,restricted}=await readHourlyExcessContext(tx,uid,id),a=record.accounting;
+  return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,hourlyRateMinor:a.hourlyRateMinor,authorizedMinor:a.withinCapReferenceMinor,excessMs:a.excessMs,recordedMs:a.compensableMs,proposal,resolved,dispute:dispute??null,restrictionActive:restricted,payable:false,bankVerified:false};
  },{readOnly:true});
 }
 export async function changeHourlyExcessReview(uid:string,id:string,action:'propose'|'accept'|'decline'|'withdraw',input:{proposalId:unknown;sourceDigest:unknown;recognizedExcessMs?:unknown;confirmed:unknown}){
  if(!validFreelanceId(input.proposalId)||input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest))throw Error('FREELANCE_INVALID');
  const proposalId=input.proposalId;
  return adminDb.runTransaction(async tx=>{
-  const {record,c,direct,pointer,proposal:p,resolutionRef}=await readHourlyExcessContext(tx,uid,id);
+  const {record,c,direct,pointer,proposal:p,resolutionRef,dispute,disputeRef,restricted,queueRef}=await readHourlyExcessContext(tx,uid,id);
   if(input.sourceDigest!==record.sourceDigest)return fail();
   const now=new Date().toISOString(),ref=direct.doc('hourlyExcessAgreement-'+proposalId),recipient=c.actor==='worker'?'requester':'freelancer';
   if(Date.parse(now)<Date.parse(record.completedAt))return fail();
@@ -60,9 +72,35 @@ export async function changeHourlyExcessReview(uid:string,id:string,action:'prop
   if(action==='withdraw'?p.proposedBy!==c.actor:p.proposedBy===c.actor)throw Error('FREELANCE_FORBIDDEN');
   if(p.status===status&&p.decidedBy===c.actor)return {changed:false};
   if(p.status!=='pending'||Date.parse(now)<Date.parse(p.proposedAt))return fail();
-  if(status==='accepted')tx.create(resolutionRef,buildResolution(record,{...p,status,decidedBy:c.actor,decidedAt:now}));
+  const release=status==='accepted'&&restricted?await prepareExcessRestriction(tx,record.commitment,true,false):()=>{};
+  if(status==='accepted'){
+   if(restricted){if(!dispute||Date.parse(now)<Date.parse(dispute.requestedAt??dispute.openedAt))return fail();tx.update(disputeRef,{status:'resolved_voluntarily',resolvedAt:now,agreementId:p.id});if(dispute.requestedAt)tx.update(queueRef,{status:'resolved_voluntarily'});release();}
+   tx.create(resolutionRef,buildResolution(record,{...p,status,decidedBy:c.actor,decidedAt:now}));
+  }
   tx.update(ref,{status,decidedBy:c.actor,decidedAt:now});
   writeFreelanceFinancialNotices(tx,record.commitment,status==='accepted'?'hourly_excess_accepted':'hourly_excess_closed',now,recipient,proposalId);
   return {changed:true};
+ });
+}
+
+export async function changeHourlyExcessDispute(uid:string,id:string,action:'open'|'request_review',input:{sourceDigest:unknown;confirmed:unknown}){
+ if(input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const {record,c,proposal,dispute,disputeRef,restricted,queueRef}=await readHourlyExcessContext(tx,uid,id);
+  if(input.sourceDigest!==record.sourceDigest)return fail();
+  const now=new Date().toISOString();
+  if(action==='open'){
+   if(dispute){if(restricted&&dispute.openedBy===c.actor)return {changed:false};return fail();}
+   if(proposal?.status!=='declined'||!proposal.decidedAt||Date.parse(now)<Date.parse(proposal.decidedAt))return fail();
+   const write=await prepareExcessRestriction(tx,record.commitment,false,true);
+   tx.create(disputeRef,{schemaVersion:1,sourceDigest:record.sourceDigest,openedBy:c.actor,openedAt:now,status:'open'});
+   write();writeFreelanceFinancialNotices(tx,record.commitment,'hourly_excess_disputed',now,'both','dispute');return {changed:true};
+  }
+  if(!dispute||!restricted)return fail();
+  if(dispute.status==='review_requested'){if(dispute.requestedBy===c.actor)return {changed:false};return fail();}
+  if(dispute.status!=='open'||Date.parse(now)<Date.parse(dispute.openedAt))return fail();
+  tx.update(disputeRef,{status:'review_requested',requestedAt:now,requestedBy:c.actor});
+  tx.create(queueRef,{offerId:id,requesterUid:record.commitment.requesterUid,beneficiaryUid:record.commitment.beneficiaryUid,sourceDigest:record.sourceDigest,requestedAt:now,status:'pending'});
+  writeFreelanceFinancialNotices(tx,record.commitment,'hourly_excess_review_requested',now,'both','dispute');return {changed:true};
  });
 }
