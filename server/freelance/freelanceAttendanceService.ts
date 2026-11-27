@@ -10,7 +10,7 @@ const fail=():never=>{throw Error('FREELANCE_ATTENDANCE_CONFLICT');};
 const manualKinds=['check_in','confirm_presence','authorize_early_start','acknowledge_waiting','request_break','approve_break','resume'] as const;
 type ManualKind=typeof manualKinds[number];
 const beforeStart=['check_in','confirm_presence','authorize_early_start','acknowledge_waiting'];
-async function timeline(tx:Transaction,c:Context){
+export async function readAttendanceTimeline(tx:Transaction,c:Context){
  const ref=c.ref.collection('attendance').doc('timeline');
  const raw=(await tx.get(ref)).data();
  if(c.current?.status!=='accepted'){if(raw)return fail();return null;}
@@ -20,7 +20,7 @@ async function timeline(tx:Transaction,c:Context){
  if(events.some(e=>Date.parse(e.at)<Date.parse(c.current!.decidedAt!)))return fail();
  return {ref,events,projection,schedule:c.current.schedule,scheduleId:c.current.id};
 }
-type Timeline=NonNullable<Awaited<ReturnType<typeof timeline>>>;
+type Timeline=NonNullable<Awaited<ReturnType<typeof readAttendanceTimeline>>>;
 function append(tx:Transaction,t:Timeline,event:FreelanceAttendanceEvent){
  const old=t.events.find(e=>e.id===event.id);
  if(old){if(old.kind!==event.kind||old.actor!==event.actor)return fail();return ()=>{};}
@@ -30,7 +30,7 @@ function append(tx:Transaction,t:Timeline,event:FreelanceAttendanceEvent){
 }
 export async function readFreelanceAttendance(uid:string,offerId:string){
  return adminDb.runTransaction(async tx=>{
-  const c=await readAttendanceContext(tx,uid,offerId),t=await timeline(tx,c);
+  const c=await readAttendanceContext(tx,uid,offerId),t=await readAttendanceTimeline(tx,c);
   return {actor:c.actor,operationalStatus:c.offer.status,schedule:c.current?.status==='accepted'?c.current.schedule:null,events:t?.events??[],projection:t?.projection??null};
  },{readOnly:true});
 }
@@ -39,7 +39,7 @@ export async function recordFreelanceAttendance(uid:string,offerId:string,input:
  const kind=input.kind as ManualKind,id='u-'+input.eventId;
  if(id.length>128)throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
-  const c=await readAttendanceContext(tx,uid,offerId),t=await timeline(tx,c);
+  const c=await readAttendanceContext(tx,uid,offerId),t=await readAttendanceTimeline(tx,c);
   if(!t)return fail();
   const existing=t.events.find(e=>e.id===id);
   if(existing){if(existing.kind!==kind||existing.actor!==c.actor)return fail();return;}
@@ -50,7 +50,7 @@ export async function recordFreelanceAttendance(uid:string,offerId:string,input:
 /** Read/validate first; caller invokes returned write only after all other reads.
  * The operational transition and timeline commit atomically. Unscheduled legacy contracts remain unchanged. */
 export async function prepareFreelanceAttendanceLifecycle(tx:Transaction,uid:string,offerId:string,action:'start'|'request_completion'|'confirm_completion',at:string,changed:boolean){
- const c=await readAttendanceContext(tx,uid,offerId),t=await timeline(tx,c);
+ const c=await readAttendanceContext(tx,uid,offerId),t=await readAttendanceTimeline(tx,c);
  if(!t){if(c.current?.status==='pending'&&action==='start')return fail();return ()=>{};}
  const kind=action==='start'?'start':action==='request_completion'?'checkout':'confirm_checkout';
  const id='l-'+action;
@@ -59,7 +59,7 @@ export async function prepareFreelanceAttendanceLifecycle(tx:Transaction,uid:str
 }
 /** Only lifecycle and MFA-protected administration can create system events. */
 export async function prepareFreelanceAttendanceReview(tx:Transaction,participantUid:string,offerId:string,occurrenceId:string,kind:'suspend'|'resume_review',at:string){
- const c=await readAttendanceContext(tx,participantUid,offerId),t=await timeline(tx,c);
+ const c=await readAttendanceContext(tx,participantUid,offerId),t=await readAttendanceTimeline(tx,c);
  if(!t)return ()=>{};
  const id='s-'+createHash('sha256').update(JSON.stringify([occurrenceId,kind])).digest('hex');
  return append(tx,t,{id,kind,actor:'system',at});
