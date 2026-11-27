@@ -6,7 +6,7 @@ import {socialDirectoryPilotEnabled,readAuthorIdentitiesPilot} from '../utils/so
 
 export type LiveAuthorIdentity = AuthorDisplayIdentity;
 
-const validAuthorId = (id: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(id);
+const validAuthorId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(id);
 const concealedAuthors=(ids:string[]):Record<string,LiveAuthorIdentity>=>Object.fromEntries(ids.map(uid=>[uid,{name:'',avatar:''}]));
 
 /**
@@ -18,7 +18,7 @@ const concealedAuthors=(ids:string[]):Record<string,LiveAuthorIdentity>=>Object.
  * existing rules. Failed or unavailable lookups leave the saved post snapshot
  * as the fallback. No email or account data enters the UI.
  */
-export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<string, LiveAuthorIdentity> {
+export function useLiveAuthorIdentities(authorIds: readonly (string | null | undefined)[]): Record<string, LiveAuthorIdentity> {
   const idsKey = [...new Set(authorIds.filter(validAuthorId))].sort().join('|');
   const [session,setSession]=useState(()=>auth.currentUser);
   const [state,setState]=useState<{session:typeof auth.currentUser;profiles:Record<string,LiveAuthorIdentity>}>(()=>({session:auth.currentUser,profiles:{}}));
