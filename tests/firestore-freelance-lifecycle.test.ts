@@ -204,3 +204,44 @@ test('private personal receiving destination: declared only, masked response, re
  assert.equal((await adminDb.doc(path).get()).get('key'),undefined);
  assert.equal((await adminDb.doc(path).get()).get('keyType'),undefined);
 });
+
+test('CID personal Pix import: authoritative linkage, masked choices, source version and explicit replacement',async()=>{
+ const {listPersonalCidPixCandidates,importPersonalCidPixDestination,readPersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const uid='fixture-cid-import',outsider='fixture-cid-outsider',tagId='a'.repeat(32),corporateId='b'.repeat(32);
+ const tag=adminDb.doc('kyrub_official_tags/'+tagId),corporate=adminDb.doc('kyrub_official_tags/'+corporateId);
+ const ownerId='tagpk_'+'x'.repeat(43),pix={keyType:'email',key:'fixture-cid@example.invalid',recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true};
+ const card={distribution:'promotional',model:'adesivo',manufacturingState:'released',ownerAuthMode:'passkey',ownerId,firstOwnerId:ownerId,linkedAccountId:uid,linkedAccountAt:'2026-11-27T00:00:00Z',enabled:true,blocked:false,presentation:{name:'Teste',occupation:'',about:'',pix}};
+ await Promise.all([adminDb.doc('users/'+uid).set({uid}),adminDb.doc('users/'+outsider).set({uid:outsider}),...([uid,outsider].map(id=>adminDb.doc('identity_verifications/'+id).set({status:'approved',approvedProfiles:['freelancer']}))),tag.set(card),corporate.set({...card,presentation:{...card.presentation,pix:{...pix,keyType:'cnpj',key:'04.252.011/0001-10'}}})]);
+ try{
+  const list=await listPersonalCidPixCandidates(uid);
+  assert.equal(list.candidates.length,1);
+  const choice=list.candidates[0];
+  assert.equal(choice.cidId,tagId);assert.equal(choice.keyType,'email');assert.equal(choice.maskedKey,'••••alid');assert.equal(choice.ownershipVerified,false);
+  assert.ok(!JSON.stringify(list).includes(pix.key));assert.deepEqual(await listPersonalCidPixCandidates(outsider),{candidates:[]});
+  const request={action:'import_cid',cidId:choice.cidId,sourceVersion:choice.sourceVersion,expectedRevision:0,confirmed:true,replaceExisting:false};
+  await assert.rejects(importPersonalCidPixDestination(outsider,request),/PERSONAL_CID_UNAVAILABLE/);
+  await assert.rejects(importPersonalCidPixDestination(uid,{...request,key:pix.key}),/PERSONAL_PIX_INVALID/);
+  await assert.rejects(importPersonalCidPixDestination(uid,{...request,confirmed:false}),/PERSONAL_PIX_INVALID/);
+  await tag.update({blocked:true,enabled:false});
+  await assert.rejects(importPersonalCidPixDestination(uid,request),/PERSONAL_CID_UNAVAILABLE/);
+  await tag.update({blocked:false,enabled:true});
+  await assert.rejects(importPersonalCidPixDestination(uid,request),/PERSONAL_CID_CHANGED/);
+  const next=(await listPersonalCidPixCandidates(uid)).candidates[0];
+  const fresh={...request,sourceVersion:next.sourceVersion};
+  const races=await Promise.allSettled([importPersonalCidPixDestination(uid,fresh),importPersonalCidPixDestination(uid,fresh)]);
+  assert.equal(races.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal((await readPersonalPixDestination(uid)).revision,1);
+  await assert.rejects(importPersonalCidPixDestination(uid,{...fresh,expectedRevision:1}),/PERSONAL_PIX_CONFLICT/);
+  const changed={...pix,key:'replacement@example.invalid'};
+  await tag.update({'presentation.pix':changed});
+  const financial=adminDb.doc('financialProfilesV1/'+uid+'/receiving/externalPix');
+  assert.equal((await financial.get()).get('key'),pix.key);
+  const updated=(await listPersonalCidPixCandidates(uid)).candidates[0];
+  await importPersonalCidPixDestination(uid,{...fresh,expectedRevision:1,sourceVersion:updated.sourceVersion,replaceExisting:true});
+  assert.equal((await financial.get()).get('key'),changed.key);
+  await tag.update({'presentation.pix':null});
+  assert.deepEqual(await listPersonalCidPixCandidates(uid),{candidates:[]});
+  assert.equal((await financial.get()).get('key'),changed.key);
+  await assert.rejects(importPersonalCidPixDestination(uid,{...fresh,expectedRevision:2,replaceExisting:true,sourceVersion:updated.sourceVersion}),/PERSONAL_CID_UNAVAILABLE/);
+ }finally{await Promise.all([tag.delete(),corporate.delete()]);}
+});
