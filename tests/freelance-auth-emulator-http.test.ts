@@ -500,3 +500,28 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
  await call(payer,409,ids[2],'reveal_pix');
  assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).exists,false);
 });
+
+test('direct publication HTTP: canonical terms, explicit acceptance, immutable obligation, execution still gated',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer=await account('terms-payer',['requester']),worker=await account('terms-worker',['freelancer']);
+ const id='http-direct-terms-'+suffix,base={title:'Freela Pix fictício',description:'Somente emulador',requirements:'',paymentMinor:15000};
+ const terms=createDirectPaymentTerms({method:'external_pix',amountMinor:15000});
+ const advance=createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000});
+ const mp=createDirectPaymentTerms({method:'mercado_pago',amountMinor:15000});
+ await act(payer,id,'publish',409,{terms:{...base,paymentTerms:mp}});
+ await act(payer,id,'publish',400,{terms:{...base,paymentTerms:{...terms,platformCommissionMinor:10}}});
+ await act(payer,id,'publish',200,{terms:{...base,paymentTerms:terms}});
+ await act(payer,id,'publish',409,{terms:{...base,paymentTerms:advance}});
+ const visible=(await call(worker,'?view=detail&offerId='+id,200)).item;
+ assert.deepEqual(visible.paymentTerms,terms);
+ await act(worker,id,'apply',409);await act(worker,id,'apply',409,{expectedPaymentTerms:advance});
+ await act(worker,id,'apply',200,{expectedPaymentTerms:terms});
+ await act(payer,id,'select',200,{applicantUid:worker.uid});
+ await act(worker,id,'confirm',409,{confirmed:true,expectedPaymentTerms:advance});
+ await act(worker,id,'confirm',409,{confirmed:true});
+ await act(worker,id,'confirm',200,{confirmed:true,expectedPaymentTerms:terms});
+ const ref=db.doc('freelanceOffersV1/'+id);
+ assert.deepEqual((await ref.collection('directPayment').doc('obligation').get()).get('terms'),terms);
+ assert.deepEqual((await ref.collection('applications').doc(worker.uid).get()).get('paymentTerms'),terms);
+ assert.equal((await act(worker,id,'start',409,{confirmed:true})).code,'FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+});

@@ -113,6 +113,7 @@ try{
  await employer.getByLabel('Descrição',{exact:true}).fill('Descrição de teste isolado');
  await employer.getByLabel('Requisitos',{exact:true}).fill('Somente emulador');
  await employer.getByLabel('Valor acordado (R$)',{exact:true}).fill('150,00');
+ await employer.getByLabel('Forma de pagamento').selectOption('legacy_fixture');
  await action(employer,'Publicar freela');
  const offers=await db.collection('freelanceOffersV1').where('ownerUid','==',owner.uid).get();
  assert.equal(offers.size,1);const offerId=offers.docs[0].id;
@@ -284,16 +285,32 @@ try{
   assert.equal((await financialRef.get()).get('key'),cidKey);
   console.log('PASS CID Pix UI: masked linked choice, separate confirmation, import without retyping, explicit replacement and independent destination');
  }finally{delete process.env.KYRUB_CID_FINANCE_INTEGRATED_TEST;await cidRef.delete();}
- // Direct publication is intentionally disabled in public transport; create an isolated
- // contract using real lifecycle services, then exercise financial actions through UI.
- const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.ts');
- const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.ts');
+ // Publish and contract through the isolated UI; no fixture-only direct contract.
  const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.ts');
  const fp=await account('finance-payer','requester','Pagador teste'),fw=await account('finance-worker','freelancer','Recebedor teste');
- const directId='browser-direct-'+suffix,directTitle='Freela financeiro '+suffix;
- await publishFreelanceOffer(fp.uid,directId,{title:directTitle,description:'Contrato direto fictício',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
- await applyToFreelanceOffer(fw.uid,directId);await selectFreelanceApplication(fp.uid,directId,fw.uid);await confirmFreelanceContract(fw.uid,directId,true);
+ const directTitle='Freela financeiro '+suffix;
  const payerPage=await session(fp,1365),receiverPage=await session(fw,390);
+ const pm=await open(payerPage,'owner'),wm=await open(receiverPage,'worker');
+ await pm.getByLabel('Título',{exact:true}).fill(directTitle);
+ await pm.getByLabel('Descrição',{exact:true}).fill('Contrato direto fictício');
+ await pm.getByLabel('Valor acordado (R$)',{exact:true}).fill('150,00');
+ assert.equal(await pm.getByLabel('Momento do pagamento').inputValue(),'on_completion');
+ await pm.getByLabel('Momento do pagamento').selectOption('advance');
+ await action(pm,'Publicar freela');
+ const directOffers=await db.collection('freelanceOffersV1').where('ownerUid','==',fp.uid).get();
+ assert.equal(directOffers.size,1);const directId=directOffers.docs[0].id;
+ async function directDetail(modal,tab){
+  await button(modal,tab).click();await button(modal,'Atualizar consulta').click();
+  const article=modal.locator('article').filter({has:modal.page().getByRole('heading',{name:directTitle,exact:true})}).first();
+  await button(article,'Ver detalhes').click();
+  await waitText(modal,'Pix externo · Pagamento antecipado');
+ }
+ await directDetail(wm,'Solicitações');await action(wm,'Candidatar-se');
+ await directDetail(pm,'Publicados');await action(pm,'Selecionar Recebedor teste');
+ await directDetail(wm,'Fazendo');await action(wm,'Confirmar contratação');
+ assert.equal((await db.doc('freelanceOffersV1/'+directId+'/directPayment/obligation').get()).get('terms.timing'),'advance');
+ await button(pm,'Fechar').click();await button(wm,'Fechar').click();
+ console.log('PASS direct Pix publication and acceptance via actual browser interfaces');
  async function finance(page,role){
   const modal=await open(page,role);
   await button(modal,role==='owner'?'Publicados':'Fazendo').click();await button(modal,'Atualizar consulta').click();
