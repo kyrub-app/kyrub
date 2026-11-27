@@ -1,3 +1,4 @@
+import {formatCocarCount} from '../../../shared/cocarDisplay';
 import { useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
 import { SemeaduraJourneyPanel } from '../SemeaduraJourneyPanel';
@@ -50,7 +51,7 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
       }
       requestId.current = null;
       await reload.current();
-      setMessage('Conversão confirmada: 1.000 Pitangas por 1 XP.');
+      setMessage('Conversão confirmada: 1.000 Pitangas por 1 Cocar.');
     } catch { setMessage('Não foi possível confirmar. Tente novamente para consultar a mesma conversão.'); }
     finally { inFlight.current = false; setBusy(false); }
   };
@@ -58,7 +59,7 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
   return <div className="space-y-3">
     {mode !== 'xp' && (
       <h3 className="text-lg font-bold text-white">
-        {mode === 'pitangas' ? 'Minhas Pitangas' : 'Pitangas e XP'}
+        {mode === 'pitangas' ? 'Minhas Pitangas' : 'Pitangas e Cocares'}
       </h3>
     )}
     {mode === 'xp' && (
@@ -81,12 +82,12 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
       <p className="text-sm text-slate-200">
         {mode === 'pitangas'
           ? `${account.pitangas.toLocaleString('pt-BR')} Pitangas`
-          : `${account.pitangas.toLocaleString('pt-BR')} Pitangas · ${account.xp.toLocaleString('pt-BR')} XP`}
+          : `${account.pitangas.toLocaleString('pt-BR')} Pitangas · ${formatCocarCount(account.xp)}`}
       </p>
     )}
     <p className="text-sm leading-relaxed text-slate-400">
-      100 Pitangas no primeiro cadastro elegível. Primeira loja publicada: 2 XP.
-      Conversão voluntária: 1.000 Pitangas = 1 XP.
+      100 Pitangas no primeiro cadastro elegível. Primeira loja publicada: 2 Cocares.
+      Conversão voluntária: 1.000 Pitangas = 1 Cocar.
       {mode === 'xp' && ' O saldo de Pitangas creditadas não se confunde com sementes ou equivalências visuais da jornada.'}
     </p>
     <div className="flex flex-wrap gap-2">
@@ -94,7 +95,7 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
         disabled={busy || !account?.initialized || (account.pitangas < 1000 && !requestId.current)}
         onClick={() => void convert()}
         className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm disabled:opacity-50">
-        {busy ? 'Confirmando…' : requestId.current ? 'Consultar / tentar novamente' : 'Converter 1.000 Pitangas em 1 XP'}
+        {busy ? 'Confirmando…' : requestId.current ? 'Consultar / tentar novamente' : 'Converter 1.000 Pitangas em 1 Cocar'}
       </button>
       <button type="button" onClick={() => setShowStatement(!showStatement)} aria-expanded={showStatement}
         className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm">Extrato</button>
@@ -107,7 +108,7 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
         {account.entries.length === 0 && <li>Nenhum lançamento.</li>}
         {account.entries.map(e => (
           <li key={`${e.unit}:${e.id}`}>
-            {new Date(e.occurredAt).toLocaleString('pt-BR')} · {e.delta > 0 ? '+' : ''}{e.delta} {e.unit === 'xp' ? 'XP' : 'Pitangas'}
+            {new Date(e.occurredAt).toLocaleString('pt-BR')} · {e.delta > 0 ? '+' : ''}{e.delta} {e.unit === 'xp' ? (Math.abs(e.delta)===1?'Cocar':'Cocares') : 'Pitangas'}
           </li>
         ))}
       </ul>
