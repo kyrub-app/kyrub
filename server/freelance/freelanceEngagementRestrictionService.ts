@@ -59,7 +59,7 @@ export async function prepareVoluntaryDisputeRestriction(tx:FirebaseFirestore.Tr
 }
 
 /** Server-only consistency check; a missing bilateral restriction is not a valid pending review. */
-export async function assertFinancialCaseRestrictions(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,expected=true){
+export async function assertFinancialCaseRestrictions(tx:FirebaseFirestore.Transaction,obligation:Parties,expected=true){
  assertLocal();
  const ids=[obligation.requesterUid,obligation.beneficiaryUid];
  const docs=await tx.getAll(...ids.map(root));
