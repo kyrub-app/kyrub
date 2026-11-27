@@ -579,11 +579,12 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await finance(worker,200,id,'statement',{eventId:'received',statement:'received'});
  const completed=await finance(worker,200,id);assert.equal(completed.financialState,'bilaterally_reported_received');assert.equal(completed.bankVerified,false);
  assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).get('confirmedServiceMinor'),15000);
- const {readFreelanceReputation,submitFreelanceReputation}=await import('../server/freelance/freelanceReputationService.js');
+ const {readFreelanceReputation,submitFreelanceReputation,readOwnFreelanceReputationProfile}=await import('../server/freelance/freelanceReputationService.js');
  const rg='KYRUB_FREELANCE_REPUTATION_TEST_ONLY',priorGate=process.env[rg];
  try{
   delete process.env[rg];
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:5}),/FORBIDDEN/);
+  await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'personal_requester'),/FORBIDDEN/);
   process.env[rg]='true';
   const outsider=await account('reputation-outsider',[]);
   await assert.rejects(readFreelanceReputation(outsider.uid,id),/FORBIDDEN/);
@@ -593,6 +594,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.equal(submitted.filter(v=>v.changed).length,1);
   assert.equal((await readFreelanceReputation(worker.uid,id)).received,null);
   assert.equal((await readFreelanceReputation(worker.uid,id)).own,null);
+  assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).releasedCountOnPage,0);
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:3}),/CONFLICT/);
   const mutual=await submitFreelanceReputation(worker.uid,id,{confirmed:true,stars:4});
   assert.equal(mutual.publicationState,'bilateral_released');assert.equal(mutual.received?.stars,5);assert.equal(mutual.rewardsGranted,false);
@@ -601,6 +603,14 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.deepEqual(personal.own?.subject,{kind:'professional',id:worker.uid});
   assert.equal((await ref.collection('reputationPrivateV1').get()).size,2);
   assert.ok(!JSON.stringify(personal).includes('authorUid'));
+  const professional=await readOwnFreelanceReputationProfile(worker.uid,'professional'),personalProfile=await readOwnFreelanceReputationProfile(payer.uid,'personal_requester');
+  assert.equal(professional.entries[0].stars,5);assert.equal(personalProfile.entries[0].stars,4);
+  assert.equal((await readOwnFreelanceReputationProfile(payer.uid,'professional')).releasedCountOnPage,0);
+  assert.equal((await readOwnFreelanceReputationProfile(outsider.uid,'professional')).releasedCountOnPage,0);
+  assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional',id)).releasedCountOnPage,0);
+  assert.ok(!JSON.stringify(professional).includes('authorUid'));
+  await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'store_requester'),/FORBIDDEN/);
+  await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'other'),/INVALID/);
   await ref.collection('reputationPrivateV1').doc('worker').update({contractDigest:'0'.repeat(64)});
   await assert.rejects(readFreelanceReputation(payer.uid,id),/CONFLICT/);
  }finally{if(priorGate===undefined)delete process.env[rg];else process.env[rg]=priorGate;}
@@ -1161,6 +1171,30 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
  await act(worker,id,'confirm',200,{confirmed:true,expectedPaymentTerms:paymentTerms,expectedRequesterStore:store});
  await act(manager,personalId,'publish',200,{terms});
  assert.equal((await db.doc('freelanceOffersV1/'+personalId).get()).get('requesterStore'),undefined);
+ await member.update({status:'active'});
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'store-reputation-'+suffix+'@example.invalid'}});
+ for(const action of ['bind_pix','authorize_pix_share']){
+  const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance',{method:'POST',headers:{authorization:'Bearer '+worker.token,'content-type':'application/json'},body:JSON.stringify({offerId:id,action,confirmed:true,expectedRevision:1})});
+  const body=await r.json();assert.equal(r.status,200,JSON.stringify(body));
+ }
+ await act(worker,id,'start',200,{confirmed:true});await act(worker,id,'request_completion',200,{confirmed:true});await act(owner,id,'confirm_completion',200,{confirmed:true});
+ const {submitFreelanceReputation,readOwnFreelanceReputationProfile}=await import('../server/freelance/freelanceReputationService.js');
+ const rg='KYRUB_FREELANCE_REPUTATION_TEST_ONLY',previous=process.env[rg];
+ try{
+  process.env[rg]='true';
+  await submitFreelanceReputation(worker.uid,id,{confirmed:true,stars:4});
+  assert.equal((await readOwnFreelanceReputationProfile(owner.uid,'store_requester')).releasedCountOnPage,0);
+  await submitFreelanceReputation(owner.uid,id,{confirmed:true,stars:5});
+  const corporate=await readOwnFreelanceReputationProfile(owner.uid,'store_requester');
+  assert.deepEqual(corporate.subject,{kind:'store_requester',id:storeId});assert.equal(corporate.entries[0].stars,4);
+  assert.equal((await readOwnFreelanceReputationProfile(owner.uid,'personal_requester')).releasedCountOnPage,0);
+  assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).entries[0].stars,5);
+  await assert.rejects(readOwnFreelanceReputationProfile(manager.uid,'store_requester'),/FORBIDDEN/);
+  await member.update({status:'inactive'});
+  await assert.rejects(readOwnFreelanceReputationProfile(owner.uid,'store_requester'),/FORBIDDEN/);
+ }finally{if(previous===undefined)delete process.env[rg];else process.env[rg]=previous;}
+
 });
 
 test('schedule HTTP: private, bilateral, immutable decisions and server-derived duration',async()=>{
