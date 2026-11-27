@@ -4,6 +4,7 @@ import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {readFinancialContext,checkedReview,isFinancialReviewOutcome,type FinancialReviewDecision} from '../freelance/freelanceExternalPaymentStatementService.js';
+import {readFinancialEvidence} from '../freelance/freelanceFinancialEvidenceService.js';
 import {assertFinancialCaseRestrictions,prepareAdministrativeDisputeRelease} from '../freelance/freelanceEngagementRestrictionService.js';
 
 export function financialReviewAdminEnabled(){
@@ -37,7 +38,8 @@ export async function listFreelanceFinancialReviews(authorization:string,cursor:
       Date.parse(review.requestedAt)<Date.parse(events[events.length-1].recordedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    await assertFinancialCaseRestrictions(tx,obligation);
    if(typeof offer.title!=='string'||!offer.title.trim()||offer.title.length>120)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
-   items.push({offerId:offer.id,title:offer.title,amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
+   const evidence=await readFinancialEvidence(tx,obligation,review.requestedAt);
+   items.push({evidenceRevision:evidence.revision,evidenceNotes:evidence.notes.map(n=>({role:n.actorUid===obligation.requesterUid?'requester':'freelancer',note:n.note,recordedAt:n.recordedAt})),offerId:offer.id,title:offer.title,amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
     requestedAt:review.requestedAt,requestedByRole:review.requestedBy===obligation.requesterUid?'requester':'freelancer',
     requesterUid:obligation.requesterUid,beneficiaryUid:obligation.beneficiaryUid,
     statements:events.map(e=>({role:e.actorUid===obligation.requesterUid?'requester':'freelancer',statement:e.statement,recordedAt:e.recordedAt})),
@@ -52,7 +54,8 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
  if(!financialReviewAdminEnabled())throw Error('FREELANCE_FINANCIAL_REVIEW_DISABLED');
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
- if(Object.keys(b).length!==5||Object.keys(b).some(k=>!['offerId','expectedRequestedAt','outcome','reason','confirmed'].includes(k))||
+ if(Object.keys(b).length!==6||Object.keys(b).some(k=>!['offerId','expectedRequestedAt','expectedEvidenceRevision','outcome','reason','confirmed'].includes(k))||
+ !Number.isSafeInteger(b.expectedEvidenceRevision)||Number(b.expectedEvidenceRevision)<0||Number(b.expectedEvidenceRevision)>4||
  !validFreelanceId(b.offerId)||typeof b.expectedRequestedAt!=='string'||!Number.isFinite(Date.parse(b.expectedRequestedAt))||
  !isFinancialReviewOutcome(b.outcome)||typeof b.reason!=='string'||b.reason.trim().length<10||b.reason.trim().length>1000||b.confirmed!==true)throw Error('FREELANCE_INVALID');
  const offerId=b.offerId,reason=b.reason.trim(),outcome=b.outcome;
@@ -70,11 +73,13 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
   const {obligation,events,projection}=await readFinancialContext(tx,raw.requesterUid,offerId);
   const review=checkedReview(raw,obligation);
   if(!review||review.requestedAt!==b.expectedRequestedAt)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+  const evidence=await readFinancialEvidence(tx,obligation,review.requestedAt);
+  if(evidence.revision!==b.expectedEvidenceRevision)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   const digest=createHash('sha256').update(reason).digest('hex');
   if(review.status==='resolved_administratively'){
    const d=review.decision!;
-   if(d.actorUid!==uid||d.outcome!==outcome||d.reason!==reason||!audit.exists||
-    audit.get('actorId')!==uid||audit.get('targetId')!==offerId||audit.get('outcome')!==outcome||audit.get('reasonHash')!==digest)
+   if(d.actorUid!==uid||d.outcome!==outcome||d.reason!==reason||d.evidenceRevision!==evidence.revision||!audit.exists||
+    audit.get('actorId')!==uid||audit.get('targetId')!==offerId||audit.get('outcome')!==outcome||audit.get('reasonHash')!==digest||audit.get('evidenceRevision')!==evidence.revision)
     throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    await assertFinancialCaseRestrictions(tx,obligation,false);
    return {status:review.status,outcome,replay:true,bankVerified:false as const};
@@ -84,10 +89,10 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
   const decidedAt=new Date().toISOString();
   if(Date.parse(decidedAt)<Date.parse(review.requestedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   const release=await prepareAdministrativeDisputeRelease(tx,obligation);
-  const decision:FinancialReviewDecision={actorUid:uid,outcome,reason,decidedAt,bankVerified:false};
+  const decision:FinancialReviewDecision={actorUid:uid,outcome,reason,decidedAt,bankVerified:false,evidenceRevision:evidence.revision};
   tx.update(ref,{status:'resolved_administratively',resolvedAt:decidedAt,decision});
   tx.create(auditRef,{id:auditId,action:'admin.freelance.financial_review_resolved',actorId:uid,actorRole:'super_admin',
-   targetType:'freelance_financial_review',targetId:offerId,outcome,reasonHash:digest,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});
+   targetType:'freelance_financial_review',targetId:offerId,outcome,reasonHash:digest,evidenceRevision:evidence.revision,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});
   release();
   return {status:'resolved_administratively' as const,outcome,replay:false,bankVerified:false as const};
  });

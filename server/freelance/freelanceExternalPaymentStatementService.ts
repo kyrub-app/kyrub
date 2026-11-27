@@ -48,7 +48,7 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
  return {offer,obligation,events,projection,statementRef};
 }
 export type FinancialReviewOutcome='payment_evidence_accepted'|'nonreceipt_evidence_accepted'|'inconclusive';
-export type FinancialReviewDecision={actorUid:string;outcome:FinancialReviewOutcome;reason:string;decidedAt:string;bankVerified:false};
+export type FinancialReviewDecision={actorUid:string;outcome:FinancialReviewOutcome;reason:string;decidedAt:string;bankVerified:false;evidenceRevision:number};
 export function isFinancialReviewOutcome(v:unknown):v is FinancialReviewOutcome{
  return v==='payment_evidence_accepted'||v==='nonreceipt_evidence_accepted'||v==='inconclusive';
 }
@@ -69,9 +69,9 @@ export function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFree
  throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  if(r.status==='resolved_administratively'){
   const d=r.decision;
-  if(!d||Object.keys(d).length!==5||!validFreelanceId(d.actorUid)||[r.requesterUid,r.beneficiaryUid].includes(d.actorUid)||
+  if(!d||Object.keys(d).length!==6||!validFreelanceId(d.actorUid)||[r.requesterUid,r.beneficiaryUid].includes(d.actorUid)||
    !isFinancialReviewOutcome(d.outcome)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||
-   d.decidedAt!==r.resolvedAt||d.bankVerified!==false)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
+   d.decidedAt!==r.resolvedAt||d.bankVerified!==false||!Number.isSafeInteger(d.evidenceRevision)||d.evidenceRevision<0||d.evidenceRevision>4)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  }else if(r.decision!==undefined)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
  return r;
 }
@@ -81,8 +81,9 @@ export async function requestFreelanceFinancialReview(uid:string,offerId:string,
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input)||
  Object.keys(input).length!==1||(input as Record<string,unknown>).confirmed!==true)throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
+  const ref=reviewRef(offerId),snapshot=await tx.get(ref);
   const {obligation,events,projection}=await readFinancialContext(tx,uid,offerId);
-  const ref=reviewRef(offerId),existing=checkedReview((await tx.get(ref)).data(),obligation);
+  const existing=checkedReview(snapshot.data(),obligation);
   if(projection.state!=='disputed')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   await assertFinancialCaseRestrictions(tx,obligation);
   if(existing){
@@ -109,6 +110,7 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
  if(Object.keys(b).length!==3||!validFreelanceId(b.eventId)||b.confirmed!==true||
  (typeof b.statement!=='string'||!['paid','received','not_received'].includes(b.statement)))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
+  const review=reviewRef(offerId),reviewSnapshot=await tx.get(review);
   const {offer,obligation,events,statementRef}=await readFinancialContext(tx,uid,offerId);
   if((b.statement==='paid'&&uid!==offer.ownerUid)||(b.statement!=='paid'&&uid!==offer.selectedApplicantUid))throw Error('FREELANCE_FORBIDDEN');
   const now=new Date().toISOString();
@@ -116,8 +118,7 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
    (Date.parse(now)<Date.parse(offer.completedAt!)||events.some(e=>Date.parse(e.recordedAt)<Date.parse(offer.completedAt!))))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   const next=appendExternalPixStatement(obligation,events,{id:b.eventId as string,actorUid:uid,statement:b.statement as ExternalPixStatement,recordedAt:now});
   if(next.changed){
-   const review=reviewRef(offerId);
-   const existing=checkedReview((await tx.get(review)).data(),obligation);
+   const existing=checkedReview(reviewSnapshot.data(),obligation);
    const administrativelyClosed=existing?.status==='resolved_administratively';
    // Actual receipt may be recorded later without reopening or rewriting the decision.
    if(administrativelyClosed){

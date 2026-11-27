@@ -483,8 +483,40 @@ test('financial review request is unique, restricted to parties, and closes on v
  const raceId='fixture-finreview-race',raceRef=adminDb.doc('freelanceFinancialReviewsV1/'+raceId);
  await create(raceId);await record(payer,raceId,paid);await record(beneficiary,raceId,denied);
  const race=await Promise.allSettled([request(payer,raceId,{confirmed:true}),record(beneficiary,raceId,received)]);
- assert.equal(race[1].status,'fulfilled');
+ assert.equal(race[1].status,'fulfilled',race[1].status==='rejected'?String(race[1].reason):undefined);
  const raceEntry=await raceRef.get();
  assert.ok(!raceEntry.exists||raceEntry.get('status')==='resolved_voluntarily');
  for(const uid of [payer,beneficiary])assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+});
+
+test('private financial evidence: participant-only, append-only, bounded and no direct client access',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {submitFreelanceFinancialEvidence:submit}=await import('../server/freelance/freelanceFinancialEvidenceService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-evidence-payer',worker='fixture-evidence-worker',other='fixture-evidence-other';
+ for(const uid of [payer,worker,other])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const id='fixture-financial-evidence',path='freelanceFinancialReviewsV1/'+id+'/evidence/notes';
+ await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+ await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(payer,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const note={evidenceId:'payer-note',note:'Relato fictício da tentativa de pagamento.',confirmed:true};
+ await record(payer,id,{eventId:'paid',statement:'paid',confirmed:true});await record(worker,id,{eventId:'denied',statement:'not_received',confirmed:true});
+ await assert.rejects(submit(payer,id,note),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await request(worker,id,{confirmed:true});
+ await assert.rejects(submit(other,id,note),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(submit(payer,id,{...note,note:'https://example.invalid/receipt'}),/FREELANCE_INVALID/);
+ await assert.rejects(submit(payer,id,{...note,actorUid:worker}),/FREELANCE_INVALID/);
+ const race=await Promise.all([submit(payer,id,note),submit(payer,id,note)]);
+ assert.deepEqual(race.map(x=>x.created).sort(),[false,true]);
+ await assert.rejects(submit(worker,id,note),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await submit(worker,id,{evidenceId:'worker-note',note:'Não identifiquei o recebimento correspondente.',confirmed:true});
+ await submit(payer,id,{...note,evidenceId:'payer-note-2'});
+ await assert.rejects(submit(payer,id,{...note,evidenceId:'payer-note-3'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ for(const uid of [payer,worker,other]){
+  const db=env.authenticatedContext(uid).firestore();await assertFails(getDoc(doc(db,path)));await assertFails(setDoc(doc(db,path),{notes:[]}));
+ }
+ const snapshot=(await adminDb.doc(path).get()).data()!;
+ assert.equal(snapshot.revision,3);assert.equal(snapshot.notes[0].actorUid,payer);
+ await record(worker,id,{eventId:'received',statement:'received',confirmed:true});
+ await assert.rejects(submit(worker,id,{...note,evidenceId:'late-note'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ assert.deepEqual((await adminDb.doc(path).get()).data(),snapshot);
 });
