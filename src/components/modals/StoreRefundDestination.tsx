@@ -3,7 +3,7 @@ import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 type Destination={revision:number;status:'not_configured'|'declared'|'revoked';keyType?:'email'|'random';maskedKey?:string;ownershipVerified:false};
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-teal-300 disabled:opacity-50';
-export default function StoreRefundDestination({user,offerId,onChanged}:{user:User;offerId:string;onChanged:()=>void}){
+export default function StoreRefundDestination({user,offerId,onChanged}:{user:User;offerId?:string;onChanged:()=>void}){
  const [v,setV]=useState<Destination|null>(null),[keyType,setType]=useState<'email'|'random'>('email'),[key,setKey]=useState(''),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const active=useRef<AbortController|null>(null);
  useEffect(()=>()=>{active.current?.abort();active.current=null;},[]);
@@ -15,13 +15,13 @@ export default function StoreRefundDestination({user,offerId,onChanged}:{user:Us
    const token=await user.getIdToken();if(!live())return;
    const url='/api/freelance/finance',headers={authorization:'Bearer '+token,'content-type':'application/json'};
    if(action){
-    const r=await fetch(url,{method:'POST',headers,cache:'no-store',signal:ctl.signal,body:JSON.stringify({offerId,action:action==='declare'?'declare_store_refund_pix':'revoke_store_refund_pix',expectedRevision:v!.revision,confirmed:true,...(action==='declare'?{destination:{keyType,key:key.trim()},businessAccountDeclared:true}:{})})}),a=await r.json();if(!live())return;
+    const r=await fetch(url,{method:'POST',headers,cache:'no-store',signal:ctl.signal,body:JSON.stringify({...(offerId?{offerId}:{}),action:offerId?(action==='declare'?'declare_store_refund_pix':'revoke_store_refund_pix'):(action==='declare'?'declare_own_store_refund_pix':'revoke_own_store_refund_pix'),expectedRevision:v!.revision,confirmed:true,...(action==='declare'?{destination:{keyType,key:key.trim()},businessAccountDeclared:true}:{})})}),a=await r.json();if(!live())return;
     setKey('');setConfirmed(false);
     if(!r.ok||a?.confirmed!==true)throw Error(['second_factor_required','reauthentication_required','REAUTHENTICATION_REQUIRED'].includes(a?.code)?'Entre novamente com autenticação multifator.':'Alteração não confirmada.');
     onChanged();
    }
-   const r=await fetch(url+'?view=fixed_adjustment_store_destination&offerId='+encodeURIComponent(offerId),{headers,cache:'no-store',signal:ctl.signal}),a=await r.json();if(!live())return;
-   if(!r.ok||a?.ownershipVerified!==false||!Number.isSafeInteger(a.revision)||a.revision<0||!['not_configured','declared','revoked'].includes(a.status)||a.status==='declared'&&(!['email','random'].includes(a.keyType)||typeof a.maskedKey!=='string'||!/^••••.{4}$/.test(a.maskedKey)))throw Error('Destino empresarial indisponível.');
+   const r=await fetch(url+(offerId?'?view=fixed_adjustment_store_destination&offerId='+encodeURIComponent(offerId):'?view=own_store_refund_destination'),{headers,cache:'no-store',signal:ctl.signal}),a=await r.json();if(!live())return;
+   if(!r.ok||(!offerId&&(typeof a?.storeId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(a.storeId)))||a?.ownershipVerified!==false||!Number.isSafeInteger(a.revision)||a.revision<0||!['not_configured','declared','revoked'].includes(a.status)||a.status==='declared'&&(!['email','random'].includes(a.keyType)||typeof a.maskedKey!=='string'||!/^••••.{4}$/.test(a.maskedKey)))throw Error('Destino empresarial indisponível.');
    setV(a);
   }catch(e){if(live()){setV(null);setKey('');setConfirmed(false);setError(e instanceof Error?e.message:'Consulta indisponível.');}}
   finally{if(active.current===ctl){active.current=null;if(live())setBusy(false);}}
