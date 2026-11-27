@@ -13,7 +13,8 @@ export type ErpManagementModule =
   | 'crm'
   | 'marketing'
   | 'integracoes'
-  | 'vouchers';
+  | 'vouchers'
+  | 'reputacoes_gestao';
 
 export type ErpManagementNavigationRequest = {
   module: ErpManagementModule | null;
