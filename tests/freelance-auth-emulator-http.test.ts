@@ -1158,6 +1158,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    await finance(other,403);const view=await finance(worker,200);assert.equal(view.finalAmountMinor,null);assert.equal(view.payable,false);
    await finance(owner,409,'reveal_pix',{expectedRevision:1});
    const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
+   const financeRestrictions=async(a:Actor)=>{const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
    await agreement(other,403);
    const a=await agreement(worker,200);
    assert.equal(a.agreedMinor,null);assert.equal(a.payable,false);
@@ -1177,7 +1178,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    await finance(worker,200,'dispute_hourly_cancellation',disputeFields);
    await finance(worker,200,'dispute_hourly_cancellation',disputeFields);
    for(const actor of [owner,worker]){
-    assert.deepEqual(await call(actor,'?view=restrictions',200),{restricted:true,openOfferIds:[id]});
+    assert.deepEqual(await financeRestrictions(actor),{restricted:true,openOfferIds:[id]});
    }
    assert.equal((await act(owner,id+'-blocked','publish',409,{terms})).code,'FREELANCE_FINANCIAL_RESTRICTION');
    await finance(owner,200,'request_hourly_cancellation_review',disputeFields);
@@ -1194,7 +1195,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    assert.equal(settled.agreedMinor,proposal.recognizedServiceMinor);
    assert.equal(settled.dispute.status,'resolved_voluntarily');assert.equal(settled.restrictionActive,false);
    for(const actor of [owner,worker]){
-    assert.deepEqual(await call(actor,'?view=restrictions',200),{restricted:started,openOfferIds:started?[id]:[]});
+    assert.deepEqual(await financeRestrictions(actor),{restricted:started,openOfferIds:started?[id]:[]});
     if(started)await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[]});
    }
    assert.equal((await ref.collection('directPayment').doc('hourlyCancellationAgreement-p1').get()).get('status'),'declined');
