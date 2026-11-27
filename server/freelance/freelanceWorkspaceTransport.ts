@@ -19,12 +19,12 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  switch(b.action){
  case 'publish':exact(['terms']);{
   const terms=normalizeFreelanceOffer(b.terms);
-  if(terms.paymentTerms!==undefined)throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+  if(terms.paymentTerms!==undefined&&(!freelanceWorkspaceEnabled()||process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||terms.paymentTerms.method!=='external_pix'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
   return lifecycle.publishFreelanceOffer(uid,b.offerId,terms);
  }
- case 'apply':exact([]);return lifecycle.applyToFreelanceOffer(uid,b.offerId);
+ case 'apply':exact(['expectedPaymentTerms']);return lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms});
  case 'select':exact(['applicantUid']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid);
- case 'confirm':exact(['confirmed']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed);
+ case 'confirm':exact(['confirmed','expectedPaymentTerms']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed,{expected:b.expectedPaymentTerms});
  case 'release':exact(['applicantUid','confirmed']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.releaseFreelanceReservation(uid,b.offerId,b.applicantUid,b.confirmed);
  case 'withdraw':exact(['confirmed']);return lifecycle.withdrawPendingFreelanceApplication(uid,b.offerId,b.confirmed);
  case 'cancel_open':exact(['confirmed']);return lifecycle.cancelUncontractedFreelanceOffer(uid,b.offerId,b.confirmed);
