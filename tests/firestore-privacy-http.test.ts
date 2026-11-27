@@ -14,7 +14,7 @@ import {createPrivacyHttpEmulatorHandler,PRIVACY_HTTP_ORIGIN as origin} from '..
 assertPrivacyEmulator();
 const app=initializeApp({projectId:PRIVACY_EMULATOR_PROJECT},'privacy-http-fixtures'),db=getFirestore(app),auth=getAuth(app);
 const random=()=>randomBytes(32).toString('base64url');
-after(async()=>{for(const a of getApps().filter(a=>['privacy-http-fixtures','privacy-rights-local-emulator','privacy-admin-local-emulator','privacy-optional-consent-local-emulator'].includes(a.name)))await deleteApp(a);});
+after(async()=>{for(const a of getApps().filter(a=>['privacy-http-fixtures','privacy-rights-local-emulator','privacy-admin-local-emulator','privacy-optional-consent-local-emulator','privacy-own-data-export-local-emulator'].includes(a.name)))await deleteApp(a);});
 test('local TLS connects intake, independent review, tracking and optional consent',async()=>{
  async function account(uid:string){
   const email=uid+'@example.invalid',password='LocalFixturePassword123!';
@@ -59,10 +59,44 @@ test('local TLS connects intake, independent review, tracking and optional conse
   assert.equal((await call('admin-review',review,reviewer)).status,200);
   assert.ok((await call('track',scope)).body.reviewedNotice);
   assert.equal((await call('track',scope)).body.actionStatus,'not-executed');
+  const profile=db.collection('privacy_emulator_fixture_profiles').doc(uid);
+  await profile.set({ownerUid:uid,displayName:'Perfil fictício',createdAt:now-1000,simulation:true,privateNote:'não exportar'});
+  await db.collection('privacy_emulator_fixture_preferences').doc(uid).set({ownerUid:uid,locale:'pt-BR',theme:'dark',simulation:true});
+  assert.equal((await call('own-export',scope,admin)).status,403);
+  assert.equal((await call('own-export',scope)).status,403);
+  const exported=await call('own-export',scope,owner);
+  assert.equal(exported.status,200);assert.equal(exported.body.completeAccessResponse,false);
+  assert.equal(exported.body.data.profile.displayName,'Perfil fictício');
+  assert.equal(exported.body.data.profile.privateNote,undefined);
+  assert.equal((await call('own-confirm',scope,owner)).status,403);
+  async function prepare(right:string){
+   const s=await call('submit',{...input,requestId:random(),draft:{...input.draft,right}});
+   assert.equal(s.status,200);
+   const p=s.body.protocol,c=s.body.trackingCode;
+   assert.equal((await call('admin-triage',{protocol:p,expectedRevision:0},admin)).status,200);
+   assert.equal((await call('confirm-account',{protocol:p,code:c},owner)).status,200);
+   assert.equal((await call('admin-assess',{protocol:p,expectedRevision:0,finding:'ready-for-fulfillment-review',reason:'Homologação'},admin)).status,200);
+   assert.equal((await call('admin-prepare',{protocol:p,expectedAssessmentRevision:1},admin)).status,200);
+   assert.equal((await call('admin-review',{...review,protocol:p},reviewer)).status,200);
+   return {protocol:p,code:c};
+  }
+  const confirmScope=await prepare('confirm-processing');
+  const confirmed=await call('own-confirm',confirmScope,owner);
+  assert.equal(confirmed.status,200);assert.deepEqual(confirmed.body.categories,['profile','preferences']);assert.equal(confirmed.body.completeConfirmationResponse,false);
+  const correction=await prepare('correction'),change={expectedDisplayName:'Perfil fictício',displayName:'Nome fictício corrigido'};
+  assert.equal((await call('own-correct',{...scope,change},owner)).status,403);
+  assert.equal((await call('own-correct',{...correction,change},admin)).status,403);
+  assert.equal((await call('own-correct',{...correction,change:{...change,ownerUid:uid}},owner)).status,403);
+  assert.equal((await call('own-correct',{...correction,change},owner)).status,200);
+  assert.equal((await profile.get()).get('displayName'),change.displayName);
+  assert.equal((await profile.get()).get('privateNote'),'não exportar');
+  assert.equal((await call('own-correct',{...correction,change},owner)).status,403);
+  assert.equal((await db.collection('privacy_emulator_requests').doc(correction.protocol).get()).get('actionStatus'),'not-executed');
   const consent={purpose:'fixture-product-news',expectedRevision:0,decision:'grant',version:'fixture-1',confirmed:true};
   assert.equal((await call('consents-change',consent)).status,403);
   assert.equal((await call('consents-change',consent,owner)).body.effective,true);
   assert.equal((await call('consents-change',{...consent,decision:'withdraw',expectedRevision:1},owner)).body.effective,false);
   assert.equal((await call('revoke',scope)).status,200);assert.equal((await call('track',scope)).status,403);
+  assert.equal((await call('own-export',scope,owner)).status,403);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));rmSync(directory,{recursive:true,force:true});}
 });

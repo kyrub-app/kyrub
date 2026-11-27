@@ -1,6 +1,7 @@
 import type {PrivacyRightsAdapter,PrivacyRequestReceipt,PrivacyRequestDraft} from '../../shared/privacyRights';
 import type {PrivacyTrackingAdapter} from '../components/KyrubPrivacyTrackingPilot';
 import type {PrivacyAdminAdapter} from '../../shared/privacyAdminWorkspace';
+import type {PrivacyOwnFixtureAdapter} from '../../shared/privacyOwnFixtureWorkspace';
 import type {OptionalConsentAdapter} from '../../shared/privacyOptionalConsent';
 import type {AuthenticationResponseJSON,PublicKeyCredentialRequestOptionsJSON} from '@simplewebauthn/browser';
 const origin='https://127.0.0.1:8449',cidOrigin='https://kyrub-privacy-emulator.vercel.app';
@@ -41,5 +42,8 @@ export function createPrivacyHomologationHttpClient(){
  function consents(getToken:TokenSource):OptionalConsentAdapter{
   return {list:()=>post('consents-list',{},getToken),change:choice=>post('consents-change',choice,getToken)};
  }
- return {intake,tracking,admin,consents};
+ function own(getToken:TokenSource):PrivacyOwnFixtureAdapter{
+  return {exportOwn:(protocol,code)=>post('own-export',{protocol,code},getToken),confirmOwn:(protocol,code)=>post('own-confirm',{protocol,code},getToken),correctOwn:(protocol,code,change)=>post('own-correct',{protocol,code,change},getToken)};
+ }
+ return {intake,tracking,admin,consents,own};
 }
