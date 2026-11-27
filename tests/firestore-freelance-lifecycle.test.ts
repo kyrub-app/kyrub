@@ -114,3 +114,22 @@ test('funding revocation races with start, and simulation cannot run in Vercel',
   assert.equal(offer?.status,'in_progress');assert.equal(saved?.status,'confirmed');
  }
 });
+
+test('read workspace excludes other participants private records',async()=>{
+ const {readFreelanceWorkspace}=await import('../server/freelance/freelanceWorkspaceReadService.js');
+ const id='fixture-freelance-read';
+ await s.publishFreelanceOffer(owner,id,input);
+ await s.applyToFreelanceOffer(worker,id);
+ await s.applyToFreelanceOffer(other,id);
+ const mine=await readFreelanceWorkspace(worker,'detail',id);
+ assert.deepEqual(mine.applications?.map(a=>a.applicantUid),[worker]);
+ const own=await readFreelanceWorkspace(owner,'detail',id);
+ assert.equal(own.applications?.length,2);
+ assert.equal(JSON.stringify(mine).includes(other),false);
+ await s.selectFreelanceApplication(owner,id,worker);
+ await assert.rejects(readFreelanceWorkspace('unrelated','detail',id),/FREELANCE_FORBIDDEN/);
+ const workerList=await readFreelanceWorkspace(worker,'applications');
+ assert.ok(workerList.items?.some(i=>i.id===id));
+ const ownerList=await readFreelanceWorkspace(owner,'owner');
+ assert.ok(ownerList.items?.some(i=>i.id===id));
+});
