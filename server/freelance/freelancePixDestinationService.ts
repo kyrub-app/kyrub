@@ -176,3 +176,80 @@ export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offe
  }
  await assertFinancialCaseRestrictions(tx,obligation,false);
 }
+
+
+/** A changed personal key never redirects an existing contract. The beneficiary
+ * proposes its exact new revision; the contractual payer accepts and explicitly
+ * attests no transfer has been sent. Existing declarations always remain valid
+ * evidence and take precedence over replacement. No bank verification is implied.
+ * The old pointer, consent and disclosure audit are archived without raw keys. */
+export async function changeFreelancePixBinding(uid:string,id:string,action:'propose'|'accept',input:unknown){
+ assertLocal();
+ if(!validFreelanceId(uid)||!validFreelanceId(id)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
+ const b=input as Record<string,unknown>;
+ if(!['propose','accept'].includes(action)||Object.keys(b).length!==(action==='accept'?4:3)||b.confirmed!==true||
+ !Number.isSafeInteger(b.oldRevision)||!Number.isSafeInteger(b.newRevision)||Number(b.oldRevision)<1||
+ Number(b.newRevision)<=Number(b.oldRevision)||(action==='accept'&&b.paymentNotSent!==true))throw Error('FREELANCE_INVALID');
+ const oldRevision=Number(b.oldRevision),newRevision=Number(b.newRevision);
+ return adminDb.runTransaction(async tx=>{
+  const c=await readDisclosureContext(tx,uid,id);
+  const o=c.obligation;
+  if(uid!==(action==='propose'?o.beneficiaryUid:o.requesterUid))throw Error('FREELANCE_FORBIDDEN');
+  if(c.events.length)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+  const [payer,worker,proposal,access]=await tx.getAll(adminDb.doc('identity_verifications/'+o.requesterUid),
+   adminDb.doc('identity_verifications/'+o.beneficiaryUid),c.direct.doc('pixRebind-'+newRevision),c.direct.doc('pixDisclosure'));
+  for(const [identity,role] of [[payer,'requester'],[worker,'freelancer']] as const){
+   const roles=identity.get('approvedProfiles');
+   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes(role))throw Error('IDENTITY_VERIFICATION_REQUIRED');
+  }
+  const destination=await readPersonalPixForContract(tx,o.beneficiaryUid);
+  if(destination.revision!==newRevision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  const saved=proposal.data();
+  const base={schemaVersion:1,offerId:id,requesterUid:o.requesterUid,beneficiaryUid:o.beneficiaryUid,oldRevision,newRevision,keyType:destination.keyType};
+  if(saved&&(!Object.entries(base).every(([k,v])=>saved[k]===v)||!Number.isFinite(Date.parse(saved.proposedAt))||
+     !['pending','accepted'].includes(saved.status)))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  if(saved?.status==='accepted'){
+   if(action!=='accept'||c.binding.destinationRevision!==newRevision||saved.paymentNotSent!==true||
+      !Number.isFinite(Date.parse(saved.acceptedAt))||Date.parse(saved.acceptedAt)<Date.parse(saved.proposedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+   return {changed:false,status:'accepted' as const,revision:newRevision};
+  }
+  if(c.binding.destinationRevision!==oldRevision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  const now=new Date().toISOString();
+  if(Date.parse(now)<Date.parse(c.binding.boundAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  await assertFinancialCaseRestrictions(tx,o,false);
+  if(action==='propose'){
+   if(saved)return {changed:false,status:'pending' as const,revision:newRevision};
+   tx.create(proposal.ref,{...base,status:'pending',proposedAt:now});
+   return {changed:true,status:'pending' as const,revision:newRevision};
+  }
+  if(!saved||saved.status!=='pending'||Date.parse(now)<Date.parse(saved.proposedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  const a=access.data();
+  if(a&&(!c.sharing||Object.keys(a).length!==5||a.schemaVersion!==1||a.offerId!==id||a.requesterUid!==uid||
+      a.destinationRevision!==oldRevision||!Number.isFinite(Date.parse(a.firstAccessAt))||
+      Date.parse(a.firstAccessAt)<Date.parse(c.sharing.authorizedAt)))return blocked();
+  tx.update(proposal.ref,{status:'accepted',acceptedAt:now,paymentNotSent:true,bankVerified:false,
+   previousBinding:c.binding,previousSharing:c.sharing??null,previousDisclosure:a??null});
+  const binding:Binding={schemaVersion:1,offerId:id,beneficiaryUid:o.beneficiaryUid,destinationRevision:newRevision,
+   keyType:destination.keyType,boundAt:now,ownershipVerified:false};
+  tx.set(c.direct.doc('receivingDestination'),binding);
+  tx.delete(c.direct.doc('pixSharing'));
+  tx.delete(c.direct.doc('pixDisclosure'));
+  return {changed:true,status:'accepted' as const,revision:newRevision};
+ });
+}
+
+/** Participants may inspect only the current candidate revision and whether a
+ * matching proposal exists. Raw keys are never exposed by replacement reads. */
+export async function readFreelancePixRebind(uid:string,id:string){
+ assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const c=await readDisclosureContext(tx,uid,id);
+  if(c.events.length)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+  const d=await readPersonalPixForContract(tx,c.obligation.beneficiaryUid);
+  if(d.revision<=c.binding.destinationRevision)return {replacementRequired:false,oldRevision:c.binding.destinationRevision,newRevision:c.binding.destinationRevision,pending:false};
+  const p=(await tx.get(c.direct.doc('pixRebind-'+d.revision))).data();
+  return {replacementRequired:true,oldRevision:c.binding.destinationRevision,newRevision:d.revision,
+   pending:!!p&&p.status==='pending'&&p.offerId===id&&p.oldRevision===c.binding.destinationRevision&&p.newRevision===d.revision&&
+    p.beneficiaryUid===c.obligation.beneficiaryUid&&p.requesterUid===c.obligation.requesterUid&&p.keyType===d.keyType};
+ },{readOnly:true});
+}
