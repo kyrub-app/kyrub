@@ -111,11 +111,12 @@ test('owner identification is scoped to active passkey stock and carries no pres
  assert.throws(()=>normalizePasskeyMutation('identify-owner',{name:'Ana',occupation:'Autônoma',about:'Olá'}));
 });
 
-test('CID Pix reconciliation: edit only, explicit consent, omission preservation and removal',async()=>{
+test('CID Pix reconciliation: activation and edit, explicit consent, omission preservation and removal',async()=>{
  const {normalizePromotionalPresentation,publicPromotionalPresentation,preserveCidPixOnEdit}=await import('../shared/kyrubTagPromotional.js');
  const card={name:'Pessoa teste',occupation:'',about:''};
  const pix={keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000',recipientName:'Fulano de Tal',recipientCity:'BRASILIA',publicConsent:true};
- assert.throws(()=>normalizePasskeyMutation('register',{...card,pix}));
+ assert.deepEqual(normalizePasskeyMutation('register',{...card,pix})?.pix,pix);
+ assert.throws(()=>normalizePasskeyMutation('register',{...card,pix:{...pix,publicConsent:false}}));
  assert.throws(()=>normalizePasskeyMutation('edit',{...card,pix:{...pix,publicConsent:false}}));
  const edited=normalizePasskeyMutation('edit',{...card,pix})!;
  assert.deepEqual(edited.pix,pix);
