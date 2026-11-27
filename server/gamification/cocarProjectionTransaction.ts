@@ -1,6 +1,6 @@
 import { getApps } from 'firebase-admin/app';
-import { getFirestore, FieldPath, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
-import { advanceCocarProjection, rebuildCocarProjection, validCocarProjection } from '../../shared/cocarProjection.js';
+import { getFirestore, FieldPath, type DocumentReference, type Firestore, type Transaction, type QueryDocumentSnapshot } from 'firebase-admin/firestore';
+import { advanceCocarProjection, rebuildCocarProjection, validCocarProjection, type CocarProjection } from '../../shared/cocarProjection.js';
 import type { KyrubXpEntry } from '../../shared/gamification.js';
 
 type Row = KyrubXpEntry & { economy: string };
@@ -44,18 +44,51 @@ export async function prepareCocarProjectionForNewXp(tx: Transaction, ledgerRef:
   const next = existing.empty ? advanceCocarProjection(saved.data(),row.userId,epoch,ledgerRef.id,row) : null;
   return next ? () => { tx.set(ref,next); } : () => { tx.delete(ref); };
 }
-/** One-time explicit rebuild for emulator fixtures, not a public API.
- * No automatic migration or production writes. Caller must rotate the epoch
- * and rebuild after any interval with unobserved writers.
+/** Explicit, per-user history reconciliation under the isolated fixture gate.
+ * All pages are read within one Firestore transaction, so a concurrent grant
+ * forces a retry instead of publishing an obsolete projection. Page size is
+ * not a lifetime XP cap. No batch across users, no client endpoint.
+ * Very large histories can exceed Firestore transaction limits: never mark a
+ * partial history certified; a resumable fenced migration is a separate gate.
  */
-export async function rebuildCocarProjectionFixture(db: Firestore, uid: string) {
+export async function reconcileCocarProjectionFixture(db: Firestore, uid: string, mode: 'preview' | 'apply') {
   const epoch = candidateEpoch(db);
   if (!epoch) throw Error('COCAR_PROJECTION_EMULATOR_ONLY');
+  if (mode !== 'preview' && mode !== 'apply') throw Error('COCAR_PROJECTION_MODE_INVALID');
   const ref = projectionRef(db,uid);
   return db.runTransaction(async tx => {
-    const ledger = await tx.get(db.collection('users/'+uid+'/xpLedger').orderBy(FieldPath.documentId()));
-    const p = rebuildCocarProjection(uid,epoch,ledger.docs.map(d=>({documentId:d.id,entry:d.data() as Row})));
-    tx.set(ref,p);
-    return p;
+    const current = await tx.get(ref);
+    const pageSize = 128;
+    const query = db.collection('users/'+uid+'/xpLedger').orderBy(FieldPath.documentId()).limit(pageSize);
+    const rows: {documentId:string;entry:Row}[] = [];
+    let cursor: QueryDocumentSnapshot | undefined;
+    for (;;) {
+      const page = await tx.get(cursor ? query.startAfter(cursor) : query);
+      for (const doc of page.docs) rows.push({documentId:doc.id,entry:doc.data() as Row});
+      if (page.size < pageSize) break;
+      cursor = page.docs[page.docs.length-1];
+    }
+    let p: CocarProjection;
+    try {
+      p = rebuildCocarProjection(uid,epoch,rows);
+    } catch {
+      // A proven invalid history cannot keep a previously certified total.
+      // Preview remains strictly read-only; apply removes only the derived
+      // document, not one entry of the canonical ledger.
+      if (mode === 'apply' && current.exists) tx.delete(ref);
+      return {status:'invalid' as const, projection:null, changed:mode==='apply' && current.exists};
+    }
+    const old = current.data();
+    const matches = validCocarProjection(old,uid,epoch) &&
+      (Object.keys(p) as (keyof CocarProjection)[]).every(key=>old[key]===p[key]);
+    if (mode === 'apply' && !matches) tx.set(ref,p);
+    return {status:matches?'unchanged' as const:'reconciled' as const, projection:p, changed:mode==='apply' && !matches};
   });
+}
+/** Backwards-compatible fixture entry point. Invalid history is reported
+ * only after the transaction has committed any necessary invalidation. */
+export async function rebuildCocarProjectionFixture(db: Firestore, uid: string) {
+  const result = await reconcileCocarProjectionFixture(db,uid,'apply');
+  if (!result.projection) throw Error('COCAR_LEDGER_ORDER_OR_KEY_INVALID');
+  return result.projection;
 }

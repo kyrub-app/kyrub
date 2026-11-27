@@ -2396,3 +2396,48 @@ test('Cocares candidate: canonical writer, concurrency, replay and invalidation 
   if(previousEpoch===undefined)delete process.env[epochKey];else process.env[epochKey]=previousEpoch;
  }
 });
+
+
+test('Cocares historical reconciliation: preview, multiple pages, concurrent grant and no duplicate migration',async()=>{
+ const flag='KYRUB_COCAR_PROJECTION_TEST_ONLY',epochKey='KYRUB_COCAR_PROJECTION_TEST_EPOCH';
+ const previousFlag=process.env[flag],previousEpoch=process.env[epochKey];
+ const uid='cocar-history-'+suffix,epoch='history-'+suffix;
+ const ledger=db.collection('users/'+uid+'/xpLedger'),projection=db.doc('users/'+uid+'/cocarProjectionV1/current');
+ const {reconcileCocarProjectionFixture}=await import('../server/gamification/cocarProjectionTransaction.js');
+ const {persistVerifiedKyrubXp,readVerifiedKyrubXpTotal}=await import('../server/gamification/xpLedgerRepository.js');
+ const entry=(key:string,deltaXp:number)=>({userId:uid,sourceType:'achievement' as const,sourceId:'fixture',deltaXp,correlationId:key,idempotencyKey:key,occurredAt:'2026-11-27T12:00:00.000Z'});
+ try{
+  process.env[flag]='true';process.env[epochKey]=epoch;
+  const batch=db.batch();
+  for(let i=0;i<260;i++){
+   const key='history_'+String(i).padStart(3,'0'),ref=ledger.doc('xp_'+key);
+   batch.set(ref,{...entry(key,i===128?-2:1),id:ref.id,economy:'kyrub_xp'});
+  }
+  await batch.commit();
+  const preview=await reconcileCocarProjectionFixture(db,uid,'preview');
+  assert.equal(preview.status,'reconciled');assert.equal(preview.changed,false);
+  assert.equal(preview.projection?.total,257);assert.equal((await projection.get()).exists,false);
+  // Both transaction orders are valid: the final projection must include the grant.
+  await Promise.all([reconcileCocarProjectionFixture(db,uid,'apply'),persistVerifiedKyrubXp(entry('zz',5))]);
+  const current=await projection.get();
+  assert.equal(current.get('total'),262);assert.equal(current.get('entryCount'),261);
+  assert.deepEqual(await readVerifiedKyrubXpTotal(uid),{total:262,entryCount:261});
+  assert.equal((await reconcileCocarProjectionFixture(db,uid,'apply')).changed,false);
+  assert.ok((await projection.get()).updateTime?.isEqual(current.updateTime!));
+  const bad=ledger.doc('xp_zzz');
+  await bad.set({...entry('history_000',1),id:bad.id,economy:'kyrub_xp'});
+  assert.equal((await reconcileCocarProjectionFixture(db,uid,'preview')).status,'invalid');
+  assert.equal((await projection.get()).exists,true);
+  const rejected=await reconcileCocarProjectionFixture(db,uid,'apply');
+  assert.equal(rejected.status,'invalid');assert.equal(rejected.changed,true);
+  assert.equal((await projection.get()).exists,false);
+  assert.equal((await ledger.get()).size,262);
+ }finally{
+  const cleanup=db.batch();
+  cleanup.delete(projection);
+  for(const d of (await ledger.get()).docs)cleanup.delete(d.ref);
+  await cleanup.commit();
+  if(previousFlag===undefined)delete process.env[flag];else process.env[flag]=previousFlag;
+  if(previousEpoch===undefined)delete process.env[epochKey];else process.env[epochKey]=previousEpoch;
+ }
+});
