@@ -46,7 +46,7 @@ export function PersonalReputationPanel({user,visibleIdentifier=null}:{user:User
  }
  async function copyForSquare(){
   if(!shareReady||!shareUrl||auth.currentUser!==user||!personalReputationCandidateEnabled())return;
-  const draft='Conheça minha Experiência e Reputações na Kyrub: '+shareUrl;
+  const draft='Conheça minha Experiência e Reputações no Kyrub: '+shareUrl;
   try{
    if(!navigator.clipboard?.writeText)throw Error('COPY_UNAVAILABLE');
    await navigator.clipboard.writeText(draft);
