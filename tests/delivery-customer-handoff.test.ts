@@ -68,11 +68,14 @@ describe('buyer-confirmed customer delivery handoff', () => {
     assert.match(completion, /settlementEligible: true/);
   });
 
-  test('legacy courier sync cannot submit done or delivering', () => {
-    const cloudStatuses = courierBridge.match(/CLOUD_STATUSES[\s\S]*?\]\);/)?.[0] ?? '';
-    assert.match(cloudStatuses, /'accepted'/);
-    assert.doesNotMatch(cloudStatuses, /'done'/);
-    assert.doesNotMatch(cloudStatuses, /'delivering'/);
+  test('background bridge cannot submit acceptance, route start or completion from cache', () => {
+    assert.doesNotMatch(courierBridge, /CLOUD_STATUSES|localStorage|sessionStorage|setInterval|updateKyrubDeliveryOpportunityStatus|confirmKyrubDeliveryAcceptance/);
+    assert.doesNotMatch(courierBridge, /\/status\b|\/accept\b|\/secure-pickup\b|\/buyer-confirmation\b/);
+    assert.match(courierBridge, /onSnapshot\(/);
+    assert.match(courierBridge, /clean\(data\.acceptedBy\) !== user\.uid/);
+    assert.match(courierBridge, /clean\(data\.status\) !== 'delivering'/);
+    assert.match(courierBridge, /onClick=\{\(\) => \{[\s\S]*?void notifyCustomerArrival\(activeDelivery\.id\)/);
+    assert.match(courierBridge, /\/customer-arrival/);
   });
 
   test('approved courier signals arrival while buyer confirmation stays a buyer action', () => {

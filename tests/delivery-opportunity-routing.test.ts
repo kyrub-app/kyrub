@@ -83,11 +83,29 @@ test('Renda keeps delivery earnings behind the Kyrub Entregas shortcut', () => {
 });
 
 test('courier actions use a server-authoritative atomic claim', () => {
-  assert.match(statusBridgeSource, /kyrub_deliveries/);
-  assert.match(statusBridgeSource, /delivery\.id\.startsWith\('order-'\)/);
-  assert.match(statusBridgeSource, /belongsToAuthenticatedCourier/);
-  assert.match(statusBridgeSource, /identities\.has\(acceptedBy\)/);
-  assert.match(statusBridgeSource, /updateKyrubDeliveryOpportunityStatus/);
+  const modal=readFileSync('src/components/modals/DeliveryManagerModal.tsx','utf8');
+  const transport=readFileSync('server/delivery/deliveryAcceptanceTransport.ts','utf8');
+  assert.doesNotMatch(statusBridgeSource,/localStorage|updateKyrubDeliveryOpportunityStatus|setInterval/);
+  assert.match(bridgeSource,/acceptedBy:\s*clean\(data.acceptedBy\)/);
+  assert.match(modal,/await confirmKyrubDeliveryAcceptance\(jobId,user\)/);
+  assert.match(modal,/auth.currentUser\?\.uid!==user.uid/);
+  assert.match(modal,/accepting.current=true/);
+  assert.match(modal,/d.acceptedBy===auth.currentUser.uid/);
+  assert.ok(modal.indexOf('await confirmKyrubDeliveryAcceptance')<modal.indexOf("status:'accepted',acceptedBy:user.uid"));
+  assert.match(transport,/KYRUB_DELIVERY_ACCEPTANCE_ENABLED!=='true'/);
+  assert.match(transport,/VERCEL_ENV!=='production'/);
+  assert.match(transport,/verifyIdToken\(token,true\)/);
+  assert.match(transport,/requireApprovedWorkProfile\(actor.uid,'courier'\)/);
+  assert.match(transport,/requireCanonicalAcceptance:true/);
+  assert.match(routerSource,/transaction.get\(adminDb.doc\('identity_verifications\/'\+actor.uid\)\)/);
+  assert.match(routerSource,/deliveryJobId\(clean\(delivery.storeId\),clean\(delivery.sourceOrderId\)\) !== normalizedId/);
+  assert.match(routerSource,/DELIVERY_ACCEPTANCE_CONFLICT/);
+  assert.match(utilitySource,/receipt.courierId!==user.uid/);
+  assert.match(utilitySource,/receipt.deliveryId!==deliveryId/);
+  const rewrites=JSON.parse(readFileSync('vercel.json','utf8')).rewrites;
+  assert.ok(rewrites.some((r:{source:string;destination:string})=>r.source==='/api/delivery-opportunities/:deliveryId/accept'&&r.destination==='/api/health?transport=kyrub-delivery-acceptance&deliveryId=:deliveryId'));
+  assert.ok(!rewrites.some((r:{source:string})=>r.source==='/api/delivery-opportunities/:path*'));
+  assert.match(readFileSync('api/health.ts','utf8'),/transport === 'kyrub-delivery-acceptance'/);
   assert.match(utilitySource, /delivery-opportunities\/\$\{encodeURIComponent/);
   assert.match(utilitySource, /authorization: `Bearer/);
   assert.match(routerSource, /runTransaction/);

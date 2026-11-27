@@ -48,6 +48,10 @@
       "destination": "/api/health?transport=public-delivery-discovery"
     },
     {
+      "source": "/api/delivery-opportunities/:deliveryId/accept",
+      "destination": "/api/health?transport=kyrub-delivery-acceptance&deliveryId=:deliveryId"
+    },
+    {
       "source": "/api/pitangas",
       "destination": "/api/health?transport=pitanga-account"
     },

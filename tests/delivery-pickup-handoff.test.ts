@@ -58,11 +58,14 @@ describe('secure courier pickup handoff', () => {
     assert.match(courier, /secure-pickup/);
   });
 
-  test('background status sync cannot bypass route start or buyer-confirmed completion', () => {
-    const cloudStatuses = sync.match(/CLOUD_STATUSES[\s\S]*?\]\);/)?.[0] ?? '';
-    assert.match(cloudStatuses, /'accepted'/);
-    assert.doesNotMatch(cloudStatuses, /'delivering'/);
-    assert.doesNotMatch(cloudStatuses, /'done'/);
+  test('background bridge cannot submit acceptance, route start or completion from cache', () => {
+    assert.doesNotMatch(sync, /CLOUD_STATUSES|localStorage|sessionStorage|setInterval|updateKyrubDeliveryOpportunityStatus|confirmKyrubDeliveryAcceptance/);
+    assert.doesNotMatch(sync, /\/status\b|\/accept\b|\/secure-pickup\b|\/buyer-confirmation\b/);
+    assert.match(sync, /onSnapshot\(/);
+    assert.match(sync, /clean\(data\.acceptedBy\) !== user\.uid/);
+    assert.match(sync, /clean\(data\.status\) !== 'delivering'/);
+    assert.match(sync, /onClick=\{\(\) => \{[\s\S]*?void notifyCustomerArrival\(activeDelivery\.id\)/);
+    assert.match(sync, /\/customer-arrival/);
   });
 
   test('pickup handoff remains operational only and cannot complete delivery or settle money', () => {

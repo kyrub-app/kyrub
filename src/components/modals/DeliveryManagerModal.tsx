@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { MapPin } from 'lucide-react';
-import { db } from '../../utils/firebase';
+import { auth, db } from '../../utils/firebase';
+import { confirmKyrubDeliveryAcceptance } from '../../utils/deliveryOpportunities';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { DeliveryJob } from '../../types';
 import { openGoogleMapsDirections } from '../../utils/googleMapsDirections';
@@ -16,6 +17,7 @@ interface DeliveryManagerModalProps {
 }
 
 type OperationalDeliveryJob = DeliveryJob & {
+  acceptedByName?: string;
   source?: string;
   sourceOrderId?: string;
   orderStatus?: string;
@@ -39,6 +41,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   const [deliveryModalTab, setDeliveryModalTab] = useState<'solicitar' | 'publicados' | 'historico'>('solicitar');
   const [fazerEntregasModalTab, setFazerEntregasModalTab] = useState<'solicitacoes' | 'trajeto' | 'historico'>('solicitacoes');
 
+  const accepting = useRef(false);
+  const [acceptingId,setAcceptingId] = useState('');
   const [deliveryParcelDesc, setDeliveryParcelDesc] = useState('');
   const [deliveryPickupPoint, setDeliveryPickupPoint] = useState('');
   const [deliveryDeliveryPoint, setDeliveryDeliveryPoint] = useState('');
@@ -101,15 +105,36 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
     }
   };
 
-  const handleAcceptDelivery = (jobId: string) => {
-    setDeliveries(prev =>
-      prev.map(d => {
-        if (d.id !== jobId) return d;
-        triggerToast(`Entrega de ${d.from} aceita. Você já pode se deslocar até a coleta.`, 'success');
-        return { ...d, status: 'accepted', acceptedBy: profileName || 'Você', updatedAt: new Date().toISOString() };
-      })
-    );
+  const handleAcceptDelivery = async (jobId: string): Promise<void> => {
+    if (accepting.current) return;
+    const job=deliveries.find(d=>d.id===jobId);
+    if (!job || job.status!=='available') return;
+    if ((job as OperationalDeliveryJob).source==='kyrub-order' || job.id.startsWith('order-')) {
+      const user=auth.currentUser;
+      if (!user) {triggerToast('Entre na sua conta antes de aceitar uma entrega.','warning');return;}
+      accepting.current=true;setAcceptingId(jobId);
+      try {
+        await confirmKyrubDeliveryAcceptance(jobId,user);
+        if (auth.currentUser?.uid!==user.uid) return;
+        setDeliveries(prev=>prev.map(d=>d.id===jobId&&d.status==='available'?{...d,status:'accepted',acceptedBy:user.uid,updatedAt:new Date().toISOString()}:d));
+        setFazerEntregasModalTab('trajeto');
+        triggerToast('Aceite confirmado pelo servidor Kyrub.','success');
+      } catch {
+        triggerToast('Não foi possível confirmar o aceite. Atualize as oportunidades antes de tentar novamente.','error');
+      } finally {accepting.current=false;setAcceptingId('');}
+      return;
+    }
+    // Preserve the existing manual/local-only path without claiming a server confirmation.
+    setDeliveries(prev=>prev.map(d=>d.id===jobId&&d.status==='available'?{...d,status:'accepted',acceptedBy:profileName||'Você',updatedAt:new Date().toISOString()}:d));
+    triggerToast('Solicitação registrada localmente.','info');
   };
+  const isMine=(d:DeliveryJob)=>((d as OperationalDeliveryJob).source==='kyrub-order'||d.id.startsWith('order-'))
+    ? Boolean(auth.currentUser&&d.acceptedBy===auth.currentUser.uid)
+    : d.acceptedBy===(profileName||'Você');
+
+  const courierLabel=(job:DeliveryJob)=>((job as OperationalDeliveryJob).source==='kyrub-order'||job.id.startsWith('order-'))
+    ? ((job as OperationalDeliveryJob).acceptedByName||'Entregador Kyrub')
+    : job.acceptedBy||'Entregador';
 
   const handleStartPickup = (job: DeliveryJob): void => {
     try {
@@ -238,8 +263,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                     <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                       <div className="text-[9px] font-mono">
                         {job.status === 'available' && <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-bold">Aguardando Entregador</span>}
-                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {job.acceptedBy || 'Entregador'}</span>}
-                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em Trajeto ({job.acceptedBy})</span>}
+                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {courierLabel(job)}</span>}
+                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em Trajeto ({courierLabel(job)})</span>}
                       </div>
                       {job.status === 'available' ? (
                         <button type="button" onClick={() => handleDeleteDeliveryJob(job.id)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer font-mono">Cancelar</button>
@@ -261,7 +286,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                         <span className="text-[9px] px-1.5 py-0.5 bg-slate-900 border border-slate-800 text-slate-500 rounded font-mono uppercase font-semibold">ID: {job.id}</span>
                         <h4 className="text-xs font-black text-slate-300 uppercase truncate mt-1">{job.to}</h4>
                         <p className="text-[10px] text-slate-500 pt-1 font-mono">Retirada: {job.from}</p>
-                        {job.acceptedBy && <p className="text-[9px] text-slate-400 pt-1 font-mono">Entregue por: {job.acceptedBy}</p>}
+                        {job.acceptedBy && <p className="text-[9px] text-slate-400 pt-1 font-mono">Entregue por: {courierLabel(job)}</p>}
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-xs font-bold text-slate-400 font-mono block">{paymentLabel(job)}</span>
@@ -308,7 +333,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                       </div>
                       <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                         <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold">Disponível</span>
-                        <button type="button" onClick={() => handleAcceptDelivery(job.id)} className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">Aceitar Entrega</button>
+                        <button type="button" disabled={Boolean(acceptingId)} onClick={() => void handleAcceptDelivery(job.id)} className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">{acceptingId===job.id?'Confirmando…':'Aceitar Entrega'}</button>
                       </div>
                     </div>
                   );
@@ -318,9 +343,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
             {fazerEntregasModalTab === 'trajeto' && (
               <div className="space-y-3 text-xs">
-                {deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && d.acceptedBy === (profileName || 'Você')).length === 0 ? (
+                {deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && isMine(d)).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Você não possui entregas em andamento.</div>
-                ) : deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && d.acceptedBy === (profileName || 'Você')).map(job => {
+                ) : deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && isMine(d)).map(job => {
                   const operational = job as OperationalDeliveryJob;
                   const waitingForKitchen = job.status === 'accepted' && operational.source === 'kyrub-order' && operational.orderStatus === 'preparing';
                   return (
@@ -364,9 +389,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
             {fazerEntregasModalTab === 'historico' && (
               <div className="space-y-3 text-xs">
-                {deliveries.filter(d => d.status === 'done' && d.acceptedBy === (profileName || 'Você')).length === 0 ? (
+                {deliveries.filter(d => d.status === 'done' && isMine(d)).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Você ainda não concluiu nenhuma entrega.</div>
-                ) : deliveries.filter(d => d.status === 'done' && d.acceptedBy === (profileName || 'Você')).map(job => (
+                ) : deliveries.filter(d => d.status === 'done' && isMine(d)).map(job => (
                   <div key={job.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-2">
                     <div className="flex justify-between items-start gap-4">
                       <div className="min-w-0">

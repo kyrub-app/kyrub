@@ -40,3 +40,17 @@ export const updateKyrubDeliveryOpportunityStatus = async (
       : 'Não foi possível atualizar esta entrega.'
   );
 };
+
+/** Explicit user intent only; reject a generic HTTP success or HTML fallback. */
+export async function confirmKyrubDeliveryAcceptance(deliveryId:string,user:Pick<User,'uid'|'getIdToken'>):Promise<void>{
+ if(!/^order-[a-f0-9]{64}$/.test(deliveryId))throw Error('Entrega inválida.');
+ const token=await user.getIdToken();
+ const response=await fetch('/api/delivery-opportunities/'+encodeURIComponent(deliveryId)+'/accept',{
+  method:'POST',credentials:'omit',cache:'no-store',redirect:'error',
+  headers:{authorization:'Bearer '+token,'content-type':'application/json'},
+  body:JSON.stringify({confirmed:true})
+ });
+ if(!response.ok)throw Error('Aceite não confirmado.');
+ const receipt=await response.json();
+ if(receipt?.accepted!==true||receipt.deliveryId!==deliveryId||receipt.courierId!==user.uid||receipt.status!=='accepted')throw Error('Aceite não confirmado.');
+}

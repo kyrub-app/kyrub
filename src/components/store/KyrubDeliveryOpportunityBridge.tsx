@@ -8,6 +8,7 @@ const DELIVERY_STORAGE_KEY = 'kyrub_deliveries';
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 
 type OperationalDeliveryJob = DeliveryJob & {
+  acceptedByName?: string;
   source?: string;
   sourceOrderId?: string;
   orderStatus?: string;
@@ -107,7 +108,8 @@ export function KyrubDeliveryOpportunityBridge({
               status: status as DeliveryJob['status'],
               requestedBy: clean(data.requestedBy),
               acceptedBy:
-                clean(data.acceptedByName) || clean(data.acceptedBy) || undefined,
+                clean(data.acceptedBy) || undefined,
+              acceptedByName: clean(data.acceptedByName) || undefined,
               source: clean(data.source),
               sourceOrderId: clean(data.sourceOrderId),
               orderStatus: clean(data.orderStatus),
