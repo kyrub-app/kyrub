@@ -55,3 +55,7 @@ Decisões do proprietário em 27/11/2026. Freelas é requisito de lançamento. I
 - [ ] Validar piloto comercial autorizado; nenhuma declaração de disponibilidade antes de comprovação.
 
 Fora do escopo imediato: Split 1:N, logística integrada de pedidos, custódia/saldo próprio, crédito/adiantamento, pagamento parcial automático, novas taxas, Open Finance não autorizado, CID financeiro automático.
+
+## Progresso da contenção — 27/11/2026
+#1436 Application build 45996520511 aprovado; Store security rules ainda em execução quando consultado.
+Nesta parcela: política compartilhada deliberadamente desativada, bloqueio de publicação no serviço antes do acesso ao banco, bloqueio de novo aceite integrado dentro da transação (replay do titular existente preservado), escalonamento integrado suspenso sem apagar fila, projeção pública integrada vazia sem consulta, bridge não assina pedidos para publicar, filtro de ofertas disponíveis e contador Catu. Não altera regras, contratos existentes, entrega própria, retirada ou dados. Projeção de cache histórica preservada para continuidade e teste de remontagem. Testes de política e serviços sem credenciais no prebuild, CI pendente. O fluxo legado de frete avulso ainda não é canônico. Ainda falta inventariar checkout/ERP/KDS e demais caminhos de escrita, compatibilizar #1409/#1414, limitar leituras privadas e tratar pendências antigas; não declarar bloqueio global/comercial concluído.
