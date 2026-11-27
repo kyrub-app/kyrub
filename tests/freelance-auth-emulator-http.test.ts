@@ -1754,10 +1754,18 @@ for(const administrative of [false,true])test('hourly advance persistence: '+(ad
   for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:true,openOfferIds:[id]});
   const parties={offerId:id,requesterUid:owner.uid,beneficiaryUid:worker.uid};
   await db.runTransaction(async tx=>{const write=await prepareExcessRestriction(tx,parties,false,true);write();});
+  const {requestHourlyAdvanceReview}=await import('../server/freelance/freelanceHourlyAdvanceService.js');
+  const {paymentDigest}=await import('../server/freelance/freelanceHourlyAdvanceReviewRecords.js');
+  const raw=(await ref.collection('directPayment').doc('hourlyAdvances').get()).get('events');
+  const request={confirmed:true,paymentId:'p1',sourceDigest:paymentDigest(raw,'p1')};
+  await assert.rejects(requestHourlyAdvanceReview(other.uid,id,request),/FORBIDDEN/);
+  assert.equal((await requestHourlyAdvanceReview(owner.uid,id,request)).created,true);
+  assert.equal((await requestHourlyAdvanceReview(worker.uid,id,request)).created,false);
   const resolved=await send(worker,input('received','received',2));assert.equal(resolved.restrictionActive,false);
   for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:true,openOfferIds:[id]});
   await db.runTransaction(async tx=>{const write=await prepareExcessRestriction(tx,parties,true,false);write();});
   for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:false,openOfferIds:[]});
+  assert.equal((await readHourlyAdvances(owner.uid,id)).reviews[0].status,'resolved_voluntarily');
   for(const a of [owner,worker]){const view=await readHourlyAdvances(a.uid,id);assert.equal(view.bilateralMinor,5000);assert.equal(view.adjustment,null);assert.equal(view.bankVerified,false);assert.ok(view.events.every(e=>!('actorUid' in e)));}
   const history=ref.collection('directPayment').doc('hourlyAdvances');assert.equal((await history.get()).get('events').length,3);
   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
@@ -1901,4 +1909,50 @@ for(const administrative of [false,true])test('hourly advance persistence: '+(ad
   await snapshot.update({bilateralMinor:1});await assert.rejects(readHourlyReconciliation(owner.uid,id),/CONFLICT/);
 
  }finally{if(prev===undefined)delete process.env[gate];else process.env[gate]=prev;if(prevAdv===undefined)delete process.env[advGate];else process.env[advGate]=prevAdv;}
+});
+
+test('hourly advance administrative recognition: independent payment cases, MFA and audit',async t=>{
+ const {recordHourlyAdvance,readHourlyAdvances,requestHourlyAdvanceReview}=await import('../server/freelance/freelanceHourlyAdvanceService.js');
+ const {readHourlyAdvanceAdminReview,decideHourlyAdvanceReview}=await import('../server/admin/freelanceHourlyAdvanceReviewService.js');
+ const {paymentDigest,advanceAuditRef}=await import('../server/freelance/freelanceHourlyAdvanceReviewRecords.js');
+ const {readOwnFreelanceRestrictions}=await import('../server/freelance/freelanceEngagementRestrictionService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const owner=await account('advance-admin-owner',['requester']),worker=await account('advance-admin-worker',['freelancer']),admin=await account('advance-admin-reviewer',[]);
+ const id='hourly-advance-admin-'+suffix,ref=db.doc('freelanceOffersV1/'+id);
+ const gates=['KYRUB_FREELANCE_HOURLY_LIFECYCLE_TEST_ONLY','KYRUB_FREELANCE_HOURLY_ADVANCES_TEST_ONLY'],previous=gates.map(k=>process.env[k]);
+ try{
+  gates.forEach(k=>process.env[k]='true');
+  const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:15000}),workTerms={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:15000};
+  const terms={title:'Adiantamentos em análise',description:'Emulador',requirements:'',paymentMinor:15000,paymentTerms,workTerms};
+  const expected={expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms};
+  await act(owner,id,'publish',200,{terms});await act(worker,id,'apply',200,expected);await act(owner,id,'select',200,{applicantUid:worker.uid});await act(worker,id,'confirm',200,{confirmed:true,...expected});
+  let revision=0;
+  for(const [paymentId,paid,received] of [['a',5000,3000],['b',2000,1000]] as const){
+   await recordHourlyAdvance(owner.uid,id,{confirmed:true,eventId:'paid-'+paymentId,paymentId,statement:'paid',amountMinor:paid,expectedRevision:revision++});
+   await recordHourlyAdvance(worker.uid,id,{confirmed:true,eventId:'received-'+paymentId,paymentId,statement:'received',amountMinor:received,expectedRevision:revision++});
+   const events=(await ref.collection('directPayment').doc('hourlyAdvances').get()).get('events');
+   await requestHourlyAdvanceReview(worker.uid,id,{confirmed:true,paymentId,sourceDigest:paymentDigest(events,paymentId)});
+  }
+  await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
+  const authz='Bearer '+admin.token;
+  await assert.rejects(readHourlyAdvanceAdminReview(authz,id));
+  const verify=auth.verifyIdToken.bind(auth);
+  t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+   const d=await verify(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
+  });
+  const items=(await readHourlyAdvanceAdminReview(authz,id)).items;
+  assert.equal(items.length,2);
+  const make=(paymentId:string,recognizedMinor:number)=>{const r=items.find(v=>v.paymentId===paymentId)!;return {offerId:id,paymentId,confirmed:true,sourceDigest:r.sourceDigest,expectedRequestedAt:r.requestedAt,recognizedMinor,reason:'Análise fictícia das declarações.'};};
+  await assert.rejects(decideHourlyAdvanceReview(authz,make('a',5001)),/CONFLICT/);
+  assert.equal((await decideHourlyAdvanceReview(authz,make('a',3000))).restrictionActive,true);
+  assert.equal((await decideHourlyAdvanceReview(authz,make('a',3000))).replay,true);
+  for(const a of [owner,worker])assert.equal((await readOwnFreelanceRestrictions(a.uid)).restricted,true);
+  assert.equal((await decideHourlyAdvanceReview(authz,make('b',0))).restrictionActive,false);
+  const v=await readHourlyAdvances(owner.uid,id);
+  assert.equal(v.reportedPaidMinor,7000);assert.equal(v.reportedReceivedMinor,4000);assert.equal(v.bilateralMinor,0);assert.equal(v.administrativelyRecognizedMinor,3000);assert.equal(v.creditedMinor,3000);assert.equal(v.bankVerified,false);
+  for(const a of [owner,worker])assert.equal((await readOwnFreelanceRestrictions(a.uid)).restricted,false);
+  assert.equal((await ref.collection('directPayment').doc('hourlyAdvances').get()).get('events').length,4);
+  await advanceAuditRef(id,'a').update({recognizedMinor:1});
+  await assert.rejects(readHourlyAdvances(owner.uid,id),/CONFLICT/);
+ }finally{t.mock.restoreAll();gates.forEach((k,i)=>{if(previous[i]===undefined)delete process.env[k];else process.env[k]=previous[i];});}
 });
