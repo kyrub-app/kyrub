@@ -169,7 +169,7 @@ test('private experience and reputation are outside reward wallet and verify min
  assert.doesNotMatch(ui,/method:'POST'|localStorage|rewardXp/);
 });
 
-test('store reputation is operational only and team access does not grant financial authority',()=>{
+test('store reputation operational and management destinations preserve distinct authority',()=>{
  const menu=read('src/components/MobileErpMenu.tsx'),runtime=read('src/components/MobileErpMenuRuntime.tsx'),router=read('src/components/RetailerPanelRuntimeRouter.tsx');
  assert.match(menu,/id: 'reputacoes', label: 'Reputações', icon: Star, section: 'operacao'/);
  assert.match(menu,/itemId === 'ponto' \|\| itemId === 'reputacoes'/);
@@ -178,4 +178,15 @@ test('store reputation is operational only and team access does not grant financ
  const ui=read('src/components/store/StoreReputationWorkspace.tsx');
  assert.match(ui,/view=reputation_team&storeId=/);assert.match(ui,/method:'GET'/);assert.match(ui,/cache:'no-store'/);
  assert.doesNotMatch(ui,/method:'POST'|localStorage|contest_reputation|submit_reputation/);
+});
+
+test('management Reputações remains separate from operational team view and reuses existing reporting',()=>{
+ const menu=read('src/components/MobileErpMenu.tsx'),router=read('src/components/RetailerPanelRuntimeRouter.tsx');
+ assert.match(menu,/id: 'reputacoes_gestao', label: 'Reputações', icon: Star, section: 'gestao'/);
+ assert.match(menu,/itemId === 'reputacoes_gestao'\) return role === 'manager'/);
+ assert.match(router,/moduleId === 'reputacoes_gestao'/);
+ const ui=read('src/components/store/StoreReputationManagementWorkspace.tsx');
+ assert.match(ui,/view=reputation_management&storeId=/);assert.match(ui,/submitStoreReviewReport\(report.storeId,report.reviewId,reason\)/);
+ assert.match(ui,/<FreelaReputationPanel/);assert.match(ui,/view.owner\?/);
+ assert.doesNotMatch(ui,/deleteDoc|updateDoc|localStorage/);
 });
