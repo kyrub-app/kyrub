@@ -90,7 +90,7 @@ export async function changeAdjustmentPix(uid:string,id:string,action:'authorize
 
 /** The proposal itself explicitly grants consent to the NEW revision, effective
  * only when the payer confirms no transfer was sent. Withdrawal cancels pending consent. */
-export async function changeAdjustmentPixReplacement(uid:string,id:string,action:'propose'|'accept'|'withdraw',input:{sourceDigest:unknown;expectedAmountMinor:unknown;oldRevision:unknown;newRevision:unknown;confirmed:unknown;paymentNotSent?:unknown}){
+export async function changeAdjustmentPixReplacement(uid:string,id:string,action:'propose'|'accept'|'withdraw',input:{sourceDigest:unknown;expectedAmountMinor:unknown;oldRevision:unknown;newRevision:unknown;confirmed:unknown;paymentNotSent?:unknown},authorization?:string){
  if(!validFreelanceId(uid)||!validFreelanceId(id)||input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest)||!Number.isSafeInteger(input.expectedAmountMinor)||Number(input.expectedAmountMinor)<1||!Number.isSafeInteger(input.oldRevision)||Number(input.oldRevision)<1||!Number.isSafeInteger(input.newRevision)||Number(input.newRevision)<=Number(input.oldRevision)||(action==='accept'&&input.paymentNotSent!==true))throw Error('FREELANCE_INVALID');
  const oldRevision=Number(input.oldRevision),newRevision=Number(input.newRevision);
  return adminDb.runTransaction(async tx=>{
@@ -108,7 +108,6 @@ export async function changeAdjustmentPixReplacement(uid:string,id:string,action
   if(action==='accept'&&same&&r.status==='accepted')return {changed:false};
   if(x.paymentBlocked)return blocked();
   if(consent.revision!==oldRevision)return conflict();
-  if(x.storeRefund&&action==='propose'){const mfa=await requireKyrubSessionMfa(authorization??'','financial',300);if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');}
   if(x.storeRefund&&action==='propose'){const mfa=await requireKyrubSessionMfa(authorization??'','financial',300);if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');}
   await eligible(tx,o);
   const destination=await destinationMask(tx,o);
