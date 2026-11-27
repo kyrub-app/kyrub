@@ -29,7 +29,8 @@ function reason(value:unknown){
 function item(doc:DocumentSnapshot,now:number):CidReviewQueueItem{
  const v=doc.data(),revision=v?.revision??0;
  if(!v||!uuid(doc.id)||v.id!==doc.id||!isTagId(v.tagId)||typeof v.occurrenceId!=='string'||!/^[A-Za-z0-9_-]{22,80}$/.test(v.occurrenceId)||!time(v.createdAt)||v.createdAt>now||v.simulation!==true||!['complaint','preservation'].includes(v.kind)||!['pending-review','dismissed','escalated'].includes(v.status)||!Number.isSafeInteger(revision)||revision<0)return deny();
- return {id:doc.id,kind:v.kind,tagId:v.tagId,occurrenceId:v.occurrenceId,createdAt:v.createdAt,status:v.status,revision};
+ if(v.specialistFinding!==undefined&&(v.status!=='escalated'||typeof v.specialistFinding!=='string'||!Object.hasOwn(CID_SPECIALIST_FINDINGS,v.specialistFinding)))return deny();
+ return {id:doc.id,kind:v.kind,tagId:v.tagId,occurrenceId:v.occurrenceId,createdAt:v.createdAt,status:v.status,revision,...(v.specialistFinding?{specialistFinding:v.specialistFinding}:{})};
 }
 export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='fixture'){
  if(mode!=='fixture'&&mode!=='control-plane')return deny();
@@ -50,6 +51,7 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
    const [admin,specific]=await Promise.all([tx.get(db.doc('kyrub_admin/control_plane/admins/'+identity.uid)),tx.get(db.doc('kyrub_admin/control_plane/cid_evidence_grants/'+identity.uid))]);
    const profile=admin.data(),grant=specific.data();
    if(profile?.uid!==identity.uid||profile.status!=='active'||!canonicalRoles.has(profile.role)||grant?.uid!==identity.uid||grant.status!=='active'||!Array.isArray(grant.permissions)||!grant.permissions.includes(permission))return deny();
+   if(permission==='review:specialist'&&!grant.permissions.includes('review:read'))return deny();
    if(permission!=='review:read'&&now-identity.auth_time*1000>5*60000)return deny();
    return {actorId:identity.uid,actorRole:profile.role} as ReviewIdentity;
   }
