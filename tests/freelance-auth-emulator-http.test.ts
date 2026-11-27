@@ -1031,11 +1031,25 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await excessApi(worker,200,'propose_hourly_excess',ep);await excessApi(worker,200,'propose_hourly_excess',ep);
  await excessApi(worker,403,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
  await excessApi(owner,200,'decline_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ assert.equal((await excessApi(owner,200)).restrictionActive,false);
+ const restriction=async(actor:Actor)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v;};
+ const ef={sourceDigest:ev.sourceDigest};
+ await excessApi(other,403,'dispute_hourly_excess',ef);
+ await excessApi(owner,409,'dispute_hourly_excess',{sourceDigest:'0'.repeat(64)});
+ await excessApi(worker,200,'dispute_hourly_excess',ef);await excessApi(worker,200,'dispute_hourly_excess',ef);
+ for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[excessId]});
+ await excessApi(owner,200,'request_hourly_excess_review',ef);await excessApi(owner,200,'request_hourly_excess_review',ef);
+ assert.equal((await excessApi(worker,200)).dispute.status,'review_requested');
+ assert.equal((await db.doc('freelanceHourlyExcessReviewsV1/'+excessId).get()).get('status'),'pending');
+ // Synthetic concurrent cancellation and payment causes on the same offer.
+ for(const actor of [owner,worker])await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[excessId],openCancellationOfferIds:[excessId]});
  await excessApi(owner,200,'propose_hourly_excess',{...ep,proposalId:'second'});
  await excessApi(worker,409,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
  await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
  await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
- const resolved=await excessApi(owner,200);assert.equal(resolved.resolved.recognizedServiceMinor,13000);assert.equal(resolved.resolved.unrecognizedExcessMs,1800000);assert.equal(resolved.payable,false);
+ const resolved=await excessApi(owner,200);assert.equal(resolved.resolved.recognizedServiceMinor,13000);assert.equal(resolved.resolved.unrecognizedExcessMs,1800000);assert.equal(resolved.payable,false);assert.equal(resolved.restrictionActive,false);assert.equal(resolved.dispute.status,'resolved_voluntarily');
+ assert.equal((await db.doc('freelanceHourlyExcessReviewsV1/'+excessId).get()).get('status'),'resolved_voluntarily');
+ for(const actor of [owner,worker]){assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[excessId]});const root=db.doc('freelanceEngagementRestrictionsV1/'+actor.uid);const stored=(await root.get()).data()!;assert.deepEqual(stored.openOfferIds,[excessId]);assert.deepEqual(stored.openCancellationOfferIds,[excessId]);assert.equal(stored.openExcessOfferIds,undefined);await root.set({schemaVersion:1,uid:actor.uid,openOfferIds:[]});}
  assert.equal((await er.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
  await excessApi(owner,409,'propose_hourly_excess',{...ep,proposalId:'third'});
  await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);
