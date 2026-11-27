@@ -116,7 +116,35 @@ try{
  await action(employer,'Publicar freela');
  const offers=await db.collection('freelanceOffersV1').where('ownerUid','==',owner.uid).get();
  assert.equal(offers.size,1);const offerId=offers.docs[0].id;
- await detail(employee,'Solicitações');await action(employee,'Candidatar-se');
+ await detail(employee,'Solicitações');
+ // Reproduce the existing delivery bridge's actual cache refresh using a fictional
+ // document in the isolated emulator. Verify the card remounts but this very
+ // dialog and its selected details remain mounted. No application test hook.
+ const deliveryId='browser-refresh-'+suffix;
+ const witness=await workerPage.evaluate(()=>{
+  const dialog=document.querySelector('[role="dialog"][aria-label="Fazer Freelas"]');
+  const card=document.getElementById('btn-fazer-freela');
+  if(!dialog||!card)return false;
+  window.__freelaRemountWitness={dialog,card};
+  return true;
+ });
+ assert.equal(witness,true);
+ const deliveryRef=db.doc('hub/renda/deliveries/'+deliveryId);
+ try{
+  await deliveryRef.set({id:deliveryId,source:'kyrub-order',sourceOrderId:'fictional-'+suffix,status:'available',from:'Origem fictícia',to:'Destino fictício',distance:1,payment:1,requestedBy:'Teste isolado'});
+  await workerPage.waitForFunction(id=>{
+   const w=window.__freelaRemountWitness;
+   return !!w&&!w.card.isConnected&&!!document.getElementById('btn-fazer-freela')&&
+    (JSON.parse(localStorage.getItem('kyrub_deliveries')??'[]')).some(x=>x.id===id);
+  },deliveryId,{timeout:20000});
+  assert.equal(await workerPage.evaluate(()=>window.__freelaRemountWitness.dialog===document.querySelector('[role="dialog"][aria-label="Fazer Freelas"]')&&window.__freelaRemountWitness.dialog.isConnected),true,'The original Freelas panel must survive LegacyApp remount');
+  await button(employee,'Candidatar-se').waitFor({state:'visible',timeout:10000});
+  console.log('PASS controlled delivery cache refresh: legacy card remounted, original Freelas panel and details retained');
+ }finally{
+  await deliveryRef.delete();
+  await workerPage.evaluate(()=>{delete window.__freelaRemountWitness;});
+ }
+ await action(employee,'Candidatar-se');
  await detail(employer,'Publicados');await action(employer,'Selecionar Prestador teste');
  // The worker's independently authenticated panel must survive the other account's mutation.
  await employee.waitFor({state:'visible',timeout:15000});
