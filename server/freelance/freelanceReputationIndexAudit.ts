@@ -1,3 +1,4 @@
+import {readCocarProjectionFixtureInTransaction} from '../gamification/cocarProjectionTransaction.js';
 import {kyrubXpTotal,type KyrubXpEntry} from '../../shared/gamification.js';
 import {buildUserNotification,userNotificationPath} from '../../shared/userNotifications.js';
 import {isSocialAddress,isDocumentId,matchesSocialAddressRecord,projectSocialAddress} from '../identity/publicSocialAddressPolicy.js';
@@ -262,12 +263,15 @@ const validCocarSnapshot=(v:unknown)=>v===null||typeof v==='number'&&Number.isSa
 /** Exact, emulator-only reconstruction at publication; never in the feed or chat.
  * Page size bounds each query, not the total history. Preserve document-ID order
  * and cross-page idempotency validation, including signed adjustments.
- * This is an interim linear-cost read until all XP writers can maintain a
- * certified materialized projection. Do not activate on production.
+ * Only explicitly enrolled emulator fixtures may use the candidate projection;
+ * all other cases retain the canonical reconstruction. Do not activate on production.
  */
 async function readPublicationCocares(tx:Transaction,uid:string):Promise<number|null>{
+ const ledger=adminDb.collection('users/'+uid+'/xpLedger');
+ const projected=await readCocarProjectionFixtureInTransaction(tx,ledger.firestore,uid);
+ if(projected!==null)return projected;
  const pageSize=32;
- const query=adminDb.collection('users/'+uid+'/xpLedger').orderBy(FieldPath.documentId()).limit(pageSize);
+ const query=ledger.orderBy(FieldPath.documentId()).limit(pageSize);
  let cursor:QueryDocumentSnapshot|undefined;
  let total=0,magnitude=0;
  const seen=new Set<string>();
