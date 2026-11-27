@@ -2286,6 +2286,41 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
           assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
          }finally{await db.doc('social_posts/'+duplicate.id).delete();await duplicate.ref.delete();}
          await xp.update({idempotencyKey:entry.idempotencyKey});
+         // The candidate is exercised only with this explicitly enrolled
+         // isolated UID. Direct fixture writes above are now finished.
+         const projectionFlags=['KYRUB_COCAR_PROJECTION_TEST_ONLY','KYRUB_COCAR_PROJECTION_TEST_EPOCH','KYRUB_COCAR_PROJECTION_READ_TEST_ONLY','KYRUB_COCAR_PROJECTION_READ_FIXTURE_UID'] as const;
+         const previousProjectionFlags=projectionFlags.map(key=>process.env[key]);
+         const projectionRef=db.doc('users/'+worker.uid+'/cocarProjectionV1/current');
+         const {rebuildCocarProjectionFixture,readCocarProjectionFixtureInTransaction}=await import('../server/gamification/cocarProjectionTransaction.js');
+         const projectedRead=()=>db.runTransaction(tx=>readCocarProjectionFixtureInTransaction(tx,db,worker.uid),{readOnly:true});
+         try{
+          process.env[projectionFlags[0]]='true';process.env[projectionFlags[1]]='publication-'+suffix;
+          process.env[projectionFlags[2]]='true';process.env[projectionFlags[3]]=worker.uid;
+          assert.equal(await projectedRead(),null);
+          assert.equal((await rebuildCocarProjectionFixture(db,worker.uid)).total,expectedCocares+1);
+          assert.equal(await projectedRead(),expectedCocares+1);
+          const publishCandidate=async (requestId:string)=>{
+           await call(worker,'',200,{...input,requestId});
+           const created=(await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get()).docs.find(d=>d.id!==source.id);
+           assert.ok(created);
+           try{
+            assert.equal(created.get('cocaresAtPublication'),expectedCocares+1);
+            assert.equal((await call(payer,'?view=reputation_square_post&offerId='+created.id,200)).cocaresAtPublication,expectedCocares+1);
+           }finally{await db.doc('social_posts/'+created.id).delete();await created.ref.delete();}
+          };
+          await publishCandidate('cocar-projection-'+suffix);
+          // A mismatched epoch must fall back to the exact history, not zero.
+          process.env[projectionFlags[1]]='different-'+suffix;
+          assert.equal(await projectedRead(),null);
+          await publishCandidate('cocar-fallback-'+suffix);
+          process.env[projectionFlags[1]]='publication-'+suffix;
+          process.env[projectionFlags[3]]=payer.uid;
+          assert.equal(await projectedRead(),null);
+          assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
+         }finally{
+          await projectionRef.delete();
+          projectionFlags.forEach((key,i)=>{const previous=previousProjectionFlags[i];if(previous===undefined)delete process.env[key];else process.env[key]=previous;});
+         }
          const squareForward='KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY',directForward='KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY';
          const oldSquareForward=process.env[squareForward],oldDirectForward=process.env[directForward];
          const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
