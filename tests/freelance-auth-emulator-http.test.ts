@@ -2158,6 +2158,31 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
         assert.equal((await seedVerifiedPost(db,seedInput)).status,'accepted');
         assert.equal((await seedVerifiedPost(db,seedInput)).status,'already_seeded');
         assert.equal((await readVerifiedPostSemeadura(db,seedInput)).count,1);
+        const forwardFlag='KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY',oldForwardFlag=process.env[forwardFlag];
+        const distribution={action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true};
+        const receipt=proof.collection('squareForwards').doc(payer.uid);
+        try{
+         delete process.env[forwardFlag];await call(payer,'',403,distribution);
+         process.env[forwardFlag]='true';
+         await call(null,'',401,distribution);await call(payer,'',400,{...distribution,destination:'unknown'});await call(payer,'',400,{...distribution,confirmed:false});
+         await call(payer,'',200,distribution);await call(payer,'',409,distribution);
+         const changed=(await post.get()).data()!;
+         assert.equal(changed.authorId,worker.uid);assert.equal(changed.createdAtIso,stored.createdAtIso);assert.equal(changed.postId,postId);
+         assert.equal(changed.squareForwardedById,payer.uid);assert.equal(changed.squareDistributedAtIso,(await receipt.get()).get('forwardedAtIso'));
+         assert.equal((await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get()).size,1);
+         assert.equal((await readVerifiedPostSemeadura(db,seedInput)).count,1);
+         assert.equal((await seedVerifiedPost(db,seedInput)).status,'already_seeded');
+         assert.equal((await db.collection('social_post_comments').where('postId','==',postId).get()).size,2);
+         assert.deepEqual(await call(payer,read,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+         await profile.update({isProfileVisible:false});await call(payer,'',403,distribution);await profile.update({isProfileVisible:true});
+         const expiredDistribution=new Date(Date.now()-86400001).toISOString();
+         await receipt.update({forwardedAtIso:expiredDistribution});await post.update({squareDistributedAtIso:expiredDistribution});
+         assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});await call(payer,'',403,distribution);
+        }finally{
+         await receipt.delete();
+         await post.set(stored);
+         if(oldForwardFlag===undefined)delete process.env[forwardFlag];else process.env[forwardFlag]=oldForwardFlag;
+        }
         await profile.update({isProfileVisible:false});assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
         await call(payer,'',403,comment);
         await assert.rejects(seedVerifiedPost(db,seedInput),/POST_NOT_ELIGIBLE/);

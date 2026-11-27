@@ -290,7 +290,14 @@ async function readReputationSquareInTransaction(tx:Transaction,postId:string){
   const [post,proof]=await tx.getAll(adminDb.doc('social_posts/'+postId),adminDb.doc('freelanceReputationSquarePostsV1/'+postId));
   const p=post.data(),r=proof.data();
   if(!p||!r||Object.keys(r).length!==6||r.schemaVersion!==1||r.postId!==postId||!validFreelanceId(r.authorId)||!validFreelanceId(r.requestId)||squarePostId(r.authorId,r.requestId)!==postId||typeof r.identifier!=='string'||!isSocialAddress('profile',r.identifier)||typeof r.createdAtIso!=='string'||p.createdAtIso!==r.createdAtIso||p.authorId!==r.authorId||p.postId!==postId||p.visibility!=='public'||p.publicationType!=='feed')return hidden;
-  const elapsed=Date.now()-Date.parse(r.createdAtIso);
+  let distributedAt=r.createdAtIso;
+  if(p.squareDistributedAtIso!==undefined||p.squareForwardedById!==undefined){
+   if(typeof p.squareDistributedAtIso!=='string'||!validFreelanceId(p.squareForwardedById))return hidden;
+   const receipt=(await tx.get(adminDb.doc('freelanceReputationSquarePostsV1/'+postId+'/squareForwards/'+p.squareForwardedById))).data();
+   if(!receipt||!equal(receipt,{schemaVersion:1,postId,actorId:p.squareForwardedById,destination:'square',forwardedAtIso:p.squareDistributedAtIso})||Date.parse(p.squareDistributedAtIso)<Date.parse(r.createdAtIso))return hidden;
+   distributedAt=p.squareDistributedAtIso;
+  }
+  const elapsed=Date.now()-Date.parse(distributedAt);
   if(!Number.isFinite(elapsed)||elapsed<0||elapsed>=squareWindow)return hidden;
   return readAddressSummaryInTransaction(tx,r.authorId,r.identifier,true,true);
 
@@ -318,5 +325,30 @@ export async function commentReputationSquare(uid:string,postId:unknown,text:unk
   const avatar=typeof profile?.photoUrl==='string'?profile.photoUrl.slice(0,2048):'';
   const now=new Date();
   tx.create(ref,{postId,authorId:uid,authorName:name,authorAvatar:avatar,text:text.trim(),...(parentCommentId===undefined?{}:{parentCommentId}),createdAtIso:now.toISOString(),createdAt:now});
+ });
+}
+
+/** A forward distributes the original card, never clones it. Its last
+ * distribution time is separate from creation; same original ID for comments
+ * and seeds. One accepted forward per actor/original/destination in 24h.
+ * This candidate only supports currently visible Praça publications. */
+export async function forwardReputationSquare(uid:string,postId:unknown,destination:unknown,confirmed:unknown){
+ assertFreelanceReputationLocal();
+ if(!squarePublicationEnabled()||process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||!validSquarePost(postId)||destination!=='square'||confirmed!==true)throw Error('FREELANCE_INVALID');
+ const postRef=adminDb.doc('social_posts/'+postId),receiptRef=adminDb.doc('freelanceReputationSquarePostsV1/'+postId+'/squareForwards/'+uid);
+ return adminDb.runTransaction(async tx=>{
+  await assertReputationSquareInteraction(tx,postId);
+  const prior=(await tx.get(receiptRef)).data();
+  const now=new Date(),forwardedAtIso=now.toISOString();
+  if(prior){
+   if(typeof prior.forwardedAtIso!=='string'||!equal(prior,{schemaVersion:1,postId,actorId:uid,destination:'square',forwardedAtIso:prior.forwardedAtIso}))throw Error('FREELANCE_REPUTATION_CONFLICT');
+   const elapsed=now.getTime()-Date.parse(prior.forwardedAtIso);
+   if(!Number.isFinite(elapsed)||elapsed<0)throw Error('FREELANCE_REPUTATION_CONFLICT');
+   if(elapsed<squareWindow)throw Error('FREELANCE_CONFLICT');
+  }
+  tx.set(receiptRef,{schemaVersion:1,postId,actorId:uid,destination:'square',forwardedAtIso});
+  tx.update(postRef,{squareDistributedAtIso:forwardedAtIso,squareForwardedById:uid,updatedAt:now});
+  return {postId,forwardedAtIso};
  });
 }

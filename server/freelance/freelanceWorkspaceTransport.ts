@@ -1,5 +1,5 @@
 import {readStoreReputationManagement} from './freelanceReputationManagementService.js';
-import {readOwnReputationForWorkspace,readStoreTeamReputation,readVisibleFreelanceExperience,readAddressFreelanceExperience,readOwnReputationSquarePreview,publishOwnReputationSquare,readReputationSquarePublication,commentReputationSquare} from './freelanceReputationIndexAudit.js';
+import {readOwnReputationForWorkspace,readStoreTeamReputation,readVisibleFreelanceExperience,readAddressFreelanceExperience,readOwnReputationSquarePreview,publishOwnReputationSquare,readReputationSquarePublication,commentReputationSquare,forwardReputationSquare} from './freelanceReputationIndexAudit.js';
 import {readFreelanceReputation,submitFreelanceReputation,readOwnFreelanceReputationContestation,contestFreelanceReputation,readOwnFreelanceReputationProfile,readOwnFreelanceReputationSummary} from './freelanceReputationService.js';
 import {readFreelanceExtensions,changeFreelanceExtension} from './freelanceAttendanceExtensionService.js';
 import {readFreelanceAttendance,recordFreelanceAttendance} from './freelanceAttendanceService.js';
@@ -20,6 +20,10 @@ export function freelanceWorkspaceEnabled(){
 export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
+ if(b.action==='forward_reputation_square'){
+  if(Object.keys(b).length!==4||Object.keys(b).some(k=>!['action','offerId','destination','confirmed'].includes(k)))throw Error('FREELANCE_INVALID');
+  return forwardReputationSquare(uid,b.offerId,b.destination,b.confirmed);
+ }
  if(b.action==='comment_reputation_square'){
   if(Object.keys(b).some(k=>!['action','offerId','text','parentCommentId'].includes(k)))throw Error('FREELANCE_INVALID');
   return commentReputationSquare(uid,b.offerId,b.text,b.parentCommentId);
