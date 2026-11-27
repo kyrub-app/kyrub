@@ -1,3 +1,4 @@
+import {readHourlyExcessContext} from './freelanceHourlyExcessReviewService.js';
 import {readHourlyCancellationAgreementContext} from './freelanceHourlyCancellationAgreementService.js';
 import type {FreelanceOffer} from '../../shared/freelanceLifecycle.js';
 import type {Transaction} from 'firebase-admin/firestore';
@@ -40,6 +41,12 @@ export async function readFreelanceHourlyFinalContext(tx:Transaction,uid:string,
  }
  const s=await readVariablePaymentSources(tx,uid,offerId);
  if(!s.savedCommitment.exists||!s.savedBasis.exists)return fail();
+ if(s.record.disposition==='requires_review'){
+  const c=await readHourlyExcessContext(tx,uid,offerId),final=c.obligation;
+  if(!final)return fail();
+  const obligation:FreelancePaymentObligation={schemaVersion:1,offerId,requesterUid:final.requesterUid,beneficiaryUid:final.beneficiaryUid,...(final.requesterStoreId?{requesterStoreId:final.requesterStoreId}:{}),contractedAt:final.contractedAt,terms:createDirectPaymentTerms({method:'external_pix',amountMinor:final.amountMinor}),dueTrigger:'bilateral_service_completion',custody:'none'};
+  return {offer:c.c.offer,obligation,final,dueAt:final.dueAt,statementRef:c.statementRef,history:c.history};
+ }
  const final=buildFinal(s.record);
  const direct=s.c.ref.collection('directPayment'),statementRef=direct.doc('hourlyStatements');
  const [saved,history]=await tx.getAll(direct.doc('hourlyFinalObligation'),statementRef);
