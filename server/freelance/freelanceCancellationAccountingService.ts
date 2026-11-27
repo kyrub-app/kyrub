@@ -1,3 +1,4 @@
+import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {createHash} from 'node:crypto';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
@@ -82,6 +83,7 @@ export async function changeCancellationAccounting(uid:string,id:string,action:'
    const proposal:Proposal={schemaVersion:1,id:proposalId,offerId:id,proposedBy:uid,proposedAt:now,snapshot:c.snapshot,
     recognizedServiceMinor:a.recognizedServiceMinor,reportedReceivedMinor:a.reportedReceivedMinor,status:'pending'};
    tx.create(ref,proposal);tx.set(c.pointer,{schemaVersion:1,proposalId});
+   writeFreelanceFinancialNotices(tx,c.obligation,'cancellation_accounting_proposed',now,uid===c.obligation.requesterUid?'freelancer':'requester',proposalId);
    return {changed:true};
   }
   if(!p||p.id!==proposalId||c.stale)return conflict();
@@ -93,6 +95,7 @@ export async function changeCancellationAccounting(uid:string,id:string,action:'
    calculateCancellationAccounting(c.obligation,c.events,p.recognizedServiceMinor,p.reportedReceivedMinor);
   }
   tx.update(c.direct.doc('cancellationAccounting-'+proposalId),{status,decidedBy:uid,decidedAt:now});
+  writeFreelanceFinancialNotices(tx,c.obligation,action==='accept'?'cancellation_accounting_accepted':'cancellation_accounting_closed',now,uid===c.obligation.requesterUid?'freelancer':'requester',proposalId);
   return {changed:true};
  });
 }
