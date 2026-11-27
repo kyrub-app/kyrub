@@ -1,3 +1,4 @@
+import {coverageRef,indexDigest,checkedCoverage,writeCoverage} from './freelanceReputationCoverage.js';
 import type {Transaction,QueryDocumentSnapshot} from 'firebase-admin/firestore';
 import {isStoreRole} from '../../src/utils/storeSecurity.js';
 import {FieldPath} from 'firebase-admin/firestore';
@@ -99,10 +100,10 @@ export async function auditOwnFreelanceReputationIndexBatched(uid:string,kind:un
   if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
   const subject:ReputationSubject={kind,id:store?.storeId??uid};
   const ref=adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources({subject,representativeUid:uid}));
-  const snapshot=await tx.get(ref);
-  return {subject,readTime:snapshot.readTime};
+  const [snapshot,witness]=await tx.getAll(ref,coverageRef({subject,representativeUid:uid}));
+  return {subject,readTime:snapshot.readTime,baselineDigest:indexDigest(snapshot.data()),baselineWitness:indexDigest(witness.data())};
  },{readOnly:true});
- const {subject,readTime}=scope;
+ const {subject,readTime,baselineDigest,baselineWitness}=scope;
  let after:string|undefined,expected=emptyReputationAccumulator(kind),missingReceipts=0,staleReceipts=0;
  const readOptions={readOnly:true as const,readTime};
  for(let page=0;page<maxPages;page++){
@@ -124,8 +125,48 @@ export async function auditOwnFreelanceReputationIndexBatched(uid:string,kind:un
     const store=await readOwnedFreelanceStore(tx,uid);
     if(!store||store.storeId!==subject.id)throw Error('FREELANCE_STORE_FORBIDDEN');
    },{readOnly:true});
-   return {...result,pages:page+1,asOf:readTime.toDate().toISOString()};
+   return {...result,pages:page+1,asOf:readTime.toDate().toISOString(),baselineDigest,baselineWitness};
   }
  }
- return {subject,state:'requires_batched_audit' as const,missingReceipts:null,staleReceipts:null,projection:null,pages:maxPages,asOf:readTime.toDate().toISOString()};
+ return {subject,state:'requires_batched_audit' as const,missingReceipts:null,staleReceipts:null,projection:null,pages:maxPages,asOf:readTime.toDate().toISOString(),baselineDigest,baselineWitness};
+}
+
+/** Internal certification is conditional on the exact index and source
+ * witness still matching the audited snapshot. No client supplied proof. */
+export async function certifyOwnFreelanceReputationIndex(uid:string,kind:unknown){
+ const audited=await auditOwnFreelanceReputationIndexBatched(uid,kind);
+ if(audited.state!=='verified_snapshot')return {certified:false,state:audited.state};
+ const subject=audited.subject,scope={subject,representativeUid:uid};
+ return adminDb.runTransaction(async tx=>{
+  if(!reputationIndexEnabled())throw Error('FREELANCE_FORBIDDEN');
+  if(subject.kind==='store_requester'){
+   const store=await readOwnedFreelanceStore(tx,uid);
+   if(!store||store.storeId!==subject.id)throw Error('FREELANCE_STORE_FORBIDDEN');
+  }
+  const [index,witness]=await tx.getAll(adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources(scope)),coverageRef(scope));
+  if(indexDigest(index.data())!==audited.baselineDigest||indexDigest(witness.data())!==audited.baselineWitness)return {certified:false,state:'snapshot_changed' as const};
+  writeCoverage(tx,scope,audited.baselineDigest);
+  return {certified:true,state:'verified_snapshot' as const};
+ });
+}
+/** Constant-document read for the isolated candidate. It trusts the
+ * transaction-maintained witness, not a client assertion. Administrative
+ * bypass/imports still require explicit invalidation and fresh audit. */
+export async function readCertifiedFreelanceReputationIndex(uid:string,kind:unknown){
+ assertFreelanceReputationLocal();
+ if(!reputationIndexEnabled())throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||(kind!=='professional'&&kind!=='personal_requester'&&kind!=='store_requester'))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
+  if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
+  const subject:ReputationSubject={kind,id:store?.storeId??uid},scope={subject,representativeUid:uid};
+  const [index,witness]=await tx.getAll(adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources(scope)),coverageRef(scope));
+  const raw=index.data(),w=checkedCoverage(scope,witness.data());
+  if(!w||w.verifiedDigest!==indexDigest(raw))return {subject,state:'repair_required' as const,projection:null};
+  try{
+   if(raw&&(Object.keys(raw).length!==4||raw.schemaVersion!==1||raw.representativeUid!==uid||!equal(raw.subject,subject)))throw Error('FREELANCE_REPUTATION_INDEX_CONFLICT');
+   const a=raw?validateReputationAccumulator(kind,raw.accumulator):emptyReputationAccumulator(kind);
+   return {subject,state:'verified_snapshot' as const,projection:projectReputationAccumulator(kind,a)};
+  }catch{return {subject,state:'repair_required' as const,projection:null};}
+ },{readOnly:true});
 }
