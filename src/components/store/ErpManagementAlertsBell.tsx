@@ -24,12 +24,14 @@ export function ErpManagementAlertsBell() {
   useEffect(() => {
     let disposed = false;
     let generation = 0;
+    let previousUid = auth.currentUser?.uid;
     let stopInventory = () => {};
     const stopAuth = onAuthStateChanged(auth, user => {
       const ticket = ++generation;
       stopInventory();
       stopInventory = () => {};
-      setOpen(false);
+      if (previousUid !== user?.uid) setOpen(false);
+      previousUid = user?.uid;
       setState(initial(user?.uid));
       if (!user) return;
       const uid = user.uid;
