@@ -61,6 +61,53 @@ function matchesSharing(raw:unknown,obligation:ReturnType<typeof buildFreelanceP
  s.beneficiaryUid===obligation.beneficiaryUid&&s.destinationRevision===binding.destinationRevision&&
  Number.isFinite(Date.parse(s.authorizedAt))&&Date.parse(s.authorizedAt)>=Date.parse(binding.boundAt);
 }
+
+type SharingControl={schemaVersion:1;offerId:string;beneficiaryUid:string;requesterUid:string;destinationRevision:number;sequence:number;state:'revoked'|'active';changedAt:string};
+function controlRef(direct:FirebaseFirestore.CollectionReference,revision:number){return direct.doc('pixSharingControl-'+revision);}
+async function readSharingControl(tx:FirebaseFirestore.Transaction,direct:FirebaseFirestore.CollectionReference,binding:Binding,sharing:Sharing|undefined){
+ const raw=(await tx.get(controlRef(direct,binding.destinationRevision))).data() as SharingControl|undefined;
+ if(!raw)return undefined;
+ if(!sharing||Object.keys(raw).length!==8||raw.schemaVersion!==1||raw.offerId!==sharing.offerId||
+ raw.beneficiaryUid!==sharing.beneficiaryUid||raw.requesterUid!==sharing.requesterUid||raw.destinationRevision!==binding.destinationRevision||
+ !Number.isSafeInteger(raw.sequence)||raw.sequence<1||raw.state!==(raw.sequence%2?'revoked':'active')||
+ !Number.isFinite(Date.parse(raw.changedAt))||Date.parse(raw.changedAt)<Date.parse(sharing.authorizedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ return raw;
+}
+function sharingActive(sharing:Sharing|undefined,control:SharingControl|undefined){return !!sharing&&control?.state!=='revoked';}
+
+/** A beneficiary may stop future disclosures for this contract only.
+ * Restoring requires a new explicit action with the exact consent sequence.
+ * Initial authorization and every prior change remain in the private audit. */
+export async function changeFreelancePixSharingConsent(uid:string,id:string,action:'revoke'|'restore',input:unknown){
+ assertLocal();
+ if(!validFreelanceId(uid)||!validFreelanceId(id)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
+ const b=input as Record<string,unknown>;
+ if(!['revoke','restore'].includes(action)||Object.keys(b).length!==3||b.confirmed!==true||
+ !Number.isSafeInteger(b.expectedRevision)||Number(b.expectedRevision)<1||
+ !Number.isSafeInteger(b.expectedSequence)||Number(b.expectedSequence)<0||Number(b.expectedSequence)>=Number.MAX_SAFE_INTEGER)throw Error('FREELANCE_INVALID');
+ const revision=Number(b.expectedRevision),expected=Number(b.expectedSequence);
+ return adminDb.runTransaction(async tx=>{
+  const c=await readDisclosureContext(tx,uid,id);
+  if(uid!==c.obligation.beneficiaryUid)throw Error('FREELANCE_FORBIDDEN');
+  if(!c.sharing||c.binding.destinationRevision!==revision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  const seq=c.control?.sequence??0,state=action==='revoke'?'revoked':'active';
+  if(seq===expected+1&&c.control?.state===state)return {changed:false,sequence:seq};
+  if(seq!==expected||((action==='revoke')!==sharingActive(c.sharing,c.control)))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  if(action==='restore'){
+   const identity=await tx.get(adminDb.doc('identity_verifications/'+uid)),roles=identity.get('approvedProfiles');
+   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
+   const destination=await readPersonalPixForContract(tx,uid);
+   if(destination.revision!==revision||destination.keyType!==c.binding.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  }
+  const changedAt=new Date().toISOString();
+  if(Date.parse(changedAt)<Date.parse(c.control?.changedAt??c.sharing.authorizedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+  const next:SharingControl={schemaVersion:1,offerId:id,beneficiaryUid:uid,requesterUid:c.obligation.requesterUid,destinationRevision:revision,sequence:seq+1,state,changedAt};
+  tx.create(c.direct.doc('pixSharingEvent-'+revision+'-'+next.sequence),next);
+  tx.set(controlRef(c.direct,revision),next);
+  return {changed:true,sequence:next.sequence};
+ });
+}
+
 const blocked=()=>{throw Error('FREELANCE_PIX_DISCLOSURE_UNAVAILABLE');};
 function explicitRevision(input:unknown){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
@@ -81,7 +128,9 @@ async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string
  if(!matches(binding,id,obligation.beneficiaryUid,obligation.contractedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
  const sharing=sharingDoc.data();
  if(sharingDoc.exists&&!matchesSharing(sharing,obligation,binding))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
- return {...context,binding,sharing:sharing as Sharing|undefined,direct};
+ const consent=sharing as Sharing|undefined;
+ const control=await readSharingControl(tx,direct,binding,consent);
+ return {...context,binding,sharing:consent,control,direct};
 }
 /** Separate from binding: explicit permission to share this revision with this
  * specific contractual requester. A new destination never silently inherits it. */
@@ -95,7 +144,7 @@ export async function authorizeFreelancePixSharing(uid:string,id:string,input:un
   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
   const destination=await readPersonalPixForContract(tx,uid);
   if(revision!==c.binding.destinationRevision||revision!==destination.revision||c.binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
-  if(c.sharing)return {created:false,revision};
+  if(c.sharing){if(!sharingActive(c.sharing,c.control))return blocked();return {created:false,revision};}
   const authorizedAt=new Date().toISOString();
   if(Date.parse(authorizedAt)<Date.parse(c.binding.boundAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   const sharing:Sharing={schemaVersion:1,offerId:id,requesterUid:c.obligation.requesterUid,beneficiaryUid:uid,destinationRevision:revision,authorizedAt};
@@ -110,7 +159,7 @@ export async function readFreelancePixSharing(uid:string,id:string){
   const c=await readDisclosureContext(tx,uid,id);
   const destination=await readPersonalPixForContract(tx,c.obligation.beneficiaryUid);
   if(c.binding.destinationRevision!==destination.revision||c.binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
-  return {revision:destination.revision,keyType:destination.keyType,maskedKey:destination.maskedKey,sharingAuthorized:!!c.sharing,due:c.due,ownershipVerified:false as const};
+  return {revision:destination.revision,keyType:destination.keyType,maskedKey:destination.maskedKey,sharingAuthorized:sharingActive(c.sharing,c.control),sharingSequence:c.control?.sequence??0,sharingRevoked:c.control?.state==='revoked',due:c.due,ownershipVerified:false as const};
  },{readOnly:true});
 }
 /** Raw key is returned only to the authenticated contractual payer, on an
@@ -123,7 +172,7 @@ export async function revealFreelancePixDestination(uid:string,id:string,input:u
   const c=await readDisclosureContext(tx,uid,id);
   if(uid!==c.obligation.requesterUid)throw Error('FREELANCE_FORBIDDEN');
   if(!c.due)throw Error('FREELANCE_PAYMENT_NOT_DUE');
-  if(!c.sharing)return blocked();
+  if(!c.sharing||!sharingActive(c.sharing,c.control))return blocked();
   const [payer,beneficiary,access]=await tx.getAll(adminDb.doc('identity_verifications/'+uid),adminDb.doc('identity_verifications/'+c.obligation.beneficiaryUid),c.direct.doc('pixDisclosure'));
   for(const [identity,role] of [[payer,'requester'],[beneficiary,'freelancer']] as const){
    const roles=identity.get('approvedProfiles');
@@ -166,11 +215,14 @@ export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offe
  if(!bindingDoc.exists)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
  if(!matches(binding,id,worker,obligation.contractedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
  if(!sharingDoc.exists)throw Error('FREELANCE_PIX_SHARING_REQUIRED');
- if(!matchesSharing(sharingDoc.data(),obligation,binding))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ const sharing=sharingDoc.data();
+ if(!matchesSharing(sharing,obligation,binding))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ const control=await readSharingControl(tx,direct,binding,sharing);
  const review=checkedReview(reviewDoc.data(),obligation);
  if(obligation.terms.timing==='advance'){
   if(projection.state!=='bilaterally_reported_received'||review?.status==='pending')throw Error('FREELANCE_ADVANCE_RECEIPT_REQUIRED');
  }else{
+  if(!sharingActive(sharing,control))throw Error('FREELANCE_PIX_SHARING_REQUIRED');
   if(review||projection.state!=='awaiting_payment')throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   const destination=await readPersonalPixForContract(tx,worker);
   if(binding.destinationRevision!==destination.revision||binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
