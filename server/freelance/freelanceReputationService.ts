@@ -1,11 +1,14 @@
 import type {Transaction} from 'firebase-admin/firestore';
-import {adminDb} from '../firebaseAdmin.js';
+import {FieldPath} from 'firebase-admin/firestore';
+import {readOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
+import {validFreelanceId,type FreelanceOffer} from '../../shared/freelanceLifecycle.js';
+import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {readAttendanceContext} from './freelanceAttendanceScheduleService.js';
 import {freelanceReputationParties,freelanceReputationSlot,type ReputationSubject} from '../../shared/freelanceReputation.js';
 import {canonicalVariablePaymentRecord,digestVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
 
 const fail=():never=>{throw Error('FREELANCE_REPUTATION_CONFLICT');};
-const gate=()=>{if(process.env.KYRUB_FREELANCE_REPUTATION_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');};
+const gate=()=>{if(process.env.KYRUB_FREELANCE_REPUTATION_TEST_ONLY!=='true'||process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||!['127.0.0.1:9099','localhost:9099'].includes(process.env.FIREBASE_AUTH_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_FORBIDDEN');};
 const iso=(v:unknown):v is string=>typeof v==='string'&&Number.isFinite(Date.parse(v))&&new Date(Date.parse(v)).toISOString()===v;
 // Stars are a test-only candidate for the previously discussed evaluation
 // format. No criteria, final scale approval, deadline, reward or public read.
@@ -52,4 +55,34 @@ export async function submitFreelanceReputation(uid:string,id:string,input:unkno
   tx.create(x.refs[role],slot);
   return {...view({...x,slots:{...x.slots,[role]:slot}}),changed:true};
  });
+}
+
+/** Private profile projection over canonical contracts. No public reputation,
+ * new write index, lifetime averages or rewards. Page cursor follows scanned
+ * contracts (even when none are released), never the count of released rows.
+ * Corporate access is limited to the current authorized representative's own
+ * historical contracts; ownership-transfer policy is not defined here. */
+export async function readOwnFreelanceReputationProfile(uid:string,kind:unknown,cursor?:unknown){
+ gate();
+ if(!validFreelanceId(uid)||(kind!=='professional'&&kind!=='personal_requester'&&kind!=='store_requester')||(cursor!==undefined&&!validFreelanceId(cursor)))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
+  if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
+  const subject:ReputationSubject={kind,id:store?.storeId??uid};
+  let q=adminDb.collection('freelanceOffersV1').where(kind==='professional'?'selectedApplicantUid':'ownerUid','==',uid).orderBy(FieldPath.documentId()).limit(21);
+  if(typeof cursor==='string')q=q.startAfter(cursor);
+  const docs=await tx.get(q),page=docs.docs.slice(0,20),entries=[];
+  for(const doc of page){
+   const o=doc.data() as FreelanceOffer;
+   if(o.id!==doc.id||!validFreelanceId(o.ownerUid)||(kind==='professional'?o.selectedApplicantUid!==uid||o.ownerUid===uid:o.ownerUid!==uid))return fail();
+   if(o.status!=='completed')continue;
+   if(kind==='personal_requester'&&o.requesterStore!==undefined)continue;
+   if(kind==='store_requester'&&o.requesterStore?.storeId!==store?.storeId)continue;
+   const c=await context(tx,uid,doc.id),v=view(c);
+   if(!v.received)continue;
+   if(canonicalVariablePaymentRecord(v.received.subject)!==canonicalVariablePaymentRecord(subject))return fail();
+   entries.push({offerId:doc.id,stars:v.received.stars,submittedAt:v.received.submittedAt,completedAt:c.parties.completedAt});
+  }
+  return {subject,entries,releasedCountOnPage:entries.length,nextCursor:docs.size>20?page.at(-1)!.id:null,rewardsGranted:false as const};
+ },{readOnly:true});
 }
