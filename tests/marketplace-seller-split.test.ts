@@ -35,6 +35,11 @@ test('split 1:1 preserves exact gross = seller + application fee', () => {
   assert.equal(plan.sellerAmountMinor, 9_500);
   assert.equal(plan.sellerAmountMinor + plan.applicationFeeMinor, plan.grossAmountMinor);
   assert.equal(plan.status, 'planned');
+  // A planned 1:1 split is NOT a provider fee report or settlement receipt.
+  // The seller's actual net cannot be inferred before Mercado Pago fees.
+  assert.equal(plan.providerProcessingFeeMinor, null);
+  assert.equal(plan.sellerNetReceivedMinor, null);
+  assert.equal(plan.settlementVerified, false);
 });
 
 test('split cannot be planned for disconnected seller or impossible fee', () => {
