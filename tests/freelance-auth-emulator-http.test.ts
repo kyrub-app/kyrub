@@ -573,6 +573,7 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
  await act(payer,advanceId,'select',200,{applicantUid:worker.uid});
  await act(worker,advanceId,'confirm',200,{confirmed:true,expectedPaymentTerms:advance});
  await finance(worker,200,advanceId,'bind_pix',{expectedRevision:1});await finance(worker,200,advanceId,'authorize_pix_share',{expectedRevision:1});
+ await finance(worker,200,advanceId,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});
  assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');
  await finance(payer,200,advanceId,'statement',{eventId:'paid',statement:'paid'});
  assert.equal((await act(worker,advanceId,'start',409,{confirmed:true})).code,'FREELANCE_ADVANCE_RECEIPT_REQUIRED');
