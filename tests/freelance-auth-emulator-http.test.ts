@@ -2119,6 +2119,19 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
      assert.deepEqual(await call(payer,summary,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
      assert.deepEqual(await call(payer,byAddress,200),{experience:{completedServices:3,completedHires:0}});
      await call(payer,summary+'&targetUid='+worker.uid,400);
+     const squareFlag='KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY',oldSquare=process.env[squareFlag];
+     const preview='?view=reputation_square_preview&identifier='+identifier;
+     try{
+      delete process.env[squareFlag];await call(worker,preview,403);
+      process.env[squareFlag]='true';
+      await call(null,preview,401);
+      assert.deepEqual(await call(payer,preview,200),{experience:null,reputations:null});
+      assert.deepEqual(await call(worker,preview,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+      await call(worker,preview+'&ratingCount=999',400);
+      await profile.update({isProfileVisible:false});
+      assert.deepEqual(await call(worker,preview,200),{experience:null,reputations:null});
+      await profile.update({isProfileVisible:true});
+     }finally{if(oldSquare===undefined)delete process.env[squareFlag];else process.env[squareFlag]=oldSquare;}
      await profile.update({isProfileVisible:false});
      assert.deepEqual(await call(payer,summary,200),{experience:null,reputations:null});
      await profile.update({isProfileVisible:true});

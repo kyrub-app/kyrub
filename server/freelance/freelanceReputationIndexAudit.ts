@@ -220,7 +220,7 @@ async function readExperienceCounts(tx:Transaction,targetUid:string,includeReput
 
 /** Resolve both immutable address indices and live visibility together with
  * the minimal certified counts. No UID is returned to the public page. */
-export async function readAddressFreelanceExperience(viewerUid:string,identifier:unknown,includeReputation=false){
+export async function readAddressFreelanceExperience(viewerUid:string,identifier:unknown,includeReputation=false,ownerOnly=false){
  assertFreelanceReputationLocal();
  if(!certifiedReputationReadEnabled()||process.env.KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
  if(includeReputation&&process.env.KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
@@ -230,6 +230,7 @@ export async function readAddressFreelanceExperience(viewerUid:string,identifier
   const mapping=(await tx.get(adminDb.doc('public_social_addresses/profile:'+identifier))).data();
   if(!mapping||!isDocumentId(mapping.targetId)||!matchesSocialAddressRecord(mapping,'profile',identifier,mapping.targetId))return hidden;
   const uid=mapping.targetId;
+  if(ownerOnly&&uid!==viewerUid)return hidden;
   const reverse=(await tx.get(adminDb.doc('public_social_address_targets/profile:'+uid))).data();
   if(!matchesSocialAddressRecord(reverse,'profile',identifier,uid))return hidden;
   const ref=adminDb.doc('users/'+uid),source=(await tx.get(ref)).data();
@@ -238,4 +239,9 @@ export async function readAddressFreelanceExperience(viewerUid:string,identifier
   if(!projectSocialAddress({kind:'profile',identifier,targetId:uid},source,profile))return hidden;
   return readExperienceCounts(tx,uid,includeReputation);
  },{readOnly:true});
+}
+
+export async function readOwnReputationSquarePreview(uid:string,identifier:unknown){
+ if(process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
+ return readAddressFreelanceExperience(uid,identifier,true,true);
 }
