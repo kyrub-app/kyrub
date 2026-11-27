@@ -1,15 +1,21 @@
+import {formatCocarCompact} from '../../shared/cocarDisplay';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Forward} from 'lucide-react';
 import type {Friend} from '../types';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../utils/firebase';
 import {publicReputationCandidateEnabled,validPublicSummaryResponse} from './PublicProfileExperience';
-export type Summary={experience:{completedServices:number;completedHires:number};reputations:{professional:{ratingCount:number;mean:number|null};personalRequester:{ratingCount:number;mean:number|null}}};
+export type Summary={cocaresAtPublication?:number|null;experience:{completedServices:number;completedHires:number};reputations:{professional:{ratingCount:number;mean:number|null};personalRequester:{ratingCount:number;mean:number|null}}};
 export function reputationSquareCandidateEnabled(){return publicReputationCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY==='true';}
 export function reputationSquarePublishEnabled(){return reputationSquareCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY==='true';}
 export function reputationSquareForwardEnabled(){return reputationSquarePublishEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY==='true';}
 export function reputationDirectForwardEnabled(){return reputationSquareForwardEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY==='true';}
 export const isReputationSquarePost=(id:string)=>/^reputation_[a-f0-9]{64}$/.test(id);
+export function validPublicationCocares(v:unknown):v is number|null{return v===null||typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;}
+export function PublicationCocarLabel({count}:{count:unknown}){
+ if(import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_COCAR_HEADER_TEST_ONLY!=='true'||!validPublicationCocares(count)||count===null)return null;
+ return <span className="ml-1 text-orange-400" title="Cocares na data da publicação" aria-label={formatCocarCompact(count)+' — Cocares na data da publicação'}>· {formatCocarCompact(count)}</span>;
+}
 export function ReputationPublicationIndicators({summary}:{summary:Summary}){
  return <div className="space-y-3 text-sm">
   <p className="text-slate-200">Conheça minha Experiência e Reputações no Kyrub!</p>
@@ -107,8 +113,9 @@ export function ReputationSquarePostGate({postId,viewerId,createdAt,render}:{pos
     const token=await user.getIdToken(true);if(!live())return;
     const res=await fetch('/api/freelance/workspace?view=reputation_square_post&offerId='+encodeURIComponent(postId),{method:'GET',cache:'no-store',headers:{authorization:'Bearer '+token},signal:ctrl.signal});
     const value=await res.json();if(!live())return;
-    if(!res.ok||!validPublicSummaryResponse(value)||!value.experience||!value.reputations){setFailed(true);return;}
-    setSummary({experience:value.experience,reputations:value.reputations});
+    const base={experience:value?.experience,reputations:value?.reputations};
+    if(!res.ok||!validPublicSummaryResponse(base)||!base.experience||!base.reputations||!value||Object.keys(value).length!==(Object.hasOwn(value,'cocaresAtPublication')?3:2)||(Object.hasOwn(value,'cocaresAtPublication')&&!validPublicationCocares(value.cocaresAtPublication))){setFailed(true);return;}
+    setSummary({experience:base.experience,reputations:base.reputations,cocaresAtPublication:value.cocaresAtPublication});
    }catch{if(live())setFailed(true);}
   })();
   return()=>ctrl.abort();
@@ -153,12 +160,12 @@ export function ReputationSquareForwardButton({postId,viewerId,friends=[]}:{post
  </div>;
 }
 
-type ConnectedPublication={authorName:string;authorImage:string;createdAtIso:string;expiresAtIso:string};
+type ConnectedPublication={cocaresAtPublication?:number|null;authorName:string;authorImage:string;createdAtIso:string;expiresAtIso:string};
 export function validConnectedReputationCard(raw:unknown):raw is Summary&{publication:ConnectedPublication}{
  if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).length!==3)return false;
  const r=raw as Summary&{publication:ConnectedPublication};
  const p=r.publication;
- return validPublicSummaryResponse({experience:r.experience,reputations:r.reputations})&&!!r.experience&&!!r.reputations&&!!p&&typeof p==='object'&&!Array.isArray(p)&&Object.keys(p).length===4&&typeof p.authorName==='string'&&p.authorName.trim().length>0&&p.authorName.length<=160&&typeof p.authorImage==='string'&&p.authorImage.length<=2048&&(p.authorImage===''||/^https:\/\//i.test(p.authorImage))&&typeof p.createdAtIso==='string'&&Number.isFinite(Date.parse(p.createdAtIso))&&typeof p.expiresAtIso==='string'&&Number.isFinite(Date.parse(p.expiresAtIso))&&Date.parse(p.expiresAtIso)>Date.now()&&Date.parse(p.expiresAtIso)>Date.parse(p.createdAtIso);
+ return validPublicSummaryResponse({experience:r.experience,reputations:r.reputations})&&!!r.experience&&!!r.reputations&&!!p&&typeof p==='object'&&!Array.isArray(p)&&Object.keys(p).length===4+(Object.hasOwn(p,'cocaresAtPublication')?1:0)&&(!Object.hasOwn(p,'cocaresAtPublication')||validPublicationCocares(p.cocaresAtPublication))&&typeof p.authorName==='string'&&p.authorName.trim().length>0&&p.authorName.length<=160&&typeof p.authorImage==='string'&&p.authorImage.length<=2048&&(p.authorImage===''||/^https:\/\//i.test(p.authorImage))&&typeof p.createdAtIso==='string'&&Number.isFinite(Date.parse(p.createdAtIso))&&typeof p.expiresAtIso==='string'&&Number.isFinite(Date.parse(p.expiresAtIso))&&Date.parse(p.expiresAtIso)>Date.now()&&Date.parse(p.expiresAtIso)>Date.parse(p.createdAtIso);
 }
 export function ConnectedReputationCard({connectionId,messageId,viewerId}:{connectionId:string;messageId:string;viewerId:string}){
  const [summary,setSummary]=useState<(Summary&{publication:ConnectedPublication})|null>(null),[status,setStatus]=useState<'idle'|'loading'|'ready'|'unavailable'>('idle');
@@ -190,5 +197,5 @@ export function ConnectedReputationCard({connectionId,messageId,viewerId}:{conne
   finally{if(pending.current===ctrl)pending.current=null;}
  }
  if(!reputationDirectForwardEnabled()||auth.currentUser?.uid!==viewerId)return null;
- return <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950 p-2 text-slate-200"><button type="button" disabled={status==='loading'} onClick={()=>void load()} className="min-h-11 rounded-lg border border-slate-700 px-2 text-sm font-bold">{status==='loading'?'Consultando…':status==='ready'?'Atualizar indicadores':'Visualizar publicação'}</button>{status==='unavailable'&&<p role="status">Publicação indisponível.</p>}{summary&&status==='ready'&&Date.now()<Date.parse(summary.publication.expiresAtIso)&&<><div className="flex items-center gap-2 border-b border-slate-700 pb-2">{summary.publication.authorImage&&<img className="h-9 w-9 shrink-0 rounded-full object-cover" src={summary.publication.authorImage} alt="" referrerPolicy="no-referrer"/>}<div className="min-w-0"><strong className="block break-words">{summary.publication.authorName}</strong><p className="text-xs text-slate-400">Autor original</p></div></div><ReputationPublicationIndicators summary={summary}/></>}</div>;
+ return <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950 p-2 text-slate-200"><button type="button" disabled={status==='loading'} onClick={()=>void load()} className="min-h-11 rounded-lg border border-slate-700 px-2 text-sm font-bold">{status==='loading'?'Consultando…':status==='ready'?'Atualizar indicadores':'Visualizar publicação'}</button>{status==='unavailable'&&<p role="status">Publicação indisponível.</p>}{summary&&status==='ready'&&Date.now()<Date.parse(summary.publication.expiresAtIso)&&<><div className="flex items-center gap-2 border-b border-slate-700 pb-2">{summary.publication.authorImage&&<img className="h-9 w-9 shrink-0 rounded-full object-cover" src={summary.publication.authorImage} alt="" referrerPolicy="no-referrer"/>}<div className="min-w-0"><strong className="block break-words">{summary.publication.authorName}<PublicationCocarLabel count={summary.publication.cocaresAtPublication}/></strong><p className="text-xs text-slate-400">Autor original</p></div></div><ReputationPublicationIndicators summary={summary}/></>}</div>;
 }
