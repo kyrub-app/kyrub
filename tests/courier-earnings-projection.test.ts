@@ -222,3 +222,24 @@ test('Renda activity alerts are separate and project only authenticated server c
   assert.equal(status,200);
   assert.deepEqual(calls,['a']);
 });
+
+test('freelance publication and application contracts bind verified actors and preserve pending status', async () => {
+  const { createFreelanceOffer, createFreelanceApplication } = await import('../shared/freelanceLifecycle');
+  const now = '2026-11-27T10:00:00.000Z';
+  const input = {title:'Serviço',description:'Descrição',requirements:'',paymentMinor:12345};
+  const offer = createFreelanceOffer('offer-1','owner',input,now);
+  assert.equal(offer.ownerUid,'owner');
+  assert.equal(offer.paymentMinor,12345);
+  assert.equal(offer.status,'open');
+  assert.throws(()=>createFreelanceOffer('offer-1','owner',{...input,ownerUid:'other'},now),/FREELANCE_INVALID/);
+  assert.throws(()=>createFreelanceOffer('offer-1','owner',{...input,paymentMinor:12.5},now),/FREELANCE_INVALID/);
+  assert.throws(()=>createFreelanceApplication(offer,'owner',now),/FREELANCE_FORBIDDEN/);
+  assert.deepEqual(createFreelanceApplication(offer,'worker',now),{offerId:'offer-1',ownerUid:'owner',applicantUid:'worker',status:'pending',createdAt:now});
+  const service = readFileSync('server/freelance/freelanceLifecycleService.ts','utf8');
+  assert.match(service,/tx.getAll\(eligibility\(actorUid\), ref\)/);
+  assert.match(service,/assertApproved\(identity.data\(\), 'requester'\)/);
+  assert.match(service,/assertApproved\(identity.data\(\),'freelancer'\)/);
+  assert.match(service,/collection\('applications'\).doc\(actorUid\)/);
+  assert.match(service,/tx.create\(applicationRef,proposed\)/);
+  assert.doesNotMatch(service,/localStorage|Math.random|payout|transfer/);
+});
