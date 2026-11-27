@@ -821,10 +821,21 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal((await pix(worker,200,id)).destination,null);
  await finance(payer,409,id,'authorize_adjustment_pix',refundInput);
  // Complement still points to the professional, with new consent.
+ // Nonreceipt alone is not evidence of a transfer: allow the original
+ // recipient to authorize and the payer to consult with explicit nonpayment.
+ await finance(worker,200,completionId,'statement_adjustment',{sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,eventId:'complement-not-received',statement:'not_received'});
+ const early=await pix(payer,200,completionId);
+ assert.equal(early.financialState,'nonreceipt_reported');assert.equal(early.blocked,false);assert.equal(early.destination,null);
  assert.equal((await pix(payer,200,completionId)).destination,null);
  await finance(worker,200,completionId,'authorize_adjustment_pix',additionalInput);
  const complementSecret=await finance(payer,200,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
  assert.equal(complementSecret.key,'cancel-'+suffix+'@example.invalid');assert.equal(complementSecret.amountMinor,4000);
+ await finance(payer,200,completionId,'statement_adjustment',{sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,eventId:'complement-paid',statement:'paid'});
+ const blockedPix=await pix(payer,200,completionId);assert.equal(blockedPix.financialState,'disputed');assert.equal(blockedPix.blocked,true);assert.equal(blockedPix.destination,null);
+ await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[completionId]});
+ await finance(worker,200,completionId,'statement_adjustment',{sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,eventId:'complement-received',statement:'received'});
+ for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:false,openOfferIds:[]});
  await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:1,confirmed:true});
  await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
  await finance(worker,200,completionId,'revoke_adjustment_pix',additionalInput);
