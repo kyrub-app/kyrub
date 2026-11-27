@@ -17,7 +17,7 @@ export function canonicalVariablePaymentRecord(value:unknown):string{
  }
  const s=JSON.stringify(value);if(s===undefined)return fail();return s;
 }
-const digest=(value:unknown)=>createHash('sha256').update(canonicalVariablePaymentRecord(value)).digest('hex');
+export const digestVariablePaymentSources=(value:unknown)=>createHash('sha256').update(canonicalVariablePaymentRecord(value)).digest('hex');
 /** Service-only candidate, using the local-emulator boundary of readAttendanceContext.
  * No transport action, no Pix disclosure, no bank or ledger mutation.
  * Only a fully persisted completed hourly contract can generate this evidence.
@@ -30,7 +30,7 @@ export async function readVariablePaymentSources(tx:Transaction,uid:string,offer
   const ext=await readExtensionRecords(tx,c.ref,t.scheduleId,t.schedule,t.events);
   const extensions=projectAcceptedFreelanceExtensions(ext.records);
   const basis=buildFreelanceVariablePaymentBasis({offer:c.offer,application:c.application,scheduleId:t.scheduleId,schedule:t.schedule,scheduleAcceptedAt:c.current.decidedAt,events:t.events,extensions});
-  const record={...basis,sourceDigest:digest({schedule:c.current,events:t.events,extensions})};
+  const record={...basis,sourceDigest:digestVariablePaymentSources({schedule:c.current,events:t.events,extensions})};
   const direct=c.ref.collection('directPayment'),financial=c.ref.collection('financialBasis');
   const commitmentRef=direct.doc('hourlyCommitment'),basisRef=financial.doc('hourlyCompletion');
   const [savedCommitment,savedBasis,fixedObligation,fixedBasis,statements,final,hourlyStatements]=await tx.getAll(commitmentRef,basisRef,direct.doc('obligation'),financial.doc('remuneration'),direct.doc('externalStatements'),direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'));
