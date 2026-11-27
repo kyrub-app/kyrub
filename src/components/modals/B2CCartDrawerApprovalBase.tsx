@@ -457,7 +457,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     {
       id: 'delivery',
       label: 'Entrega',
-      description: 'Receber no endereço informado',
+      description: 'Receber no endereço informado, por entrega própria da loja',
       icon: <Truck className="h-4 w-4" />,
     },
     {
