@@ -16,7 +16,7 @@ export async function readHourlyAdvanceContext(tx:Transaction,uid:string,id:stri
  enabled();
  const c=await readAttendanceContext(tx,uid,id),commitment=buildFreelanceHourlyCommitment(c.offer,c.application);
  const direct=c.ref.collection('directPayment'),historyRef=direct.doc('hourlyAdvances');
- const [saved,history,fixed,fixedHistory,final,finalHistory]=await tx.getAll(direct.doc('hourlyCommitment'),historyRef,direct.doc('obligation'),direct.doc('externalStatements'),direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'));
+ const [saved,history,fixed,fixedHistory,final,finalHistory,frozen]=await tx.getAll(direct.doc('hourlyCommitment'),historyRef,direct.doc('obligation'),direct.doc('externalStatements'),direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'),direct.doc('hourlyReconciliation'));
  if(!saved.exists||canonicalVariablePaymentRecord(saved.data())!==canonicalVariablePaymentRecord(commitment)||fixed.exists||fixedHistory.exists||finalHistory.exists)return fail();
  const raw=history.data(),commitmentDigest=digestVariablePaymentSources(commitment);
  let events:HourlyAdvanceEvent[]=[];
@@ -27,7 +27,7 @@ export async function readHourlyAdvanceContext(tx:Transaction,uid:string,id:stri
  const projection=projectHourlyAdvances(commitment,events,null);
  const restricted=projection.disputedCount>0;
  await prepareHourlyAdvanceRestriction(tx,commitment,restricted,restricted);
- return {c,commitment,commitmentDigest,historyRef,events,projection,restricted,finalExists:final.exists};
+ return {c,commitment,commitmentDigest,historyRef,events,projection,restricted,finalExists:final.exists,frozen};
 }
 export async function readHourlyAdvances(uid:string,id:string){
  return adminDb.runTransaction(async tx=>{
@@ -43,7 +43,6 @@ export async function recordHourlyAdvance(uid:string,id:string,input:unknown){
  if(Object.keys(b).length!==6||Object.keys(b).some(k=>!['eventId','paymentId','statement','amountMinor','expectedRevision','confirmed'].includes(k))||!validFreelanceId(b.eventId)||!validFreelanceId(b.paymentId)||!['paid','received','not_received'].includes(String(b.statement))||typeof b.statement!=='string'||!Number.isSafeInteger(b.amountMinor)||Number(b.amountMinor)<1||!Number.isSafeInteger(b.expectedRevision)||Number(b.expectedRevision)<0||b.confirmed!==true)throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const x=await readHourlyAdvanceContext(tx,uid,id);
-  if(x.finalExists||!['contracted','in_progress','completion_requested'].includes(x.c.offer.status))return fail();
   if(uid!==(b.statement==='paid'?x.commitment.requesterUid:x.commitment.beneficiaryUid))throw Error('FREELANCE_FORBIDDEN');
   const event:HourlyAdvanceEvent={id:b.eventId as string,paymentId:b.paymentId as string,actorUid:uid,statement:b.statement as HourlyAdvanceEvent['statement'],amountMinor:b.amountMinor as number,recordedAt:new Date().toISOString()};
   // New payment identity is payer-originated. The worker must respond to
@@ -51,7 +50,11 @@ export async function recordHourlyAdvance(uid:string,id:string,input:unknown){
   if(event.statement!=='paid'&&!x.events.some(e=>e.paymentId===event.paymentId&&e.statement==='paid'))return fail();
   const next=appendHourlyAdvance(x.commitment,x.events,event);
   if(!next.changed)return {changed:false,revision:x.events.length,state:x.projection.state,restrictionActive:x.restricted,bankVerified:false as const};
-  if(b.expectedRevision!==x.events.length)return fail();
+  if(x.frozen.exists||b.expectedRevision!==x.events.length)return fail();
+  // After the operational cut-off, only responses to previously declared
+  // payments can be appended. Never add new paid declarations retroactively.
+  const open=['contracted','in_progress','completion_requested'].includes(x.c.offer.status)&&!x.finalExists;
+  if(!open&&(event.statement==='paid'||!['completed','cancelled','under_review'].includes(x.c.offer.status)))return fail();
   const restricted=next.disputedCount>0,write=await prepareHourlyAdvanceRestriction(tx,x.commitment,x.restricted,restricted);
   tx.set(x.historyRef,{schemaVersion:1,offerId:id,commitmentDigest:x.commitmentDigest,events:next.events});
   write();
