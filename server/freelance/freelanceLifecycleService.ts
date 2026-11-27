@@ -42,7 +42,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
   return adminDb.runTransaction(async tx => {
     const [identity, existing] = await tx.getAll(eligibility(actorUid), ref);
     assertApproved(identity.data(), 'requester');
-    if(requesterStoreId!==undefined){if(!proposed.paymentTerms)throw Error('FREELANCE_INVALID');proposed.requesterStore=await requireOwnedFreelanceStore(tx,actorUid,requesterStoreId);}
+    if(requesterStoreId!==undefined){if(!validFreelanceId(requesterStoreId)||!proposed.paymentTerms)throw Error('FREELANCE_INVALID');proposed.requesterStore=await requireOwnedFreelanceStore(tx,actorUid,requesterStoreId);}
     if (existing.exists) {
       const saved = existing.data() as FreelanceOffer;
       if (saved.id !== proposed.id || saved.ownerUid !== actorUid || saved.status !== 'open' ||
