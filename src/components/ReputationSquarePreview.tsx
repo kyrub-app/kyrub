@@ -153,9 +153,22 @@ export function ReputationSquareForwardButton({postId,viewerId,friends=[]}:{post
  </div>;
 }
 
+type ConnectedPublication={authorName:string;authorImage:string;createdAtIso:string;expiresAtIso:string};
+export function validConnectedReputationCard(raw:unknown):raw is Summary&{publication:ConnectedPublication}{
+ if(!raw||typeof raw!=='object'||Array.isArray(raw)||Object.keys(raw).length!==3)return false;
+ const r=raw as Summary&{publication:ConnectedPublication};
+ const p=r.publication;
+ return validPublicSummaryResponse({experience:r.experience,reputations:r.reputations})&&!!r.experience&&!!r.reputations&&!!p&&typeof p==='object'&&!Array.isArray(p)&&Object.keys(p).length===4&&typeof p.authorName==='string'&&p.authorName.trim().length>0&&p.authorName.length<=160&&typeof p.authorImage==='string'&&p.authorImage.length<=2048&&(p.authorImage===''||/^https:\/\//i.test(p.authorImage))&&typeof p.createdAtIso==='string'&&Number.isFinite(Date.parse(p.createdAtIso))&&typeof p.expiresAtIso==='string'&&Number.isFinite(Date.parse(p.expiresAtIso))&&Date.parse(p.expiresAtIso)>Date.now()&&Date.parse(p.expiresAtIso)>Date.parse(p.createdAtIso);
+}
 export function ConnectedReputationCard({connectionId,messageId,viewerId}:{connectionId:string;messageId:string;viewerId:string}){
- const [summary,setSummary]=useState<Summary|null>(null),[status,setStatus]=useState<'idle'|'loading'|'ready'|'unavailable'>('idle');
+ const [summary,setSummary]=useState<(Summary&{publication:ConnectedPublication})|null>(null),[status,setStatus]=useState<'idle'|'loading'|'ready'|'unavailable'>('idle');
  const pending=useRef<AbortController|null>(null);
+ useEffect(()=>{
+  if(!summary)return;
+  const remaining=Math.min(60_000,Date.parse(summary.publication.expiresAtIso)-Date.now());
+  const timer=window.setTimeout(()=>{setSummary(null);setStatus('idle');},Math.max(0,remaining));
+  return()=>window.clearTimeout(timer);
+ },[summary]);
  useEffect(()=>{
   const clear=()=>{pending.current?.abort();pending.current=null;setSummary(null);setStatus('idle');};
   const stop=onAuthStateChanged(auth,u=>{if(u?.uid!==viewerId)clear();});
@@ -171,11 +184,11 @@ export function ConnectedReputationCard({connectionId,messageId,viewerId}:{conne
    const token=await user.getIdToken(true);if(!live())return;
    const res=await fetch('/api/freelance/workspace?view=reputation_connected_card&offerId='+encodeURIComponent(connectionId)+'&cursor='+encodeURIComponent(messageId),{method:'GET',cache:'no-store',headers:{authorization:'Bearer '+token},signal:ctrl.signal});
    const value=await res.json();if(!live())return;
-   if(!res.ok||!validPublicSummaryResponse(value)||!value.experience||!value.reputations){setStatus('unavailable');return;}
-   setSummary({experience:value.experience,reputations:value.reputations});setStatus('ready');
+   if(!res.ok||!validConnectedReputationCard(value)){setStatus('unavailable');return;}
+   setSummary(value);setStatus('ready');
   }catch{if(live())setStatus('unavailable');}
   finally{if(pending.current===ctrl)pending.current=null;}
  }
  if(!reputationDirectForwardEnabled()||auth.currentUser?.uid!==viewerId)return null;
- return <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950 p-2 text-slate-200"><button type="button" disabled={status==='loading'} onClick={()=>void load()} className="min-h-11 rounded-lg border border-slate-700 px-2 text-sm font-bold">{status==='loading'?'Consultando…':status==='ready'?'Atualizar indicadores':'Visualizar publicação'}</button>{status==='unavailable'&&<p role="status">Publicação indisponível.</p>}{summary&&status==='ready'&&<ReputationPublicationIndicators summary={summary}/>}</div>;
+ return <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950 p-2 text-slate-200"><button type="button" disabled={status==='loading'} onClick={()=>void load()} className="min-h-11 rounded-lg border border-slate-700 px-2 text-sm font-bold">{status==='loading'?'Consultando…':status==='ready'?'Atualizar indicadores':'Visualizar publicação'}</button>{status==='unavailable'&&<p role="status">Publicação indisponível.</p>}{summary&&status==='ready'&&Date.now()<Date.parse(summary.publication.expiresAtIso)&&<><div className="flex items-center gap-2 border-b border-slate-700 pb-2">{summary.publication.authorImage&&<img className="h-9 w-9 shrink-0 rounded-full object-cover" src={summary.publication.authorImage} alt="" referrerPolicy="no-referrer"/>}<div className="min-w-0"><strong className="block break-words">{summary.publication.authorName}</strong><p className="text-xs text-slate-400">Autor original</p></div></div><ReputationPublicationIndicators summary={summary}/></>}</div>;
 }
