@@ -5,6 +5,7 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_cancellation_admin_resolved:['Análise de cancelamento concluída','Consulte a decisão financeira. A restrição deste caso foi removida; nenhum pagamento foi confirmado.'],
  hourly_cancellation_disputed:['Divergência no cancelamento','Novas contratações temporariamente restritas. Busque acordo no financeiro do contrato.'],
  hourly_cancellation_review_requested:['Análise de cancelamento solicitada','Consulte a situação financeira do contrato. A restrição permanece até resolução.'],
  hourly_cancellation_proposed:['Acordo de cancelamento proposto','Consulte o valor proposto em Freelas antes de decidir.'],
