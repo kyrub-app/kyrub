@@ -457,6 +457,74 @@ try{
  assert.equal(posts,2);
  await adminPage.screenshot({path:'freelance-browser-evidence/admin-financial-review.png',fullPage:true});
  console.log('PASS admin financial UI: actual MFA denial; isolated intercepted fixture for receipt preview, stale revision and confirmation; no real decision from UI');
+ // Prepare only the administrative cancellation in the isolated emulator.
+ // Genuine admin MFA is not available in this browser fixture; HTTP covers
+ // operational cancellation with the existing synthetic claim seam.
+ const accountingTitle='Apuração fictícia '+suffix,accountingId='browser-cancel-'+suffix,occurrenceId='browser-cancel-occurrence';
+ const lifecycle=await import('../server/freelance/freelanceLifecycleService.ts');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.ts');
+ const {resolveFreelanceOccurrence}=await import('../shared/freelanceLifecycle.ts');
+ const {buildFreelanceRemunerationBasis}=await import('../shared/freelanceRemuneration.ts');
+ const {FieldValue}=await import('firebase-admin/firestore');
+ const terms=createDirectPaymentTerms({method:'external_pix',timing:'on_completion',amountMinor:15000});
+ await lifecycle.publishFreelanceOffer(fp.uid,accountingId,{title:accountingTitle,description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms});
+ await lifecycle.applyToFreelanceOffer(fw.uid,accountingId,{expected:terms});
+ await lifecycle.selectFreelanceApplication(fp.uid,accountingId,fw.uid);
+ await lifecycle.confirmFreelanceContract(fw.uid,accountingId,true,{expected:terms});
+ await lifecycle.reportFreelanceOccurrence(fw.uid,accountingId,'cancellation_requested',true,occurrenceId);
+ const ar=db.doc('freelanceOffersV1/'+accountingId),ap=ar.collection('applications').doc(fw.uid),oc=ar.collection('occurrences').doc(occurrenceId);
+ await db.runTransaction(async tx=>{
+  const [o,a,r]=await tx.getAll(ar,ap,oc);
+  const result=resolveFreelanceOccurrence(o.data(),a.data(),r.data(),adminActor.uid,'cancel','Cancelamento fictício para testar a interface',true,new Date().toISOString());
+  const basis=buildFreelanceRemunerationBasis(result.offer,result.application,result.occurrence);
+  const patch={status:'cancelled',cancelledAt:result.offer.cancelledAt,occurrenceId:FieldValue.delete()};
+  tx.update(ar,patch);tx.update(ap,patch);tx.update(oc,{status:'resolved',decision:result.occurrence.decision});
+  tx.create(ar.collection('financialBasis').doc('remuneration'),basis);
+ });
+ async function cancelledPanel(page,role){
+  await page.reload({waitUntil:'domcontentloaded'});await page.locator('#btn-solicitar-freela').waitFor({state:'visible',timeout:30000});
+  const modal=await open(page,role);await button(modal,'Histórico').click();await button(modal,'Atualizar consulta').click();
+  const article=modal.locator('article').filter({has:page.getByRole('heading',{name:accountingTitle,exact:true})}).first();
+  await button(article,'Ver detalhes').click();
+  const panel=modal.getByRole('region',{name:'Apuração do cancelamento'});
+  await button(panel,'Consultar apuração').click();await waitText(panel,'Valor original:');
+  return panel;
+ }
+ const ca=await cancelledPanel(receiverPage,'worker'),cb=await cancelledPanel(payerPage,'owner');
+ async function accountingAction(panel,label){
+  await button(panel,label).click();
+  const response=panel.page().waitForResponse(r=>r.url().endsWith('/api/freelance/finance')&&r.request().method()==='POST');
+  await button(panel,'Confirmar apuração').click();
+  const result=await response;assert.equal(result.status(),200,await result.text());
+  await waitText(panel,'Operação de apuração registrada pelo servidor.');
+ }
+ assert.equal(await button(ca,'Propor apuração').isDisabled(),true);
+ await ca.getByLabel('Remuneração reconhecida (R$)',{exact:true}).fill('50,00');
+ assert.equal(await button(ca,'Propor apuração').isDisabled(),true);
+ await ca.getByLabel('Valor declarado como recebido (R$)',{exact:true}).fill('0,00');
+ await accountingAction(ca,'Propor apuração');await waitText(ca,'Proposta aguardando aceite');
+ assert.equal(await button(ca,'Aceitar proposta de apuração').count(),0);
+ await button(cb,'Consultar apuração').click();await waitText(cb,'Proposta aguardando aceite');
+ await accountingAction(cb,'Recusar proposta');await waitText(cb,'Proposta encerrada sem aceite');
+ await button(ca,'Consultar apuração').click();await waitText(ca,'Proposta encerrada sem aceite');
+ await ca.getByLabel('Remuneração reconhecida (R$)',{exact:true}).fill('40,00');
+ await ca.getByLabel('Valor declarado como recebido (R$)',{exact:true}).fill('0,00');
+ await accountingAction(ca,'Propor apuração');await waitText(ca,'Proposta aguardando aceite');
+ await button(cb,'Consultar apuração').click();await waitText(cb,'Proposta aguardando aceite');
+ await accountingAction(cb,'Aceitar proposta de apuração');await waitText(cb,'Proposta aceita pelas partes');
+ await button(ca,'Consultar apuração').click();await waitText(ca,'Proposta aceita pelas partes');
+ const pointer=(await ar.collection('directPayment').doc('cancellationAccounting').get()).data();
+ const agreed=(await ar.collection('directPayment').doc('cancellationAccounting-'+pointer.proposalId).get()).data();
+ assert.equal(agreed.status,'accepted');assert.equal(agreed.recognizedServiceMinor,4000);
+ assert.equal((await ar.collection('financialBasis').doc('remuneration').get()).get('settlement'),'not_verified');
+ await receiverPage.screenshot({path:'freelance-browser-evidence/cancellation-accounting.png',fullPage:true});
+ for(const [page,role,label] of [[payerPage,'Solicitar Freelas','Apuração de cancelamento proposta'],[receiverPage,'Fazer Freelas','Apuração de cancelamento aceita']]){
+  await button(page.getByRole('dialog',{name:role,exact:true}),'Fechar').click();
+  const response=page.waitForResponse(r=>r.url().includes('/api/notifications?limit=')&&r.request().method()==='GET');
+  await page.locator('#canonical-notification-trigger').click();assert.equal((await response).status(),200);
+  await waitText(page.locator('#canonical-notification-center'),label);
+ }
+ console.log('PASS cancellation accounting UI and real private notices in two authenticated sessions; administrative cancellation prepared in emulator');
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){
