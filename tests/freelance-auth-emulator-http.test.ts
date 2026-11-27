@@ -1333,6 +1333,20 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
    await assert.rejects(auditOwnFreelanceReputationIndexBatched(manager.uid,'store_requester'),/FORBIDDEN/);
    assert.equal((await auditOwnFreelanceReputationIndex(owner.uid,'personal_requester')).projection?.completedContracts,0);
    await assert.rejects(auditOwnFreelanceReputationIndex(manager.uid,'store_requester'),/FORBIDDEN/);
+   const {certifyOwnFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+   const fastFlag='KYRUB_FREELANCE_REPUTATION_CERTIFIED_READ_TEST_ONLY',previousFast=process.env[fastFlag];
+   try{
+    process.env[fastFlag]='true';
+    const teamQuery='?view=reputation_team&storeId='+owner.uid;
+    assert.equal((await call(manager,teamQuery,200)).projection,null);
+    assert.equal((await certifyOwnFreelanceReputationIndex(owner.uid,'store_requester')).certified,true);
+    assert.deepEqual((await call(manager,teamQuery,200)).projection,verified.projection);
+    assert.deepEqual((await call(owner,'?view=reputation_verified_store',200)).projection,verified.projection);
+    await call(worker,teamQuery,403);
+    const staff=db.doc('stores/'+storeId+'/members/'+manager.uid);
+    await staff.update({status:'suspended'});
+    try{await call(manager,teamQuery,403);}finally{await staff.update({status:'active'});}
+   }finally{if(previousFast===undefined)delete process.env[fastFlag];else process.env[fastFlag]=previousFast;}
    const management='?view=reputation_management&storeId='+owner.uid;
    const momentRef=db.doc('store_reviews/'+storeId+'/reviews/'+worker.uid);
    await momentRef.set({reviewId:worker.uid,authorId:worker.uid,storeId,authorName:'Consumidor fictício',content:'Momento fictício de teste.',rating:3,createdAtIso:'2026-11-27T10:00:00.000Z',status:'published'});
@@ -1978,11 +1992,12 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
  const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:12000});
  const terms={title:'Contrato de auditoria em lotes',description:'Somente emulador',requirements:'',paymentMinor:12000,paymentTerms};
  const ids=[0,1,2].map(n=>'http-batch-reputation-'+n+'-'+suffix);
- const flags=['KYRUB_FREELANCE_REPUTATION_TEST_ONLY','KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY'];
+ const flags=['KYRUB_FREELANCE_REPUTATION_TEST_ONLY','KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY','KYRUB_FREELANCE_REPUTATION_CERTIFIED_READ_TEST_ONLY'];
  const prior=flags.map(k=>process.env[k]);
  try{
   for(const k of flags)process.env[k]='true';
   assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection,null);
+  assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
   assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,true);
   assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection?.completedContracts,0);
   await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'batch-reputation-'+suffix+'@example.invalid'}});
@@ -2019,6 +2034,9 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   const baseline=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
   assert.equal(baseline.state,'verified_snapshot');
   assert.deepEqual((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection,baseline.projection);
+  assert.deepEqual((await call(worker,'?view=reputation_verified_professional',200)).projection,baseline.projection);
+  await call(null,'?view=reputation_verified_professional',401);
+  await call(worker,'?view=reputation_verified_professional&uid='+payer.uid,400);
   const {digestVariablePaymentSources:hash}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
   const index=db.doc('freelanceReputationIndexesV1/'+hash({subject:{kind:'professional',id:worker.uid},representativeUid:worker.uid}));
   const old=(await index.get()).get('accumulator');
@@ -2046,9 +2064,14 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   try{
    const broken=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:1,maxPages:3});
    assert.equal(broken.state,'repair_required');assert.equal(broken.missingReceipts,1);assert.equal(broken.projection,null);
+   assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,false);
+   assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
   }finally{await receipt.set(record);}
   const restored=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:1,maxPages:3});
   assert.deepEqual(restored.projection,baseline.projection);
+  assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
+  assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,true);
+  assert.deepEqual((await call(worker,'?view=reputation_verified_professional',200)).projection,baseline.projection);
  }finally{
   for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
  }
