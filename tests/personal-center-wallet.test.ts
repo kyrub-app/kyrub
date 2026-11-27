@@ -220,5 +220,17 @@ test('reputation sharing uses a server-derived card preview instead of a profile
  assert.match(preview,/validPublicSummaryResponse/);
  assert.match(preview,/Serviços concluídos/);assert.match(preview,/Contratações concluídas/);
  assert.match(preview,/Semear/);assert.match(preview,/Comentar/);assert.match(preview,/Encaminhar/);
- assert.doesNotMatch(panel+preview,/navigator.clipboard|buildPublicDestinationUrl|setDoc\(|addDoc\(|localStorage|rewardXp|method:'POST'/);
+ assert.doesNotMatch(panel+preview,/navigator.clipboard|buildPublicDestinationUrl|setDoc\(|addDoc\(|localStorage|rewardXp/);
+ assert.match(preview,/action:'publish_reputation_square',identifier,requestId:requestId.current,confirmed:true/);
+ assert.match(preview,/requestId.current\?\?=crypto.randomUUID/);
+ assert.match(preview,/value\?\.confirmed!==true/);
+});
+
+test('reputation square publication renders verified indicators only in the visible feed card',()=>{
+ const feed=read('src/components/PublicSocialFeedPanel.tsx'),preview=read('src/components/ReputationSquarePreview.tsx');
+ assert.match(feed,/<ReputationSquarePostGate/);assert.match(feed,/<ReputationPublicationIndicators summary=\{summary\}/);
+ assert.match(preview,/new IntersectionObserver/);assert.match(preview,/reputation_square_post&offerId=/);
+ assert.match(preview,/Date.now\(\)<expiresAt/);assert.match(preview,/visible&&tabVisible&&summary\?render\(summary\)/);
+ assert.match(preview,/VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY/);
+ assert.match(feed,/<SemearButton kind="personal"/);assert.match(feed,/toggleComments\(post.id\)/);
 });
