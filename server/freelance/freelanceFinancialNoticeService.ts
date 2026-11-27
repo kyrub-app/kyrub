@@ -5,6 +5,8 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ fixed_cancellation_adjustment_pix_proposed:['Substituição Pix solicitada','Confira a obrigação e não aceite se já enviou o pagamento.'],
+ fixed_cancellation_adjustment_pix_replaced:['Substituição Pix aceita','A autorização anterior foi arquivada. Consulte somente o destino vigente.'],
  fixed_cancellation_adjustment_admin_resolved:['Análise de regularização encerrada','Consulte a decisão. A restrição deste caso foi retirada, sem confirmação bancária ou extinção automática da obrigação.'],
  fixed_cancellation_adjustment_statement:['Manifestação de regularização registrada','Consulte as declarações da obrigação específica. Nenhuma transferência foi verificada.'],
  fixed_cancellation_adjustment_disputed:['Divergência na regularização','Novas contratações temporariamente restritas. Regularize ou solicite análise.'],

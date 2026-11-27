@@ -820,6 +820,36 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
  assert.equal((await pix(worker,200,id)).destination,null);
  await finance(payer,409,id,'authorize_adjustment_pix',refundInput);
+ // Recipient replaces a revoked personal destination only with the payer's explicit assent.
+ await changePersonalPixDestination(payer.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:'refund-new-'+suffix+'@example.invalid'}});
+ const replacement={sourceDigest:refundInput.sourceDigest,expectedAmountMinor:10000,oldRevision:1,newRevision:2};
+ assert.equal((await pix(worker,200,id)).replacement,null);
+ assert.deepEqual((await pix(payer,200,id)).replacement,{oldRevision:1,newRevision:2,pending:false,available:true});
+ await finance(worker,403,id,'propose_adjustment_pix_replacement',replacement);
+ await finance(payer,200,id,'propose_adjustment_pix_replacement',replacement);
+ await finance(payer,200,id,'propose_adjustment_pix_replacement',replacement);
+ assert.equal((await pix(worker,200,id)).replacement.pending,true);
+ assert.equal((await pix(worker,200,id)).destination,null);
+ await finance(worker,400,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:false});
+ await finance(payer,403,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:true});
+ await finance(worker,409,id,'accept_adjustment_pix_replacement',{...replacement,expectedAmountMinor:10001,paymentNotSent:true});
+ await finance(worker,200,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:true});
+ await finance(worker,200,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:true});
+ const archived=(await db.doc('freelanceOffersV1/'+id+'/directPayment/fixedAdjustmentPixArchive-1').get()).data()!;
+ assert.equal(archived.consent.revision,1);assert.equal(archived.disclosure.revision,1);assert.ok(archived.consent.revokedAt);
+ await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ const newKey=await finance(worker,200,id,'reveal_adjustment_pix',{...refundInput,expectedRevision:2,paymentNotSent:true});
+ assert.equal(newKey.key,'refund-new-'+suffix+'@example.invalid');
+ // A second proposal can be withdrawn even after the recipient changes the key again.
+ await changePersonalPixDestination(payer.uid,{action:'declare',expectedRevision:2,confirmed:true,destination:{keyType:'email',key:'refund-third-'+suffix+'@example.invalid'}});
+ const secondReplacement={...replacement,oldRevision:2,newRevision:3};
+ await finance(payer,200,id,'propose_adjustment_pix_replacement',secondReplacement);
+ await changePersonalPixDestination(payer.uid,{action:'declare',expectedRevision:3,confirmed:true,destination:{keyType:'email',key:'refund-fourth-'+suffix+'@example.invalid'}});
+ assert.equal((await pix(worker,200,id)).replacement.available,false);
+ await finance(worker,409,id,'accept_adjustment_pix_replacement',{...secondReplacement,paymentNotSent:true});
+ await finance(payer,200,id,'withdraw_adjustment_pix_replacement',secondReplacement);
+ await finance(payer,200,id,'withdraw_adjustment_pix_replacement',secondReplacement);
+ assert.equal((await pix(worker,200,id)).destination,null);
  // Complement still points to the professional, with new consent.
  // Nonreceipt alone is not evidence of a transfer: allow the original
  // recipient to authorize and the payer to consult with explicit nonpayment.
@@ -852,6 +882,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(worker,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-paid',statement:'paid'});
  await finance(worker,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-paid',statement:'paid'});
  assert.equal((await adj(payer,200,id)).state,'awaiting_receipt');
+ await finance(payer,409,id,'propose_adjustment_pix_replacement',{...replacement,oldRevision:2,newRevision:4});
  await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-denied',statement:'not_received'});
  assert.equal((await adj(worker,200,id)).state,'disputed');
  for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[id]});
