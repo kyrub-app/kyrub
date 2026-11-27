@@ -1,0 +1,81 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {after,before,test} from 'node:test';
+import {initializeTestEnvironment,assertFails,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
+import {doc,getDoc,setDoc,updateDoc} from 'firebase/firestore';
+
+if(!/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
+process.env.FIREBASE_PROJECT_ID='kyrub-security-test';
+process.env.GCLOUD_PROJECT='kyrub-security-test';
+delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+delete process.env.VERCEL;
+const {adminDb,getFirebaseAdminProjectId}=await import('../server/firebaseAdmin.js');
+const s=await import('../server/freelance/freelanceLifecycleService.js');
+let env:RulesTestEnvironment;
+const owner='fixture-freelance-owner',worker='fixture-freelance-worker',other='fixture-freelance-other';
+const input={title:'Serviço de teste',description:'Somente emulador',requirements:'',paymentMinor:15000};
+const ref=(id:string)=>adminDb.doc('freelanceOffersV1/'+id);
+before(async()=>{
+  assert.equal(getFirebaseAdminProjectId(),'kyrub-security-test');
+  env=await initializeTestEnvironment({projectId:'kyrub-security-test',firestore:{host:'127.0.0.1',port:8088,rules:readFileSync('.firebase/firestore.combined.rules','utf8')}});
+  await env.clearFirestore();
+  await Promise.all([adminDb.doc('identity_verifications/'+owner).set({status:'approved',approvedProfiles:['requester']}),
+    ...[worker,other].map(uid=>adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['freelancer']}))]);
+});
+after(async()=>{if(env)await env.cleanup();await adminDb.terminate();});
+test('verified publication, application race, exclusive selection and one remuneration basis',async()=>{
+ const id='fixture-freelance-normal';
+ await assert.rejects(s.publishFreelanceOffer('unverified',id,input),/IDENTITY_VERIFICATION_REQUIRED/);
+ const publications=await Promise.all([s.publishFreelanceOffer(owner,id,input),s.publishFreelanceOffer(owner,id,input)]);
+ assert.deepEqual(publications.map(x=>x.created).sort(),[false,true]);
+ await assert.rejects(s.publishFreelanceOffer(owner,id,{...input,paymentMinor:1}),/FREELANCE_CONFLICT/);
+ await assert.rejects(s.applyToFreelanceOffer('unverified',id),/IDENTITY_VERIFICATION_REQUIRED/);
+ const apps=await Promise.all([s.applyToFreelanceOffer(worker,id),s.applyToFreelanceOffer(worker,id)]);
+ assert.deepEqual(apps.map(x=>x.created).sort(),[false,true]);
+ await s.applyToFreelanceOffer(other,id);
+ const selections=await Promise.allSettled([s.selectFreelanceApplication(owner,id,worker),s.selectFreelanceApplication(owner,id,other)]);
+ assert.equal(selections.filter(x=>x.status==='fulfilled').length,1);
+ const selected=(await ref(id).get()).get('selectedApplicantUid') as string;
+ assert.ok([worker,other].includes(selected));
+ const loser=selected===worker?other:worker;
+ await assert.rejects(s.confirmFreelanceContract(loser,id,true),/FREELANCE_FORBIDDEN/);
+ await s.confirmFreelanceContract(selected,id,true);
+ await s.recordFreelanceExecution(selected,id,'start',true);
+ await s.recordFreelanceExecution(selected,id,'request_completion',true);
+ await assert.rejects(s.recordFreelanceExecution(selected,id,'confirm_completion',true),/FREELANCE_FORBIDDEN/);
+ const completions=await Promise.all([s.recordFreelanceExecution(owner,id,'confirm_completion',true),s.recordFreelanceExecution(owner,id,'confirm_completion',true)]);
+ assert.deepEqual(completions.map(x=>x.changed).sort(),[false,true]);
+ const basis=await ref(id).collection('financialBasis').get();
+ assert.equal(basis.size,1);
+ assert.equal(basis.docs[0].get('confirmedServiceMinor'),15000);
+ assert.equal(basis.docs[0].get('beneficiaryUid'),selected);
+ assert.equal(basis.docs[0].get('settlement'),'not_verified');
+ assert.equal(basis.docs[0].get('responsibility'),'not_determined');
+ assert.equal((await ref(id).get()).get('status'),'completed');
+});
+test('occurrence and completion compete atomically; browser cannot bypass server',async()=>{
+ const id='fixture-freelance-race';
+ await s.publishFreelanceOffer(owner,id,input);
+ await s.applyToFreelanceOffer(worker,id);
+ await s.selectFreelanceApplication(owner,id,worker);
+ await s.confirmFreelanceContract(worker,id,true);
+ await s.recordFreelanceExecution(worker,id,'start',true);
+ await s.recordFreelanceExecution(worker,id,'request_completion',true);
+ const race=await Promise.allSettled([s.reportFreelanceOccurrence(worker,id,'service_disputed',true,'fixture-review'),s.recordFreelanceExecution(owner,id,'confirm_completion',true)]);
+ assert.equal(race.filter(x=>x.status==='fulfilled').length,1);
+ const status=(await ref(id).get()).get('status');
+ const bases=await ref(id).collection('financialBasis').get(),occurrences=await ref(id).collection('occurrences').get();
+ assert.ok(['under_review','completed'].includes(status));
+ assert.equal(bases.size,status==='completed'?1:0);
+ assert.equal(occurrences.size,status==='under_review'?1:0);
+ for(const uid of [owner,worker,'unrelated']){
+   const db=env.authenticatedContext(uid).firestore();
+   const path='freelanceOffersV1/'+id;
+   await assertFails(getDoc(doc(db,path)));
+   await assertFails(updateDoc(doc(db,path),{status:'completed'}));
+   await assertFails(setDoc(doc(db,path+'/financialBasis/remuneration'),{confirmedServiceMinor:1}));
+   await assertFails(setDoc(doc(db,path+'/applications/'+uid),{status:'contracted'}));
+   await assertFails(setDoc(doc(db,path+'/occurrences/forged'),{status:'resolved'}));
+ }
+});
