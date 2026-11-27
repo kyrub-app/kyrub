@@ -134,3 +134,31 @@ test('cosmetic Kairubido equipment is a projection of canonical XP, not a new le
  assert.match(panel,/VITE_KAIRUBIDO_EVOLUTION_PREVIEW==='true'/);
  assert.doesNotMatch(panel,/fetch\(|setDoc\(|addDoc\(|runTransaction\(/);
 });
+
+test('seed reserve accounting across two days: rejected attempts cannot spend either allowance',()=>{
+ // Test fixture only; no actual grant or approved award size.
+ let reserve=planReputationSeedGrant({earned:0,spent:0},3),dailyUsed=99;
+ const initial={...reserve};
+ const attempt=(acceptedSeeds:number,closed:boolean,alreadySeeded:boolean,isAuthor=false)=>{
+  const result=planPostSemeadura({acceptedSeeds,closed,alreadySeeded,isAuthor});
+  if(result.status!=='accepted')return result.status;
+  const debit=planSeedAllowanceDebit(dailyUsed,reserve);
+  dailyUsed=debit.dailyUsed;reserve=debit.reserve;
+  return debit.source;
+ };
+ assert.equal(attempt(1,false,true),'already_seeded');
+ assert.equal(attempt(100_000,true,false),'closed');
+ assert.throws(()=>attempt(1,false,false,true),/SELF_RECOGNITION_DENIED/);
+ assert.equal(dailyUsed,99);assert.deepEqual(reserve,initial);
+ assert.equal(attempt(1,false,false),'daily');
+ assert.equal(dailyUsed,100);assert.deepEqual(reserve,initial);
+ assert.equal(attempt(99_999,false,false),'reserve');
+ assert.deepEqual(reserve,{earned:3,spent:1});
+ assert.equal(attempt(100_000,true,true),'already_seeded');
+ assert.equal(attempt(100_000,true,false),'closed');
+ assert.deepEqual(reserve,{earned:3,spent:1});
+ dailyUsed=0;
+ assert.deepEqual(projectSeedAllowance(dailyUsed,reserve),{dailyRemaining:100,reserveRemaining:2});
+ assert.equal(attempt(0,false,false),'daily');
+ assert.deepEqual(reserve,{earned:3,spent:1});
+});
