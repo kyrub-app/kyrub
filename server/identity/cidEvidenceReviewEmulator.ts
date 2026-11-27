@@ -8,6 +8,7 @@ import {createHash,timingSafeEqual,randomUUID} from 'node:crypto';
 import {assertCidSosEmulator,CID_EMULATOR_PROJECT} from './cidSosEmulatorStore.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {CID_REVIEW_DISPOSITIONS,type CidReviewQueueItem,type CidReviewDetail,type CidReviewInput} from '../../shared/cidEvidenceReview.js';
+import type {CidAuthorizationInput,CidAuthorizationRevokeInput,CidAuthorizationScope,CidAuthorizationReceipt} from '../../shared/cidEvidenceAuthorization.js';
 import {CID_LEGAL_FIELDS,CID_LEGAL_PURPOSES,CID_LEGAL_FINDINGS,type CidLegalReviewInput,type CidLegalReviewReceipt} from '../../shared/cidEvidenceLegalReview.js';
 import {CID_SPECIALIST_FINDINGS,type CidSpecialistInput,type CidSpecialistReceipt} from '../../shared/cidEvidenceSpecialist.js';
 import {CID_COMPLAINT_CATEGORIES} from '../../shared/cidOccurrenceComplaint.js';
@@ -41,7 +42,7 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
  const app=getApps().find(a=>a.name===APP)??initializeApp({projectId:CID_EMULATOR_PROJECT},APP);
  if(app.options.projectId!==CID_EMULATOR_PROJECT)return deny();
  const db=getFirestore(app),queue=db.collection('cid_sos_emulator_review_queue'),audit=db.collection('cid_sos_emulator_review_audit');
- async function authorize(tx:Transaction,credential:Credential,now:number,permission:'review:read'|'review:decide'|'review:specialist'|'review:legal'){
+ async function authorize(tx:Transaction,credential:Credential,now:number,permission:'review:read'|'review:decide'|'review:specialist'|'review:legal'|'review:authorize'|'review:execute'){
   assertCidSosEmulator();if(!time(now)||!credential)return deny();
   if(mode==='control-plane'){
    assertControlPlaneEmulator();
@@ -53,11 +54,11 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
    const [admin,specific]=await Promise.all([tx.get(db.doc('kyrub_admin/control_plane/admins/'+identity.uid)),tx.get(db.doc('kyrub_admin/control_plane/cid_evidence_grants/'+identity.uid))]);
    const profile=admin.data(),grant=specific.data();
    if(profile?.uid!==identity.uid||profile.status!=='active'||!canonicalRoles.has(profile.role)||grant?.uid!==identity.uid||grant.status!=='active'||!Array.isArray(grant.permissions)||!grant.permissions.includes(permission))return deny();
-   if((permission==='review:specialist'||permission==='review:legal')&&!grant.permissions.includes('review:read'))return deny();
+   if(permission!=='review:read'&&!grant.permissions.includes('review:read'))return deny();
    if(permission!=='review:read'&&now-identity.auth_time*1000>5*60000)return deny();
    return {actorId:identity.uid,actorRole:profile.role} as ReviewIdentity;
   }
-  if(permission==='review:specialist'||permission==='review:legal')return deny();
+  if(permission!=='review:read'&&permission!=='review:decide')return deny();
   if(!('id' in credential)||!token(credential.id)||!token(credential.secret))return deny();
   const session=(await tx.get(db.collection('cid_sos_emulator_review_sessions').doc(credential.id))).data();
   if(!session||session.id!==credential.id||session.simulation!==true||session.revokedAt!==undefined||session.role!=='evidence-officer'||typeof session.actorId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(session.actorId)||!time(session.authenticatedAt)||!time(session.expiresAt)||now<session.authenticatedAt||now>=session.expiresAt||session.expiresAt-session.authenticatedAt>30*60000||!Array.isArray(session.permissions)||!session.permissions.includes(permission)||typeof session.digest!=='string'||!/^[a-f0-9]{64}$/.test(session.digest)||!timingSafeEqual(Buffer.from(session.digest,'hex'),Buffer.from(hash(credential.secret),'hex')))return deny();
@@ -85,7 +86,84 @@ export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='
   if(v.simulation!==true||v.id!==i.id||v.tagId!==i.tagId||v.occurrenceId!==i.occurrenceId||v.status!=='pending-review'||!text(v.reason)||!Object.hasOwn(CID_COMPLAINT_CATEGORIES,v.category)||!['owner','emitter','contact'].includes(v.reporterRole))return deny();
   return {item:i,reason:v.reason,category:v.category,reporterRole:v.reporterRole};
  }
+ async function legalScope(tx:Transaction,i:CidReviewQueueItem,now:number){
+  const legal=(await tx.get(db.collection('cid_sos_emulator_legal_opinions').doc(i.id))).data();
+  const s=legal?.scope as CidAuthorizationScope|undefined;
+  if(!legal||legal.simulation!==true||legal.id!==i.id||legal.tagId!==i.tagId||legal.occurrenceId!==i.occurrenceId||legal.finding!=='eligible-for-authorization-review'||legal.authorizesRetention!==false||legal.authorizesDisclosure!==false||!Number.isSafeInteger(legal.revision)||legal.revision!==3||!time(legal.createdAt)||legal.createdAt>now||typeof legal.actorId!=='string'||!s||!Object.hasOwn(CID_LEGAL_PURPOSES,s.purpose)||!text(s.formalReference)||!text(s.authority)||!text(s.legalBasis)||!Array.isArray(s.fields)||!s.fields.length||s.fields.length>5||new Set(s.fields).size!==s.fields.length||s.fields.some(k=>!Object.hasOwn(CID_LEGAL_FIELDS,k))||!time(s.from)||!time(s.to)||s.from>s.to||s.to>legal.createdAt||!time(s.expiresAt)||s.expiresAt<=now||s.expiresAt-legal.createdAt>7*86400000)return deny();
+  // Canonical representation independent of Firestore map key ordering.
+  const scope={purpose:s.purpose,formalReference:s.formalReference,authority:s.authority,legalBasis:s.legalBasis,fields:[...s.fields],from:s.from,to:s.to,expiresAt:s.expiresAt};
+  return {legal,scope,digest:hash(JSON.stringify(scope))};
+ }
+ async function operatorGrant(tx:Transaction,uid:string){
+  const [a,g]=await Promise.all([tx.get(db.doc('kyrub_admin/control_plane/admins/'+uid)),tx.get(db.doc('kyrub_admin/control_plane/cid_evidence_grants/'+uid))]);
+  if(a.get('uid')!==uid||a.get('status')!=='active'||!canonicalRoles.has(a.get('role'))||g.get('uid')!==uid||g.get('status')!=='active'||!Array.isArray(g.get('permissions'))||!g.get('permissions').includes('review:execute')||!g.get('permissions').includes('review:read'))return deny();
+  const user=await getAuth(app).getUser(uid);if(user.disabled||!user.emailVerified)return deny();
+ }
  return {
+  async authorizationScope(credential:Credential,id:string,now:number){
+   if(mode!=='control-plane'||!uuid(id))return deny();
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,credential,now,'review:authorize'),i=item(await tx.get(queue.doc(id)),now);
+    if(i.status!=='escalated'||i.legalFinding!=='eligible-for-authorization-review'||i.revision!==3)return deny();
+    const {scope}=await legalScope(tx,i,now);
+    record(tx,actor,'authorization-scope-read',now,{caseId:id});
+    return {id,revision:i.revision,scope,simulation:true,executionEnabled:false};
+   });
+  },
+  async authorizeOperation(credential:Credential,input:unknown,now:number):Promise<CidAuthorizationReceipt>{
+   if(mode!=='control-plane'||!input||typeof input!=='object'||Array.isArray(input))return deny();
+   const v=input as CidAuthorizationInput;
+   if(Object.keys(v).length!==4||Object.keys(v).some(k=>!['id','expectedRevision','operatorId','reason'].includes(k))||!uuid(v.id)||v.expectedRevision!==3||typeof v.operatorId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(v.operatorId))return deny();
+   const justification=reason(v.reason);
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,credential,now,'review:authorize'),ref=queue.doc(v.id),snapshot=await tx.get(ref),i=item(snapshot,now);
+    if(i.status!=='escalated'||i.legalFinding!=='eligible-for-authorization-review'||i.revision!==v.expectedRevision)return deny();
+    const {legal,scope,digest}=await legalScope(tx,i,now);
+    const specialist=(await tx.get(db.collection('cid_sos_emulator_specialist_opinions').doc(i.id))).data();
+    const priorActors=[snapshot.get('triagedBy'),specialist?.actorId,legal.actorId];
+    if(!specialist||specialist.id!==i.id||specialist.tagId!==i.tagId||specialist.occurrenceId!==i.occurrenceId||specialist.finding!=='legal-review-required'||priorActors.some(x=>typeof x!=='string'||!x)||new Set(priorActors).size!==3||priorActors.includes(actor.actorId)||priorActors.includes(v.operatorId)||actor.actorId===v.operatorId)return deny();
+    await operatorGrant(tx,v.operatorId);await detail(tx,i);
+    const authRef=db.collection('cid_sos_emulator_operational_authorizations').doc(i.id);
+    if((await tx.get(authRef)).exists)return deny();
+    const revision=i.revision+1,expiresAt=Math.min(scope.expiresAt,now+24*3600000);
+    tx.create(authRef,{id:i.id,tagId:i.tagId,occurrenceId:i.occurrenceId,scope,scopeDigest:digest,operatorId:v.operatorId,approvedBy:actor.actorId,createdAt:now,expiresAt,revision,status:'simulation-authorized',reason:justification,simulation:true,executionEnabled:false});
+    tx.update(ref,{revision,authorizationStatus:'simulation-authorized',authorizationExpiresAt:expiresAt});
+    record(tx,actor,'simulation-authorization-issued',now,{caseId:i.id,operatorId:v.operatorId,scopeDigest:digest,revision,expiresAt,reason:justification});
+    return {id:i.id,revision,status:'simulation-authorized',expiresAt,simulation:true,executionEnabled:false};
+   });
+  },
+  async revokeOperation(credential:Credential,input:unknown,now:number):Promise<CidAuthorizationReceipt>{
+   if(mode!=='control-plane'||!input||typeof input!=='object'||Array.isArray(input))return deny();
+   const v=input as CidAuthorizationRevokeInput;
+   if(Object.keys(v).length!==3||Object.keys(v).some(k=>!['id','expectedRevision','reason'].includes(k))||!uuid(v.id)||v.expectedRevision!==4)return deny();
+   const justification=reason(v.reason);
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,credential,now,'review:authorize'),ref=queue.doc(v.id),snapshot=await tx.get(ref),i=item(snapshot,now);
+    const authRef=db.collection('cid_sos_emulator_operational_authorizations').doc(i.id),a=(await tx.get(authRef)).data();
+    if(i.revision!==v.expectedRevision||snapshot.get('authorizationStatus')!=='simulation-authorized'||!a||a.id!==i.id||a.tagId!==i.tagId||a.occurrenceId!==i.occurrenceId||a.revision!==i.revision||a.status!=='simulation-authorized'||a.simulation!==true||a.executionEnabled!==false||!time(a.expiresAt))return deny();
+    const revision=i.revision+1;
+    tx.update(authRef,{status:'simulation-revoked',revision,revokedAt:now,revokedBy:actor.actorId,revocationReason:justification});
+    tx.update(ref,{revision,authorizationStatus:'simulation-revoked'});
+    record(tx,actor,'simulation-authorization-revoked',now,{caseId:i.id,revision,reason:justification});
+    return {id:i.id,revision,status:'simulation-revoked',expiresAt:a.expiresAt,simulation:true,executionEnabled:false};
+   });
+  },
+  // No data read: check only whether the named operator may enter a simulated
+  // workflow, against the current immutable scope and live authorization.
+  async checkOperation(credential:Credential,id:string,now:number){
+   if(mode!=='control-plane'||!uuid(id))return deny();
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,credential,now,'review:execute'),ref=queue.doc(id),snapshot=await tx.get(ref),i=item(snapshot,now);
+    const a=(await tx.get(db.collection('cid_sos_emulator_operational_authorizations').doc(id))).data();
+    if(i.revision!==4||snapshot.get('authorizationStatus')!=='simulation-authorized'||!a||a.id!==id||a.tagId!==i.tagId||a.occurrenceId!==i.occurrenceId||a.operatorId!==actor.actorId||a.revision!==i.revision||a.status!=='simulation-authorized'||a.simulation!==true||a.executionEnabled!==false||!time(a.createdAt)||a.createdAt>now||!time(a.expiresAt)||a.expiresAt<=now)return deny();
+    const {digest,scope}=await legalScope(tx,i,now);
+    if(a.scopeDigest!==digest||a.expiresAt>scope.expiresAt||a.expiresAt>a.createdAt+24*3600000)return deny();
+    const s=a.scope;
+    if(!s||hash(JSON.stringify({purpose:s.purpose,formalReference:s.formalReference,authority:s.authority,legalBasis:s.legalBasis,fields:s.fields,from:s.from,to:s.to,expiresAt:s.expiresAt}))!==digest)return deny();
+    record(tx,actor,'simulation-authorization-checked',now,{caseId:id,scopeDigest:digest});
+    return {id,purpose:scope.purpose,fields:scope.fields,from:scope.from,to:scope.to,expiresAt:a.expiresAt,simulation:true as const,executionEnabled:false as const};
+   });
+  },
   async list(credential:Credential,now:number){
    return db.runTransaction(async tx=>{
     const actor=await authorize(tx,credential,now,'review:read');
