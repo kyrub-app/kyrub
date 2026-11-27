@@ -7,6 +7,7 @@ import {assertCidSosEmulator,createCidSosEmulatorStore} from './cidSosEmulatorSt
 import {createCidChatEmulatorStore,CID_CHAT_EMULATOR_ORIGIN} from './cidChatEmulatorStore.js';
 import {createCidOwnerCentralEmulator} from './cidOwnerCentralEmulator.js';
 import type {CidEditorChannel} from '../../shared/cidSosConfigEditor.js';
+import {createCidEvidenceReviewEmulator} from './cidEvidenceReviewEmulator.js';
 import {recordCidAccessEmulator} from './cidAccessObservationEmulator.js';
 import {normalizeCidSosRequest} from '../../shared/cidSosRequest.js';
 import {CID_CHAT_SESSION_TTL_MS} from './cidOccurrenceChatAccess.js';
@@ -62,6 +63,15 @@ export function createCidSosHttpEmulatorHandler(deliverSimulatedConfirmation:(en
    assertCidSosEmulator();
    // No CORS, no forwarded-origin trust, no GET state changes or credential-bearing query.
    if((req.socket as TLSSocket).encrypted!==true||req.socket.localAddress!=='127.0.0.1'||req.socket.remoteAddress!=='127.0.0.1'||req.method!=='POST'||req.headers.host!==host||req.headers.origin!==origin||req.headers['x-cid-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'CID_HTTP_DENIED'});
+   const adminReview=/^\/cid-homologation\/api\/admin-review\/(list|detail|decide)$/.exec(req.url??'');
+   if(adminReview){
+    const idToken=/^Bearer ([^\s]+)$/.exec(req.headers.authorization??'')?.[1];
+    if(!idToken||idToken.length>8192)return deny();
+    const input=await body(req),now=Date.now(),review=createCidEvidenceReviewEmulator('control-plane'),credential={firebaseIdToken:idToken};
+    if(adminReview[1]==='list'){exact(input,[]);return respond(res,200,await review.list(credential,now));}
+    if(adminReview[1]==='detail'){exact(input,['id']);if(typeof input.id!=='string')return deny();return respond(res,200,await review.detail(credential,input.id,now));}
+    exact(input,['id','expectedRevision','disposition','reason']);return respond(res,200,await review.decide(credential,input,now));
+   }
    const accessMatch=/^\/cid-homologation\/api\/([a-f0-9]{32})\/access$/.exec(req.url??'');
    if(accessMatch){
     const input=await body(req);exact(input,[]);
