@@ -15,6 +15,7 @@ export function triagePrivacyIncident(input:unknown,now:number):IncidentTriageRe
  if(v.personalDataAffected==='yes'&&start===null||v.personalDataAffected!=='yes'&&start!==null)return result('invalid');
  if(v.personalDataAffected==='unknown')return result('investigate');
  if(v.personalDataAffected==='no')return result('document-human-review');
+ if(typeof start!=='number')return result('invalid');
  if(v.significantImpact==='yes'&&v.riskFactors.length>0)return result('urgent-notification-review',start);
  if(v.significantImpact==='unknown'||!v.factorAssessmentComplete)return result('investigate',start);
  return result('document-human-review',start);
