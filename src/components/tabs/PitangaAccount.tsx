@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
 import { SemeaduraJourneyPanel } from '../SemeaduraJourneyPanel';
+import {KairubidoEvolutionPanel,KAIRUBIDO_EVOLUTION_PREVIEW} from '../KairubidoEvolutionPanel';
 
 type Account = { pitangas: number; xp: number; initialized: boolean; entries: { id: string; unit: string; delta: number; occurredAt: string }[] };
 
@@ -75,6 +76,7 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
         xp={mode === 'xp' ? (account?.xp ?? null) : undefined}
       />
     )}
+    {mode === 'xp' && KAIRUBIDO_EVOLUTION_PREVIEW && <KairubidoEvolutionPanel xp={account?.xp ?? null}/>}
     {account && mode !== 'xp' && (
       <p className="text-sm text-slate-200">
         {mode === 'pitangas'
