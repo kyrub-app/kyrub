@@ -177,3 +177,30 @@ test('workspace pages and visible candidate names do not expose reserved profile
  assert.ok(second.items?.every(a=>!first.items?.some(b=>a.id===b.id)));
  await assert.rejects(readFreelanceWorkspace(owner,'owner',undefined,'bad/path'),/FREELANCE_INVALID/);
 });
+
+test('private personal receiving destination: declared only, masked response, revision race and revocation',async()=>{
+ const {changePersonalPixDestination,readPersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const uid='fixture-personal-receiving';
+ const base='financialProfilesV1/'+uid, path=base+'/receiving/externalPix';
+ assert.deepEqual(await readPersonalPixDestination(uid),{revision:0,status:'not_configured',ownershipVerified:false});
+ await assert.rejects(changePersonalPixDestination(uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'bad'}}),/PERSONAL_PIX_INVALID/);
+ await assert.rejects(changePersonalPixDestination(uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'test@example.test'},userId:other}),/PERSONAL_PIX_INVALID/);
+ const results=await Promise.allSettled(['one@example.test','two@example.test'].map(key=>changePersonalPixDestination(uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key}})));
+ assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+ const saved=await readPersonalPixDestination(uid);
+ assert.equal(saved.status,'declared');assert.equal(saved.revision,1);assert.equal(saved.ownershipVerified,false);
+ assert.equal('key' in saved,false);
+ assert.deepEqual((await adminDb.doc(base).get()).get('capabilities'),[]);
+ assert.equal((await readPersonalPixDestination(other)).status,'not_configured');
+ for(const actor of [uid,other]){
+  const db=env.authenticatedContext(actor).firestore();
+  await assertFails(getDoc(doc(db,path)));
+  await assertFails(getDoc(doc(db,base)));
+  await assertFails(setDoc(doc(db,path),{status:'verified'}));
+ }
+ await assert.rejects(changePersonalPixDestination(uid,{action:'revoke',expectedRevision:0,confirmed:true}),/PERSONAL_PIX_CONFLICT/);
+ const revoked=await changePersonalPixDestination(uid,{action:'revoke',expectedRevision:1,confirmed:true});
+ assert.equal(revoked.status,'revoked');assert.equal(revoked.revision,2);
+ assert.equal((await adminDb.doc(path).get()).get('key'),undefined);
+ assert.equal((await adminDb.doc(path).get()).get('keyType'),undefined);
+});
