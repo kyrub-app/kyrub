@@ -22,9 +22,9 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
   if(terms.paymentTerms!==undefined&&(!freelanceWorkspaceEnabled()||process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||terms.paymentTerms.method!=='external_pix'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
   return lifecycle.publishFreelanceOffer(uid,b.offerId,terms);
  }
- case 'apply':exact(['expectedPaymentTerms']);return lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms});
+ case 'apply':exact(['expectedPaymentTerms','expectedWorkTerms']);return lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms});
  case 'select':exact(['applicantUid']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid);
- case 'confirm':exact(['confirmed','expectedPaymentTerms']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed,{expected:b.expectedPaymentTerms});
+ case 'confirm':exact(['confirmed','expectedPaymentTerms','expectedWorkTerms']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms});
  case 'release':exact(['applicantUid','confirmed']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.releaseFreelanceReservation(uid,b.offerId,b.applicantUid,b.confirmed);
  case 'withdraw':exact(['confirmed']);return lifecycle.withdrawPendingFreelanceApplication(uid,b.offerId,b.confirmed);
  case 'cancel_open':exact(['confirmed']);return lifecycle.cancelUncontractedFreelanceOffer(uid,b.offerId,b.confirmed);
@@ -58,7 +58,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
  }catch(e){
   const code=e instanceof Error?e.message:'';
   const status=code==='FREELANCE_INVALID'?400:['FREELANCE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_WORK_MODE_NOT_ENABLED','FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_UNAVAILABLE':code});
  }
 }
