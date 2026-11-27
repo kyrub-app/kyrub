@@ -9,7 +9,7 @@ export function projectOptionalConsent(purpose:OptionalConsentPurpose,record:Opt
  const d=OPTIONAL_CONSENT_PURPOSES[purpose];if(!d)return deny();
  if(record&&(record.purpose!==purpose||record.simulation!==true||!Number.isSafeInteger(record.revision)||record.revision<1||!Number.isSafeInteger(record.changedAt)||record.changedAt<=0||!['granted','withdrawn'].includes(record.state)||typeof record.version!=='string'||!record.version||!(/^[a-f0-9]{64}$/).test(record.noticeHash)))return deny();
  const effective=record?.state==='granted'&&record.version===d.version&&record.noticeHash===optionalConsentNoticeHash(purpose);
- return {purpose,...d,revision:record?.revision??0,state:record?.state==='withdrawn'?'withdrawn':effective?'granted':'not-granted',effective:!!effective,simulation:true};
+ return {purpose,...d,revision:record?.revision??0,state:record?.state==='withdrawn'?'withdrawn':effective?'granted':'not-granted',effective:!!effective,canWithdraw:record?.state==='granted',simulation:true};
 }
 export function prepareOptionalConsent(input:unknown,prior:OptionalConsentRecord|undefined,now:number):OptionalConsentRecord{
  const choice=normalizeOptionalConsentChoice(input),view=projectOptionalConsent(choice.purpose,prior),d=OPTIONAL_CONSENT_PURPOSES[choice.purpose];
