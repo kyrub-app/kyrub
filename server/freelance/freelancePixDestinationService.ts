@@ -36,8 +36,8 @@ export async function bindFreelancePixDestination(uid:string,offerId:string,inpu
   const offer=o.data() as FreelanceOffer|undefined,app=a.data() as FreelanceApplication|undefined;
   if(!offer||!app||offer.id!==offerId||offer.selectedApplicantUid!==uid||app.applicantUid!==uid)throw Error('FREELANCE_FORBIDDEN');
   const hourly=offer.workTerms?.mode==='hourly';
-  if(hourly&&offer.status!=='contracted')throw Error('FREELANCE_PIX_DISCLOSURE_UNAVAILABLE');
-  const obligation=hourly?(await readHourlyPixPreparation(tx,uid,offerId)).obligation:buildFreelancePaymentObligation(offer,app);
+  if(hourly&&!['contracted','cancelled'].includes(offer.status))throw Error('FREELANCE_PIX_DISCLOSURE_UNAVAILABLE');
+  const obligation=hourly?(offer.status==='cancelled'?(await readFinancialContext(tx,uid,offerId)).obligation:(await readHourlyPixPreparation(tx,uid,offerId)).obligation):buildFreelancePaymentObligation(offer,app);
   if(obligation.terms.method!=='external_pix'||(!hourly&&!matchesFreelancePaymentObligation(ob.data(),obligation)))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
   const roles=identity.get('approvedProfiles');
   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
@@ -129,7 +129,7 @@ async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string
  const review=checkedReview(reviewDoc.data(),obligation);
  if(preparing&&reviewDoc.exists)return blocked();
  const [bindingDoc,sharingDoc]=await tx.getAll(direct.doc('receivingDestination'),direct.doc('pixSharing'));
- if(['under_review','cancelled'].includes(context.offer.status)||review||events.some(e=>e.statement==='paid'||e.statement==='received'))return blocked();
+ if((context.offer.status==='under_review'||(context.offer.status==='cancelled'&&context.hourlyFinal?.kind!=='hourly_cancellation_obligation'))||review||events.some(e=>e.statement==='paid'||e.statement==='received'))return blocked();
  const binding=bindingDoc.data();
  if(!bindingDoc.exists)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
  if(!matches(binding,id,obligation.beneficiaryUid,obligation.contractedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
