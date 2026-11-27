@@ -587,6 +587,11 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'personal_requester'),/FORBIDDEN/);
   process.env[rg]='true';
   const outsider=await account('reputation-outsider',[]);
+  await call(null,'?view=reputation&offerId='+id,401);
+  await call(outsider,'?view=reputation&offerId='+id,403);
+  await call(payer,'?view=reputation&offerId='+id+'&uid='+worker.uid,400);
+  await act(payer,id,'submit_reputation',400,{confirmed:true,stars:5,subject:outsider.uid});
+  assert.equal((await call(payer,'?view=reputation&offerId='+id,200)).own,null);
   await assert.rejects(readFreelanceReputation(outsider.uid,id),/FORBIDDEN/);
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:5,subject:outsider.uid}),/INVALID/);
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:6}),/INVALID/);
@@ -598,7 +603,8 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await assert.rejects(contestFreelanceReputation(worker.uid,id,{confirmed:true,ratingDigest:'0'.repeat(64),reason:'Contestação fictícia.'}),/CONFLICT/);
   assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).releasedCountOnPage,0);
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,stars:3}),/CONFLICT/);
-  const mutual=await submitFreelanceReputation(worker.uid,id,{confirmed:true,stars:4});
+  await act(worker,id,'submit_reputation',200,{confirmed:true,stars:4});
+  const mutual=await call(worker,'?view=reputation&offerId='+id,200);
   assert.equal(mutual.publicationState,'bilateral_released');assert.equal(mutual.received?.stars,5);assert.equal(mutual.rewardsGranted,false);
   const personal=await readFreelanceReputation(payer.uid,id);
   assert.equal(personal.received?.stars,4);assert.deepEqual(personal.received?.subject,{kind:'personal_requester',id:payer.uid});
@@ -613,7 +619,10 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.ok(!JSON.stringify(professional).includes('authorUid'));
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'store_requester'),/FORBIDDEN/);
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'other'),/INVALID/);
-  const candidate=await readOwnFreelanceReputationContestation(payer.uid,id);assert.equal(candidate.eligible,true);
+  assert.equal((await call(worker,'?view=reputation_professional',200)).entries[0].stars,5);
+  assert.equal((await call(payer,'?view=reputation_personal',200)).entries[0].stars,4);
+  await call(payer,'?view=reputation_professional&offerId='+id,400);
+  const candidate=await call(payer,'?view=reputation_contestation&offerId='+id,200);assert.equal(candidate.eligible,true);
   const challenge={confirmed:true,ratingDigest:candidate.ratingDigest,reason:'Contestação fictícia da avaliação recebida.'};
   await assert.rejects(contestFreelanceReputation(outsider.uid,id,challenge),/FORBIDDEN/);
   await assert.rejects(contestFreelanceReputation(payer.uid,id,{...challenge,ratingDigest:'0'.repeat(64)}),/CONFLICT/);
@@ -621,7 +630,8 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   const opened=await Promise.all([contestFreelanceReputation(payer.uid,id,challenge),contestFreelanceReputation(payer.uid,id,challenge)]);
   assert.equal(opened.filter(v=>v.created).length,1);
   await assert.rejects(contestFreelanceReputation(payer.uid,id,{...challenge,reason:'Outra contestação.'}),/CONFLICT/);
-  const pending=await readOwnFreelanceReputationContestation(payer.uid,id);assert.equal(pending.contestation?.status,'pending');
+  await act(payer,id,'contest_reputation',200,challenge);
+  const pending=await call(payer,'?view=reputation_contestation&offerId='+id,200);assert.equal(pending.contestation?.status,'pending');
   assert.equal((await readOwnFreelanceReputationContestation(worker.uid,id)).contestation,null);
   assert.equal((await readFreelanceReputation(payer.uid,id)).received?.stars,4);
   assert.equal((await readOwnFreelanceReputationProfile(payer.uid,'personal_requester')).entries[0].stars,4);

@@ -1,3 +1,4 @@
+import {readFreelanceReputation,submitFreelanceReputation,readOwnFreelanceReputationContestation,contestFreelanceReputation,readOwnFreelanceReputationProfile} from './freelanceReputationService.js';
 import {readFreelanceExtensions,changeFreelanceExtension} from './freelanceAttendanceExtensionService.js';
 import {readFreelanceAttendance,recordFreelanceAttendance} from './freelanceAttendanceService.js';
 import {readFreelanceAttendanceSchedule,changeFreelanceAttendanceSchedule} from './freelanceAttendanceScheduleService.js';
@@ -20,6 +21,8 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
  const exact=(fields:string[])=>{if(Object.keys(b).some(k=>!['action','offerId',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
  switch(b.action){
+ case 'submit_reputation':exact(['confirmed','stars']);return submitFreelanceReputation(uid,b.offerId,{confirmed:b.confirmed,stars:b.stars});
+ case 'contest_reputation':exact(['confirmed','ratingDigest','reason']);return contestFreelanceReputation(uid,b.offerId,{confirmed:b.confirmed,ratingDigest:b.ratingDigest,reason:b.reason});
  case 'publish':exact(['terms','requesterStoreId']);{
   const terms=normalizeFreelanceOffer(b.terms);
   if(terms.paymentTerms!==undefined&&(!freelanceWorkspaceEnabled()||process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||terms.paymentTerms.method!=='external_pix'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
@@ -45,7 +48,7 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
 type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>Promise<unknown>;mutate:(uid:string,input:unknown)=>Promise<unknown>};
-const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='attendance_extensions'?(validFreelanceId(offerId)&&!cursor?readFreelanceExtensions(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='attendance'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendance(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='attendance_schedule'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendanceSchedule(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
+const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='reputation'?(validFreelanceId(offerId)&&cursor===undefined?readFreelanceReputation(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='reputation_contestation'?(validFreelanceId(offerId)&&cursor===undefined?readOwnFreelanceReputationContestation(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='reputation_professional'||view==='reputation_personal'||view==='reputation_store'?(offerId===undefined?readOwnFreelanceReputationProfile(uid,view==='reputation_professional'?'professional':view==='reputation_personal'?'personal_requester':'store_requester',cursor):Promise.reject(Error('FREELANCE_INVALID'))):view==='attendance_extensions'?(validFreelanceId(offerId)&&!cursor?readFreelanceExtensions(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='attendance'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendance(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='attendance_schedule'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendanceSchedule(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
 export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dependencies=defaults){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
  try{if(!deps.enabled()){res.status(503).json({code:'FREELANCE_DISABLED'});return;}}catch{res.status(503).json({code:'FREELANCE_DISABLED'});return;}
@@ -56,7 +59,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
  let uid:string;
  try{uid=(await deps.verify(token)).uid;if(!validFreelanceId(uid))throw Error('AUTH_REQUIRED');}catch{res.status(401).json({code:'AUTH_REQUIRED'});return;}
  try{
-  if(req.method==='GET'){res.status(200).json(await deps.read(uid,req.query?.view,req.query?.offerId,req.query?.cursor));return;}
+  if(req.method==='GET'){if(typeof req.query?.view==='string'&&req.query.view.startsWith('reputation')&&Object.keys(req.query).some(k=>!['view','offerId','cursor'].includes(k)))throw Error('FREELANCE_INVALID');res.status(200).json(await deps.read(uid,req.query?.view,req.query?.offerId,req.query?.cursor));return;}
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>16384){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
@@ -66,7 +69,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
  }catch(e){
   const code=e instanceof Error?e.message:'';
   const status=code==='FREELANCE_INVALID'?400:['FREELANCE_FORBIDDEN','FREELANCE_STORE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_HOURLY_ACCOUNTING_CONFLICT','FREELANCE_ATTENDANCE_CONFLICT','FREELANCE_WORK_MODE_NOT_ENABLED','FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_REPUTATION_CONFLICT','FREELANCE_HOURLY_ACCOUNTING_CONFLICT','FREELANCE_ATTENDANCE_CONFLICT','FREELANCE_WORK_MODE_NOT_ENABLED','FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_UNAVAILABLE':code});
  }
 }
