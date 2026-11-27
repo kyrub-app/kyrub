@@ -56,6 +56,7 @@ describe('user communication preferences', () => {
       community_group_invite: true,
       user_forward: true,
       note_invitation: true,
+      social_chat: true,
     });
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'store_chat'), true);
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'marketing'), false);
@@ -268,4 +269,22 @@ test('note invitation uses the existing private People inbox and browser opt-in'
   assert.match(bridge, /existing\.status === 'pending'\) notifyInvitation/);
   assert.match(bridge, /auth\.currentUser\?\.uid !== ownerId/);
   assert.match(readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8'), /kyrub:open-shared-notes/);
+});
+
+test('personal messages use the canonical inbox without changing community forwards', async () => {
+  const { userNotificationOrigin } = await import('../shared/userNotificationOrigins');
+  assert.equal(userNotificationOrigin('social_chat'), 'people');
+  const hook = readFileSync('src/hooks/useChatMessages.ts', 'utf8');
+  assert.match(hook, /\/api\/notifications\/social-messages\/send/);
+  assert.match(hook, /receipt.messageId !== messageId/);
+  assert.doesNotMatch(hook, /await addDoc\(/);
+  const service = readFileSync('server/notifications/socialChatNotificationService.ts', 'utf8');
+  assert.match(service, /conn.status !== 'accepted'/);
+  assert.match(service, /transaction.create\(messageRef/);
+  assert.match(service, /transaction.create\(notificationRef/);
+  assert.match(service, /createHash\('sha256'\)/);
+  const modal = readFileSync('src/components/modals/ChatModal.tsx', 'utf8');
+  assert.match(modal, /sendCommunityPostToConnectedUser/);
+  assert.match(modal, /issueCommunityForwardReceivedNotification/);
+  assert.match(readFileSync('src/components/ProfileSocialHubNative.tsx','utf8'), /item.connectionStatus === 'accepted'/);
 });

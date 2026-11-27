@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { sendNotifiedSocialMessage } from './socialChatNotificationService.js';
 import { issueNoteInvitationNotification } from './noteInvitationNotificationService.js';
 import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueService.js';
 import { issueCommunityPostForwardNotification } from './communityPostForwardNotificationService.js';
@@ -88,6 +89,30 @@ export const createUserNotificationRouter = (): Router => {
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/social-messages/send', async (request, response) => {
+    try {
+      const identity = await requireIdentity(request.get('authorization') ?? '');
+      const result = await sendNotifiedSocialMessage({
+        senderId: identity.uid,
+        connectionId: clean(request.body?.connectionId),
+        receiverId: clean(request.body?.receiverId),
+        messageId: clean(request.body?.messageId),
+        text: request.body?.text,
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'SOCIAL_CHAT_INVALID') {
+        response.status(400).json({ error: 'Mensagem ou conversa inválida.' });
+      } else if (code.startsWith('SOCIAL_CHAT_')) {
+        response.status(403).json({ error: 'Esta conversa não está disponível para envio.' });
+      } else {
+        const mapped = mapError(error);
+        response.status(mapped.status).json({ error: mapped.message });
+      }
     }
   });
 

@@ -14,6 +14,7 @@ export interface UserCommunicationCategoryPreferences {
   community_group_invite?: boolean;
   user_forward?: boolean;
   note_invitation?: boolean;
+  social_chat?: boolean;
 }
 
 export interface UserCommunicationPreferences {
@@ -59,6 +60,7 @@ export const buildDefaultUserCommunicationPreferences = (
         community_group_invite: true,
         user_forward: true,
         note_invitation: true,
+        social_chat: true,
       },
     },
     updatedAt: '',
@@ -95,6 +97,7 @@ export const buildUserCommunicationPreferences = (input: {
         community_group_invite: input.categories.community_group_invite !== false,
         user_forward: input.categories.user_forward !== false,
         note_invitation: input.categories.note_invitation !== false,
+        social_chat: input.categories.social_chat !== false,
       },
     },
     updatedAt,

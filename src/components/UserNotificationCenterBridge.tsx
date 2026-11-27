@@ -47,6 +47,14 @@ const openNotificationTarget = (
   user: User
 ): boolean => {
   if (auth.currentUser?.uid !== user.uid || notification.recipientUserId !== user.uid) return false;
+  if (notification.target.kind === 'social_chat') {
+    if (!notification.target.connectionId || !notification.actorPrincipalId ||
+        notification.actorPrincipalId === user.uid) return false;
+    window.dispatchEvent(new CustomEvent('kyrub:open-social-chat', {
+      detail: { connectionId: notification.target.connectionId, friendId: notification.actorPrincipalId, recipientId: user.uid },
+    }));
+    return true;
+  }
   if (notification.target.kind === 'note_invitation') {
     if (!notification.target.noteInvitationId) return false;
     window.dispatchEvent(new Event('kyrub:open-shared-notes'));
