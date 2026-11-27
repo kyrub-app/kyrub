@@ -36,3 +36,18 @@ test('candidate interface has no local persistence, uses server receipt and pres
  const modal=readFileSync('src/components/modals/FreelaManagerModal.tsx','utf8');
  assert.match(modal,/candidate \? \(props.isOpen/);
 });
+
+test('R$20/hour is guidance only; fixed completion retains agreed amount and hourly mode fails closed',async()=>{
+ const {readFreelanceWorkTerms,projectFreelanceWorkRecommendation,assertFreelanceWorkExecutionReady,sameFreelanceWorkTerms}=await import('../shared/freelanceWorkTerms.js');
+ const terms={mode:'fixed',location:'remote',estimatedMinutes:360};
+ assert.deepEqual(projectFreelanceWorkRecommendation(terms,12000),{recommendedMinor:12000,equivalentHourlyMinor:2000,belowRecommendation:false});
+ assert.equal(projectFreelanceWorkRecommendation(terms,9000).belowRecommendation,true);
+ assert.equal(projectFreelanceWorkRecommendation({...terms,estimatedMinutes:180},9000).equivalentHourlyMinor,3000);
+ assert.equal(projectFreelanceWorkRecommendation({...terms,estimatedMinutes:1},33).recommendedMinor,34);
+ assert.equal(sameFreelanceWorkTerms(terms,{...terms,location:'on_site'},12000),false);
+ assert.equal(sameFreelanceWorkTerms(undefined,undefined,12000),true);
+ assert.throws(()=>readFreelanceWorkTerms({...terms,estimatedMinutes:0},12000),/INVALID/);
+ const hourly=readFreelanceWorkTerms({mode:'hourly',location:'on_site',estimatedMinutes:360,hourlyRateMinor:2000},12000);
+ assert.throws(()=>assertFreelanceWorkExecutionReady(hourly),/NOT_ENABLED/);
+ assert.doesNotThrow(()=>assertFreelanceWorkExecutionReady(readFreelanceWorkTerms(terms,9000)));
+});
