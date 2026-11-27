@@ -316,3 +316,31 @@ test('freelance release, withdrawal, cancellation and bilateral completion remai
   assert.match(source,/tx.update\(applicationRef,\{status:result.application.status,\[at\]/);
   assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
 });
+
+test('post-contract freelance occurrence freezes execution for review without assigning cost',async()=>{
+ const m=await import('../shared/freelanceLifecycle');
+ const now='2026-11-27T10:00:00.000Z', later='2026-11-27T10:01:00.000Z';
+ const o=m.createFreelanceOffer('offer-1','owner',{title:'Serviço',description:'Descrição',requirements:'',paymentMinor:12345},now);
+ const a=m.createFreelanceApplication(o,'worker',now);
+ const selected=m.selectFreelanceApplicant(o,a,'owner',now);
+ const c=m.confirmFreelanceSelection(selected.offer,selected.application,'worker',true,later);
+ assert.throws(()=>m.openFreelanceOccurrence(c.offer,c.application,'third','service_disputed',true,later),/FREELANCE_FORBIDDEN/);
+ assert.throws(()=>m.openFreelanceOccurrence(c.offer,c.application,'owner','arbitrary',true,later),/FREELANCE_INVALID/);
+ const start=m.advanceFreelanceExecution(c.offer,c.application,'worker','start',true,later);
+ const incident=m.openFreelanceOccurrence(start.offer,start.application,'worker','cancellation_requested',true,later);
+ assert.equal(incident.priorStatus,'in_progress');
+ assert.equal(incident.status,'awaiting_review');
+ assert.throws(()=>m.recordFreelanceOccurrenceResponse(incident,'worker','agree',true,later),/FREELANCE_FORBIDDEN/);
+ const answer=m.recordFreelanceOccurrenceResponse(incident,'owner','agree',true,later);
+ assert.equal(answer.status,'awaiting_review');
+ assert.equal(answer.response?.position,'agree');
+ assert.equal(m.recordFreelanceOccurrenceResponse(answer,'owner','agree',true,later),answer);
+ assert.throws(()=>m.recordFreelanceOccurrenceResponse(answer,'owner','disagree',true,later),/FREELANCE_CONFLICT/);
+ assert.throws(()=>m.advanceFreelanceExecution({...start.offer,status:'under_review',occurrenceId:incident.id},{...start.application,status:'under_review',occurrenceId:incident.id},'worker','request_completion',true,later),/FREELANCE_CONFLICT/);
+ assert.equal(start.offer.paymentMinor,12345);
+ const source=readFileSync('server/freelance/freelanceLifecycleService.ts','utf8');
+ assert.match(source,/tx.create\(occurrenceRef,result\)/);
+ assert.match(source,/tx.update\(offerRef,\{status:'under_review'/);
+ assert.match(source,/tx.update\(applicationRef,\{status:'under_review'/);
+ assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
+});
