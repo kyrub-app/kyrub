@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { CircleDollarSign } from 'lucide-react';
+import { useLocalFreelaCandidate } from '../modals/CanonicalFreelaWorkspace';
+import { FreelancePersonalSummary } from './FreelancePersonalSummary';
 import { calculateFreelanceEarningsPlan, parseFreelancePlanningMoney } from '../../../shared/freelanceEarningsPlanning';
 
 const money = (minor: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(minor / 100);
 const fieldClass = 'mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white';
 export function FreelanceEarningsPlanningCard() {
+  const candidate = useLocalFreelaCandidate();
   const [jobs, setJobs] = useState('');
   const [fee, setFee] = useState('');
   const [cost, setCost] = useState('0');
@@ -25,7 +28,7 @@ export function FreelanceEarningsPlanningCard() {
       </p>
       <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3">
         <h4 className="text-[9px] font-black uppercase tracking-wider text-slate-300">Extrato financeiro</h4>
-        <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Histórico financeiro confirmado ainda indisponível para Freelas. Nenhum saldo ou recebimento é inferido.</p>
+        {candidate ? <FreelancePersonalSummary view="earnings"/> : <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Histórico financeiro confirmado ainda indisponível para Freelas. Nenhum saldo ou recebimento é inferido.</p>}
       </div>
       <h4 className="mt-4 text-[9px] font-black uppercase tracking-wider text-slate-300">Planejamento de ganhos</h4>
       <div className="mt-2 space-y-3">
