@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
+import FreelaPixSharing from './FreelaPixSharing';
 type Statement={role:'requester'|'freelancer';statement:'paid'|'received'|'not_received';recordedAt:string};
 type Case={offerId:string;role:'requester'|'freelancer';amountMinor:number;currency:'BRL';timing:'advance'|'on_completion';financialState:string;restrictionActive:boolean;reviewStatus:string|null;reviewOutcome:string|null;bankVerified:false;statements:Statement[];ownNotes:{id:string;note:string;recordedAt:string}[];ownReceipts:{id:string;size:number;recordedAt:string;mimeType:'image/png'}[];canRequestReview:boolean;canSubmitEvidence:boolean};
 type Action={action:string;confirmed:true;eventId?:string;statement?:Statement['statement'];evidenceId?:string;note?:string;receiptId?:string;pngBase64?:string};
@@ -71,6 +72,7 @@ export default function FreelaFinancialPanel({user,offerId,role}:{user:User;offe
   <p>Homologação: use somente dados e comprovantes fictícios. O Kyrub não realiza transferências nem confirma pagamentos bancários.</p>
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar situação financeira</button>
   {busy&&<p role="status">Consultando financeiro…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status" className="text-emerald-300">{message}</p>}
+  {!busy&&!paid&&!received&&!data?.reviewStatus&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role}/>}
   {data&&<>
    <p className="font-bold text-white">{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.amountMinor/100)} · {data.timing==='advance'?'Antecipado':'Na conclusão'}</p>
    <p>{states[data.financialState]}</p>

@@ -303,6 +303,18 @@ try{
   await button(panel,'Consultar situação financeira').click();await waitText(panel,'Aguardando pagamento');return panel;
  }
  const payerPanel=await finance(payerPage,'owner'),receiverPanel=await finance(receiverPage,'worker');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.ts');
+ const sharingKey='contract-'+suffix+'@example.invalid';
+ await changePersonalPixDestination(fw.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:sharingKey}});
+ const ps=payerPanel.getByRole('region',{name:'Chave Pix do contrato'}),ws=receiverPanel.getByRole('region',{name:'Chave Pix do contrato'});
+ await button(ws,'Consultar chave vinculada').click();await button(ws,'Vincular chave Pix ao contrato').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento ainda não autorizado');await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento ainda não autorizado');
+ assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ await button(ws,'Autorizar compartilhamento com o contratante').click();await button(ws,'Confirmar operação Pix').click();await waitText(ws,'Compartilhamento autorizado para este contratante.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento autorizado');
+ await payerPage.bringToFront();await button(ps,'Consultar chave Pix integral').click();await button(ps,'Confirmar operação Pix').click();await waitText(ps,sharingKey);
+ await button(ps,'Ocultar chave Pix').click();assert.ok(!(await ps.innerText()).includes(sharingKey));assert.ok(!(await ws.innerText()).includes(sharingKey));
+ console.log('PASS Pix sharing UI: bind, separate consent, payer-only reveal, manual hide');
  async function financialAction(panel,label){
   await button(panel,label).click();
   const result=panel.page().waitForResponse(r=>r.url().endsWith('/api/freelance/finance')&&r.request().method()==='POST');
@@ -337,12 +349,13 @@ try{
   await page.screenshot({path:'freelance-browser-evidence/financial-notices-'+(page===payerPage?'payer':'worker')+'.png',fullPage:true});
  }
  for(const page of [payerPage,receiverPage]){
-  await page.locator('#canonical-notification-trigger').click();
+  await page.locator('#canonical-notification-center').getByRole('button',{name:'Fechar notificações'}).click();
+  await page.locator('#canonical-notification-center').waitFor({state:'detached'});
   await page.locator('#header-user-profile-trigger').click();
   await page.getByRole('button',{name:/Movimentações/}).first().click();
   const movements=page.locator('#freela-movements');
   await movements.waitFor({state:'visible'});
-  if(page===payerPage)await button(movements,'Como contratante').click();
+  if(page===payerPage){await button(movements,'Como contratante').click();}
   await waitText(movements,directTitle);await waitText(movements,'Recebimento confirmado pelas partes');
   await waitText(movements,'Não verificada');
   await page.screenshot({path:'freelance-browser-evidence/financial-movements-'+(page===payerPage?'payer':'worker')+'.png',fullPage:true});
