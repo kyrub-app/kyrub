@@ -1,4 +1,4 @@
-import {coverageRef,checkedCoverage,indexDigest,writeCoverage} from './freelanceReputationCoverage.js';
+import {coverageRef,checkedCoverage,indexDigest,writeCoverage,readReputationMaintenance} from './freelanceReputationCoverage.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {digestVariablePaymentSources,canonicalVariablePaymentRecord} from './freelanceVariablePaymentBasisService.js';
@@ -27,6 +27,7 @@ export async function prepareFreelanceReputationIndex(tx:Transaction,x:Context,s
   const scopes=[{subject:x.parties.worker,representativeUid:x.parties.workerUid,rating:x.slots.requester},{subject:x.parties.requester,representativeUid:x.parties.requesterUid,rating:x.slots.worker}];
   const refs=scopes.map(s=>adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources({subject:s.subject,representativeUid:s.representativeUid})));
   const scopeIdentity=scopes.map(s=>({subject:s.subject,representativeUid:s.representativeUid}));
+  const maintenance=await readReputationMaintenance(tx);
   const [prior,...all]=await tx.getAll(receipt,...refs,...scopeIdentity.map(coverageRef));
   const snapshots=all.slice(0,refs.length),witnesses=all.slice(refs.length);
   const prev=prior.data();
@@ -45,8 +46,8 @@ export async function prepareFreelanceReputationIndex(tx:Transaction,x:Context,s
   if(sourceEvent||addExperience||addRatings){
    for(let i=0;i<refs.length;i++){
     const scope=scopeIdentity[i],raw=snapshots[i].data(),w=checkedCoverage(scope,witnesses[i].data());
-    const maintained=sourceEvent&&w?.verifiedDigest===indexDigest(raw);
-    writeCoverage(tx,scope,maintained?indexDigest(addExperience||addRatings?plans[i]:raw):null);
+    const maintained=sourceEvent&&!maintenance.active&&w?.epoch===maintenance.epoch&&w?.verifiedDigest===indexDigest(raw);
+    writeCoverage(tx,scope,maintained?indexDigest(addExperience||addRatings?plans[i]:raw):null,maintenance.epoch);
    }
   }
   if(addExperience||addRatings){
