@@ -44,6 +44,10 @@
       "destination": "/api/health?transport=public-community-page"
     },
     {
+      "source": "/api/delivery-opportunities/alerts",
+      "destination": "/api/health?transport=courier-activity-alerts"
+    },
+    {
       "source": "/api/delivery-opportunities/public",
       "destination": "/api/health?transport=public-delivery-discovery"
     },

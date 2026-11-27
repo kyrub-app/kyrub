@@ -430,6 +430,20 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'courier-activity-alerts') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    if (process.env.VERCEL_ENV !== 'production') {
+      response.status(404).json({ error: 'Avisos indisponíveis neste ambiente.' }); return;
+    }
+    try {
+      const { handleCourierActivityAlerts } = await import('../server/delivery/courierActivityAlertsTransport.js');
+      await handleCourierActivityAlerts(request, response);
+    } catch {
+      response.status(503).json({ error: 'Avisos de entregas indisponíveis.' });
+    }
+    return;
+  }
+
   if (transport === 'public-delivery-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
