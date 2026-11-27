@@ -10,8 +10,10 @@ process.env.GCLOUD_PROJECT='kyrub-security-test';
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
 delete process.env.VERCEL;
+delete process.env.VERCEL_ENV;
 const {adminDb,getFirebaseAdminProjectId}=await import('../server/firebaseAdmin.js');
 const s=await import('../server/freelance/freelanceLifecycleService.js');
+const funding=await import('../server/freelance/freelanceFundingService.js');
 let env:RulesTestEnvironment;
 const owner='fixture-freelance-owner',worker='fixture-freelance-worker',other='fixture-freelance-other';
 const input={title:'Serviço de teste',description:'Somente emulador',requirements:'',paymentMinor:15000};
@@ -41,7 +43,13 @@ test('verified publication, application race, exclusive selection and one remune
  const loser=selected===worker?other:worker;
  await assert.rejects(s.confirmFreelanceContract(loser,id,true),/FREELANCE_FORBIDDEN/);
  await s.confirmFreelanceContract(selected,id,true);
+ await assert.rejects(s.recordFreelanceExecution(selected,id,'start',true),/FREELANCE_FUNDING_REQUIRED/);
+ await assert.rejects(funding.confirmSimulatedFreelanceFunding(id,'fixture-payment-normal',1,owner,selected),/FREELANCE_FUNDING_CONFLICT/);
+ await assert.rejects(funding.confirmSimulatedFreelanceFunding(id,'fixture-payment-normal',15000,owner,loser),/FREELANCE_FUNDING_CONFLICT/);
+ const payments=await Promise.all([funding.confirmSimulatedFreelanceFunding(id,'fixture-payment-normal',15000,owner,selected),funding.confirmSimulatedFreelanceFunding(id,'fixture-payment-normal',15000,owner,selected)]);
+ assert.deepEqual(payments.map(x=>x.created).sort(),[false,true]);
  await s.recordFreelanceExecution(selected,id,'start',true);
+ await assert.rejects(funding.revokeSimulatedFreelanceFunding(id,'fixture-payment-normal'),/FREELANCE_FUNDING_CONFLICT/);
  await s.recordFreelanceExecution(selected,id,'request_completion',true);
  await assert.rejects(s.recordFreelanceExecution(selected,id,'confirm_completion',true),/FREELANCE_FORBIDDEN/);
  const completions=await Promise.all([s.recordFreelanceExecution(owner,id,'confirm_completion',true),s.recordFreelanceExecution(owner,id,'confirm_completion',true)]);
@@ -60,6 +68,8 @@ test('occurrence and completion compete atomically; browser cannot bypass server
  await s.applyToFreelanceOffer(worker,id);
  await s.selectFreelanceApplication(owner,id,worker);
  await s.confirmFreelanceContract(worker,id,true);
+ await assert.rejects(funding.confirmSimulatedFreelanceFunding(id,'fixture-payment-normal',15000,owner,worker),/FREELANCE_FUNDING_CONFLICT/);
+ await funding.confirmSimulatedFreelanceFunding(id,'fixture-payment-race',15000,owner,worker);
  await s.recordFreelanceExecution(worker,id,'start',true);
  await s.recordFreelanceExecution(worker,id,'request_completion',true);
  const race=await Promise.allSettled([s.reportFreelanceOccurrence(worker,id,'service_disputed',true,'fixture-review'),s.recordFreelanceExecution(owner,id,'confirm_completion',true)]);
@@ -75,7 +85,32 @@ test('occurrence and completion compete atomically; browser cannot bypass server
    await assertFails(getDoc(doc(db,path)));
    await assertFails(updateDoc(doc(db,path),{status:'completed'}));
    await assertFails(setDoc(doc(db,path+'/financialBasis/remuneration'),{confirmedServiceMinor:1}));
+   await assertFails(setDoc(doc(db,path+'/funding/confirmation'),{status:'confirmed'}));
+   await assertFails(getDoc(doc(db,path+'/funding/confirmation')));
    await assertFails(setDoc(doc(db,path+'/applications/'+uid),{status:'contracted'}));
    await assertFails(setDoc(doc(db,path+'/occurrences/forged'),{status:'resolved'}));
+ }
+});
+
+test('funding revocation races with start, and simulation cannot run in Vercel',async()=>{
+ const id='fixture-freelance-funding-race',paymentId='fixture-payment-revocation';
+ await s.publishFreelanceOffer(owner,id,input);
+ await s.applyToFreelanceOffer(worker,id);
+ await s.selectFreelanceApplication(owner,id,worker);
+ await s.confirmFreelanceContract(worker,id,true);
+ process.env.VERCEL_ENV='production';
+ try{
+  await assert.rejects(funding.confirmSimulatedFreelanceFunding(id,paymentId,15000,owner,worker),/FREELANCE_FUNDING_PROVIDER_NOT_ENABLED/);
+  await assert.rejects(s.recordFreelanceExecution(worker,id,'start',true),/FREELANCE_FUNDING_PROVIDER_NOT_ENABLED/);
+ }finally{delete process.env.VERCEL_ENV;}
+ await funding.confirmSimulatedFreelanceFunding(id,paymentId,15000,owner,worker);
+ const race=await Promise.allSettled([funding.revokeSimulatedFreelanceFunding(id,paymentId),s.recordFreelanceExecution(worker,id,'start',true)]);
+ assert.equal(race.filter(x=>x.status==='fulfilled').length,1);
+ const offer=(await ref(id).get()).data(),saved=(await ref(id).collection('funding').doc('confirmation').get()).data();
+ if(offer?.status==='contracted'){
+  assert.equal(saved?.status,'revoked');
+  await assert.rejects(s.recordFreelanceExecution(worker,id,'start',true),/FREELANCE_FUNDING_REQUIRED/);
+ }else{
+  assert.equal(offer?.status,'in_progress');assert.equal(saved?.status,'confirmed');
  }
 });

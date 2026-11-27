@@ -3,7 +3,7 @@
 ## Princípios
 - Contratante financia serviço; Kyrub intermediador, sem antecipação própria ou custódia interna.
 - Remuneração acordada em centavos, separada de taxas e responsabilidade econômica. Percentual de comissão, incidência de tarifas, prazos de cancelamento e remuneração parcial exigem aprovação do proprietário e revisão contratual.
-- Confirmação bilateral da contratação precede cobrança. Início de serviço comercial deve depender de financiamento confirmado pelo PSP, com condições de liberação, devolução e cancelamento acordadas. O serviço candidato atual não implementa essa barreira e não pode ser ativado comercialmente.
+- Confirmação bilateral da contratação precede cobrança. Início de serviço comercial deve depender de financiamento confirmado pelo PSP, com condições de liberação, devolução e cancelamento acordadas. O serviço candidato agora exige cobertura simulada exclusivamente no emulador local; bloqueia início fora dele até implementação de adaptador real autorizado. Não pode ser ativado comercialmente.
 - Conclusão operacional gera base de remuneração; cancelamento após contratação preserva valor e deixa remuneração indeterminada até decisão. Não presume zero nem integral. Não realiza transferência ou débito automaticamente.
 - Sem subsídio, crédito, saldo custodiado ou antecipação pela plataforma por padrão. Não presumir capacidade de retenção de fundos ou garantia de pagamento.
  
@@ -27,3 +27,6 @@ Referências oficiais:
 4. Integrar painel de ganhos e avisos; diferenciar previsto, serviço confirmado, revisão financeira e recebido comprovado.
 5. Teste integrado de duas contas, regras, concorrência, UI, autenticação administrativa/MFA e evidência do PSP. O novo teste no emulador cobre apenas a operação e base de remuneração, não o PSP ou liberação financeira.
 6. Autorizações específicas para merge, implantação e qualquer configuração de produção.
+
+## Pendência de continuidade — decisão do proprietário em 27/11/2026
+Após concluir a etapa técnica de Freelas e sua homologação isolada, revisar especificamente como operar o Mercado Pago enquanto o Split 1:N não estiver habilitado, considerando Lojas, Entregas e Freelas, sem antecipar a discussão nesta etapa. Nenhuma configuração comercial, taxa ou integração real é aprovada por este registro.
