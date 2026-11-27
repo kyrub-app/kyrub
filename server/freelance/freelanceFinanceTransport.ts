@@ -4,7 +4,7 @@ import {prepareCancellationRestriction,prepareExcessRestriction} from './freelan
 import {readHourlyExcessReview,changeHourlyExcessReview,changeHourlyExcessDispute} from './freelanceHourlyExcessReviewService.js';
 import {readHourlyCancellationAgreement,changeHourlyCancellationAgreement,changeHourlyCancellationDispute} from './freelanceHourlyCancellationAgreementService.js';
 import {readHourlyCancellation} from './freelanceHourlyCancellationService.js';
-import {readCancellationAccounting,changeCancellationAccounting,changeFixedCancellationDispute} from './freelanceCancellationAccountingService.js';
+import {readCancellationAccounting,changeCancellationAccounting,changeFixedCancellationDispute,readFixedCancellationContext} from './freelanceCancellationAccountingService.js';
 import {adminAuth} from '../firebaseAdmin.js';
 import {readOwnFreelanceMovements} from './freelanceMovementsService.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
@@ -38,6 +38,7 @@ async function readCase(uid:string,offerId:string,receiptId?:string){
    }
   }
   const {offer,obligation,events,projection,due,hourlyFinal}=await readFinancialContext(tx,uid,offerId,true);
+  const originalHistoryFrozen=offer.status==='cancelled'&&offer.workTerms?.mode!=='hourly'&&!!(await readFixedCancellationContext(tx,uid,offerId)).resolved;
   const review=checkedReview(reviewSnapshot.data(),obligation);
   const role=uid===obligation.requesterUid?'requester':'freelancer';
   const restricted=projection.state==='disputed'&&review?.status!=='resolved_administratively';
@@ -50,7 +51,7 @@ async function readCase(uid:string,offerId:string,receiptId?:string){
    return readFinancialReceiptBytes(tx,obligation,review!.requestedAt,receiptId);
   }
   return {offerId,role,...(hourlyFinal?{amountMode:'hourly_final',sourceDigest:hourlyFinal.sourceDigest}:{}),amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
-   operationalStatus:offer.status,due,financialState:due?projection.state:'not_due',hadDisagreement:projection.hadDisagreement,bankVerified:false,
+   operationalStatus:offer.status,...(originalHistoryFrozen?{originalHistoryFrozen:true}:{}),due,financialState:due?projection.state:'not_due',hadDisagreement:projection.hadDisagreement,bankVerified:false,
    restrictionActive:restricted,reviewStatus:review?.status??null,
    reviewOutcome:review?.decision?.outcome??null,requestedAt:review?.requestedAt??null,
    statements:events.map(e=>({role:e.actorUid===uid?role:role==='requester'?'freelancer':'requester',statement:e.statement,recordedAt:e.recordedAt})),
