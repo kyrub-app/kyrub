@@ -5,6 +5,8 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_excess_disputed:['Divergência de excedente','Novas contratações temporariamente restritas. Busque acordo sobre o tempo registrado.'],
+ hourly_excess_review_requested:['Análise de excedente solicitada','Consulte a situação do contrato. A restrição permanece até resolução.'],
  hourly_excess_proposed:['Excedente de jornada em análise','Consulte a proposta de reconhecimento de tempo adicional.'],
  hourly_excess_accepted:['Excedente de jornada acordado','Consulte a resolução. Nenhum pagamento foi confirmado.'],
  hourly_excess_closed:['Proposta de excedente encerrada','Consulte a apuração da jornada.'],

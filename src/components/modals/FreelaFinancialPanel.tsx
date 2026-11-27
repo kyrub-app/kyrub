@@ -1,3 +1,4 @@
+import FreelaHourlyExcessReview from './FreelaHourlyExcessReview';
 import FreelaHourlyCancellationAgreement from './FreelaHourlyCancellationAgreement';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
@@ -96,6 +97,7 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
     {data.ownReceipts.length===0?<><label className="block">Comprovante fictício PNG (até 256 KiB)<input ref={fileInput} className={field} type="file" accept="image/png" disabled={busy||!!pending} onChange={e=>{const f=e.target.files?.[0];setError('');if(f&&(f.size>262144||f.type!=='image/png'||!f.size)){setFile(null);e.target.value='';setError('Selecione um PNG de até 256 KiB.');}else setFile(f??null);}}/></label><button type="button" className={btn} disabled={busy||!!pending||!file} onClick={()=>void prepareReceipt()}>Enviar comprovante</button></>:<p>Comprovante privado registrado.</p>}
    </div>}
   </>}
+  {workMode==='hourly'&&!busy&&!pending&&operationalStatus==='completed'&&!data&&<FreelaHourlyExcessReview key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {workMode==='hourly'&&!busy&&!pending&&operationalStatus==='cancelled'&&<FreelaHourlyCancellationAgreement key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {workMode!=='hourly'&&!busy&&!pending&&(data?.operationalStatus??operationalStatus)==='cancelled'&&<FreelaCancellationAccounting key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {pending&&<div className="rounded-xl border border-teal-700 p-3 space-y-2"><p>Confirma: {pending.label}?</p>{pending.body.expectedAmountMinor!==undefined&&<p>Valor integral da apuração: {new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(pending.body.expectedAmountMinor/100)}</p>}<button type="button" className={btn} disabled={busy} onClick={()=>void run(pending.body)}>Confirmar manifestação</button>{' '}<button type="button" className={btn} disabled={busy} onClick={clear}>Voltar</button></div>}
