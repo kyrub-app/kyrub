@@ -285,7 +285,8 @@ export const publishKyrubDeliveryOpportunity = async (
 export const updateKyrubDeliveryStatus = async (
   deliveryId: string,
   status: DeliveryOperationalStatus,
-  actor: AuthenticatedActor
+  actor: AuthenticatedActor,
+  options?: { requireCanonicalAcceptance: true }
 ): Promise<void> => {
   const normalizedId = validateDeliveryId(deliveryId);
   const deliveryReference = adminDb.doc(deliveryPath(normalizedId));
@@ -306,6 +307,20 @@ export const updateKyrubDeliveryStatus = async (
     const currentStatus = clean(delivery.status);
     const claim = claimSnapshot.data() as Record<string, unknown> | undefined;
     const courierId = clean(claim?.courierId);
+
+    if (options?.requireCanonicalAcceptance) {
+      if (status !== 'accepted' || !/^order-[a-f0-9]{64}$/.test(normalizedId)
+        || clean(delivery.source) !== 'kyrub-order'
+        || !clean(delivery.storeId) || !clean(delivery.sourceOrderId)
+        || deliveryJobId(clean(delivery.storeId),clean(delivery.sourceOrderId)) !== normalizedId
+        || actor.uid === clean(delivery.storeId) || actor.uid === clean(delivery.buyerId)) {
+        throw new Error('DELIVERY_ACCEPTANCE_FORBIDDEN');
+      }
+      const eligibility=await transaction.get(adminDb.doc('identity_verifications/'+actor.uid));
+      const profiles=eligibility.get('approvedProfiles');
+      if(eligibility.get('status')!=='approved'||!Array.isArray(profiles)||!profiles.some(p=>p==='bicycle_courier'||p==='motorized_courier'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
+      if(claimSnapshot.exists&&(currentStatus!=='accepted'||courierId!==actor.uid||clean(delivery.acceptedBy)!==actor.uid||clean(claim?.status)!=='accepted'))throw Error('DELIVERY_ACCEPTANCE_CONFLICT');
+    }
 
     if (status === 'accepted') {
       if (claimSnapshot.exists) {
