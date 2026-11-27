@@ -1010,6 +1010,35 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  const excess=await recordFreelanceVariablePaymentBasis(owner.uid,id);
  assert.equal(excess.basis.disposition,'requires_review');assert.equal(excess.basis.finalAmountMinor,null);assert.equal(excess.basis.payable,false);
  await assert.rejects(issueFreelanceHourlyFinalObligation(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
+ // Separate synthetic excess case; do not mutate the accepted review to restore the other fixture.
+ const excessId=id+'-excess',er=db.doc('freelanceOffersV1/'+excessId);
+ await er.set({...offer,id:excessId});await er.collection('applications').doc(worker.uid).set({...application,offerId:excessId});
+ for(const name of ['schedule','schedule-schedule','timeline'])await er.collection('attendance').doc(name).set((await ref.collection('attendance').doc(name).get()).data()!);
+ const eb=await recordFreelanceVariablePaymentBasis(owner.uid,excessId);
+ const excessApi=async(actor:Actor,status:number,action?:string,extra:Record<string,unknown>={})=>{
+  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view=hourly_excess_review&offerId='+excessId);
+  const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:excessId,action,confirmed:true,...extra})}:{})});
+  const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));return data;
+ };
+ await excessApi(other,403);
+ const ev=await excessApi(worker,200);assert.equal(ev.excessMs,3600000);assert.equal(ev.authorizedMinor,12000);
+ const {calculateHourlyExcessResolution}=await import('../shared/freelanceHourlyExcessResolution.js');
+ assert.equal(calculateHourlyExcessResolution(eb.basis,0).recognizedServiceMinor,12000);
+ assert.equal(calculateHourlyExcessResolution(eb.basis,3600000).recognizedServiceMinor,14000);
+ const ep={proposalId:'first',sourceDigest:ev.sourceDigest,recognizedExcessMs:1800000};
+ await excessApi(worker,400,'propose_hourly_excess',{...ep,recognizedExcessMs:3600001});
+ await excessApi(worker,409,'propose_hourly_excess',{...ep,sourceDigest:'0'.repeat(64)});
+ await excessApi(worker,200,'propose_hourly_excess',ep);await excessApi(worker,200,'propose_hourly_excess',ep);
+ await excessApi(worker,403,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ await excessApi(owner,200,'decline_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ await excessApi(owner,200,'propose_hourly_excess',{...ep,proposalId:'second'});
+ await excessApi(worker,409,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
+ await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
+ const resolved=await excessApi(owner,200);assert.equal(resolved.resolved.recognizedServiceMinor,13000);assert.equal(resolved.resolved.unrecognizedExcessMs,1800000);assert.equal(resolved.payable,false);
+ assert.equal((await er.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+ await excessApi(owner,409,'propose_hourly_excess',{...ep,proposalId:'third'});
+ await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);
  await ref.collection('directPayment').doc('obligation').set({fixture:true});
  await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  await act(owner,id,'record_hourly_basis',400,{confirmed:true});

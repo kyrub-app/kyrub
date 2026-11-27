@@ -5,6 +5,9 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_excess_proposed:['Excedente de jornada em análise','Consulte a proposta de reconhecimento de tempo adicional.'],
+ hourly_excess_accepted:['Excedente de jornada acordado','Consulte a resolução. Nenhum pagamento foi confirmado.'],
+ hourly_excess_closed:['Proposta de excedente encerrada','Consulte a apuração da jornada.'],
  hourly_cancellation_admin_resolved:['Análise de cancelamento concluída','Consulte a decisão financeira. A restrição deste caso foi removida; nenhum pagamento foi confirmado.'],
  hourly_cancellation_disputed:['Divergência no cancelamento','Novas contratações temporariamente restritas. Busque acordo no financeiro do contrato.'],
  hourly_cancellation_review_requested:['Análise de cancelamento solicitada','Consulte a situação financeira do contrato. A restrição permanece até resolução.'],
@@ -35,7 +38,7 @@ export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,
  !['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!validFreelanceId(obligation.offerId)||!validFreelanceId(obligation.requesterUid)||!validFreelanceId(obligation.beneficiaryUid)||obligation.requesterUid===obligation.beneficiaryUid)throw Error('FREELANCE_INVALID');
  const replacement=kind==='pix_rebind_proposed'||kind==='pix_rebind_accepted';
- const accounting=kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_');
+ const accounting=kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_');
  if(replacement?(typeof revision!=='number'||!Number.isSafeInteger(revision)||revision<1):accounting?!validFreelanceId(revision):revision!==undefined)throw Error('FREELANCE_INVALID');
  const sourceId=createHash('sha256').update(JSON.stringify(replacement||accounting?[obligation.offerId,kind,revision]:[obligation.offerId,kind])).digest('hex');
  const ids=recipient==='both'?[obligation.requesterUid,obligation.beneficiaryUid]:[recipient==='requester'?obligation.requesterUid:obligation.beneficiaryUid];
