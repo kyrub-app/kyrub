@@ -794,6 +794,41 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal(additionalDebt.payerUid,payer.uid);assert.equal(additionalDebt.recipientUid,worker.uid);assert.equal(additionalDebt.amountMinor,4000);
  assert.equal(additional.proposal.amounts.proposedAdditionalMinor,4000);assert.equal(additional.proposal.amounts.proposedRefundMinor,0);
  assert.equal((await finance(payer,200,completionId)).due,false);
+ // Distinct directional consents: the original advance destination must not
+ // be reused for a refund. A requester may register a personal receiving key.
+ const personal=await fetch('http://127.0.0.1:'+address.port+'/api/personal-finance/pix',{method:'POST',headers:{authorization:'Bearer '+payer.token,'content-type':'application/json'},body:JSON.stringify({action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'refund-'+suffix+'@example.invalid'}})});
+ assert.equal(personal.status,200,JSON.stringify(await personal.json()));
+ const pix=(a:Actor,status:number,target:string)=>finance(a,status,target,undefined,{},'fixed_adjustment_pix');
+ const refundInput={sourceDigest:refund.resolution.sourceDigest,expectedAmountMinor:10000,expectedRevision:1};
+ const additionalInput={sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,expectedRevision:1};
+ await pix(other,403,id);
+ const before=await pix(worker,200,id);assert.equal(before.role,'payer');assert.equal(before.destination,null);
+ assert.equal((await pix(payer,200,id)).role,'recipient');
+ await finance(worker,403,id,'authorize_adjustment_pix',refundInput);
+ await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ await finance(payer,409,id,'authorize_adjustment_pix',{...refundInput,expectedAmountMinor:10001});
+ await finance(payer,200,id,'authorize_adjustment_pix',refundInput);
+ await finance(payer,200,id,'authorize_adjustment_pix',refundInput);
+ const masked=await pix(worker,200,id);assert.equal(masked.authorized,true);assert.ok(!JSON.stringify(masked).includes('refund-'+suffix));
+ await finance(worker,400,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:false});
+ await finance(payer,403,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ const secret=await finance(worker,200,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ assert.equal(secret.key,'refund-'+suffix+'@example.invalid');assert.equal(secret.amountMinor,10000);assert.equal(secret.bankVerified,false);
+ assert.equal((await pix(worker,200,id)).disclosed,true);
+ await finance(payer,200,id,'revoke_adjustment_pix',refundInput);
+ await finance(payer,200,id,'revoke_adjustment_pix',refundInput);
+ await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ assert.equal((await pix(worker,200,id)).destination,null);
+ await finance(payer,409,id,'authorize_adjustment_pix',refundInput);
+ // Complement still points to the professional, with new consent.
+ assert.equal((await pix(payer,200,completionId)).destination,null);
+ await finance(worker,200,completionId,'authorize_adjustment_pix',additionalInput);
+ const complementSecret=await finance(payer,200,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ assert.equal(complementSecret.key,'cancel-'+suffix+'@example.invalid');assert.equal(complementSecret.amountMinor,4000);
+ await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:1,confirmed:true});
+ await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ await finance(worker,200,completionId,'revoke_adjustment_pix',additionalInput);
+ assert.equal((await pix(worker,200,completionId)).revoked,true);
  // Independent fixed-price administrative case, synthetic MFA only in emulator.
  await propose(worker,200,adminId,'first-admin-proposal',6000,0);
  await finance(payer,200,adminId,'close_cancellation_accounting',{proposalId:'first-admin-proposal'});
@@ -825,6 +860,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await accept(payer,200,zeroId,'zero-proposal');
  const zero=await accounting(worker,200,zeroId);assert.equal(zero.resolution.direction,'none');assert.equal(zero.resolution.amountMinor,0);
  assert.equal(await adjustment(zeroId),undefined);
+ await pix(payer,409,zeroId);
  assert.equal((await finance(payer,200,zeroId)).originalHistoryFrozen,true);
  await finance(payer,409,zeroId,'statement',{eventId:'late-original-paid',statement:'paid'});
  assert.equal((await accounting(worker,200,zeroId)).resolution.sourceDigest,zero.resolution.sourceDigest);
