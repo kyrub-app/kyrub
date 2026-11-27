@@ -170,3 +170,26 @@ test('hourly extensions require both roles before the cap, unapproved excess rem
  const seconds=calculateFreelanceHourlyAccounting({...input,events:[events[0],{...events[1],at:'2026-11-27T08:00:01.000Z'},{...events[2],at:at('08:01')}]});
  assert.equal(seconds.calculatedServiceMinor,1);
 });
+
+test('variable payment basis never treats a zero result or unconfirmed excess as payable',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {buildFreelanceVariablePaymentBasis}=await import('../shared/freelanceVariablePaymentBasis.js');
+ const {buildFreelancePaymentObligation}=await import('../shared/freelancePaymentObligation.js');
+ const at=(h:string)=>'2026-11-26T'+h+':00.000Z';
+ const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:12000});
+ const workTerms={mode:'hourly' as const,location:'remote' as const,estimatedMinutes:360,hourlyRateMinor:2000};
+ const common={paymentTerms,workTerms,status:'completed' as const,selectedAt:at('07:10'),contractedAt:at('07:15'),startedAt:at('08:00'),completionRequestedAt:at('08:00'),completedAt:at('08:01')};
+ const offer={...common,id:'hourly',ownerUid:'owner',selectedApplicantUid:'worker',title:'Fixture',description:'Fixture',requirements:'',paymentMinor:12000,createdAt:at('07:00')};
+ const application={...common,offerId:'hourly',ownerUid:'owner',applicantUid:'worker',createdAt:at('07:05')};
+ const events=[{id:'start',kind:'start',actor:'worker',at:at('08:00')},{id:'out',kind:'checkout',actor:'worker',at:at('08:00')},{id:'confirm',kind:'confirm_checkout',actor:'requester',at:at('08:01')}] as const;
+ const input={offer,application,scheduleId:'schedule',schedule:{location:'remote' as const,scheduledStartAt:at('08:00'),agreedMinutes:360},scheduleAcceptedAt:at('07:25'),events,extensions:[]};
+ const result=buildFreelanceVariablePaymentBasis(input);
+ assert.equal(result.finalAmountMinor,0);assert.equal(result.disposition,'no_payment_required');assert.equal(result.payable,false);
+ assert.throws(()=>buildFreelanceVariablePaymentBasis({...input,application:{...application,completedAt:at('08:02')}}),/VARIABLE_PAYMENT_CONFLICT/);
+ assert.throws(()=>buildFreelanceVariablePaymentBasis({...input,events:events.slice(0,-1)}),/VARIABLE_PAYMENT_CONFLICT/);
+ const advance=createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:12000});
+ assert.throws(()=>buildFreelanceVariablePaymentBasis({...input,offer:{...offer,paymentTerms:advance},application:{...application,paymentTerms:advance}}),/VARIABLE_PAYMENT_CONFLICT/);
+ const {startedAt,completionRequestedAt,completedAt,...preOffer}=offer;
+ const {startedAt:sa,completionRequestedAt:ca,completedAt:co,...preApp}=application;
+ assert.throws(()=>buildFreelancePaymentObligation({...preOffer,status:'contracted'},{...preApp,status:'contracted'}),/NOT_ENABLED/);
+});
