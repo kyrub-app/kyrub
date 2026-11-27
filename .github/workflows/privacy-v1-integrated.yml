@@ -8,6 +8,7 @@ on:
       - 'src/components/KyrubPrivacy*.tsx'
       - 'src/components/KyrubOptionalConsentPilot.tsx'
       - 'src/components/admin/AdminPrivacyGovernancePilot.tsx'
+      - 'src/utils/privacyHomologationHttpClient.ts'
       - '.github/workflows/privacy-v1-integrated.yml'
 permissions:
   contents: read
@@ -40,6 +41,7 @@ jobs:
           - firestore-privacy-own-export
           - firestore-privacy-own-correction
           - firestore-privacy-optional-consent
+          - firestore-privacy-http
     steps:
       - uses: actions/checkout@v4
         with:
