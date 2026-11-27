@@ -1,3 +1,4 @@
+import FreelaFixedAdjustmentStatements from './FreelaFixedAdjustmentStatements';
 import FreelaFixedAdjustmentPix from './FreelaFixedAdjustmentPix';
 import FreelaHourlyReviewNotes from './FreelaHourlyReviewNotes';
 import {useEffect,useRef,useState} from 'react';
@@ -29,6 +30,7 @@ function valid(v:unknown,id:string):v is View{
 export default function FreelaCancellationAccounting({user,offerId}:{user:User;offerId:string}){
  const [data,setData]=useState<View|null>(null),[earned,setEarned]=useState(''),[received,setReceived]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [pending,setPending]=useState<{label:string;body:Action}|null>(null);
+ const [pixGeneration,setPixGeneration]=useState(0);
  const lock=useRef(false),request=useRef<AbortController|null>(null),generation=useRef(0);
  useEffect(()=>()=>{generation.current++;request.current?.abort();},[]);
  const run=async(body?:Action)=>{
@@ -62,8 +64,9 @@ export default function FreelaCancellationAccounting({user,offerId}:{user:User;o
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar apuração</button>
   {busy&&<p role="status">Consultando apuração…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status">{message}</p>}
   {data&&<><p>Valor original: {money(data.agreedMinor)}</p>
-   {data.resolution&&<div className="space-y-1 rounded-xl border border-slate-700 p-3"><h6 className="font-bold">Apuração definitiva</h6><p>Remuneração reconhecida: {money(data.resolution.recognizedServiceMinor)}</p><p>Recebimento reconhecido: {money(data.resolution.reportedReceivedMinor)}</p><p>{data.resolution.direction==='none'?'Nenhum saldo complementar.':(data.resolution.direction==='additional'?'Complemento do contratante ao profissional: ':'Devolução do profissional ao contratante: ')+money(data.resolution.amountMinor)}</p><p>{data.resolution.direction==='none'?'Nenhuma nova transferência necessária.':'Obrigação registrada. Declarações específicas ainda em homologação.'} Não representa confirmação bancária.</p></div>}
-   {data.resolution&&data.resolution.direction!=='none'&&<FreelaFixedAdjustmentPix key={user.uid+':'+offerId+':'+data.resolution.sourceDigest} user={user} offerId={offerId} sourceDigest={data.resolution.sourceDigest} amountMinor={data.resolution.amountMinor} direction={data.resolution.direction}/>}
+   {data.resolution&&<div className="space-y-1 rounded-xl border border-slate-700 p-3"><h6 className="font-bold">Apuração definitiva</h6><p>Remuneração reconhecida: {money(data.resolution.recognizedServiceMinor)}</p><p>Recebimento reconhecido: {money(data.resolution.reportedReceivedMinor)}</p><p>{data.resolution.direction==='none'?'Nenhum saldo complementar.':(data.resolution.direction==='additional'?'Complemento do contratante ao profissional: ':'Devolução do profissional ao contratante: ')+money(data.resolution.amountMinor)}</p><p>{data.resolution.direction==='none'?'Nenhuma nova transferência necessária.':'Obrigação registrada. Consulte as declarações específicas da regularização.'} Não representa confirmação bancária.</p></div>}
+   {data.resolution&&data.resolution.direction!=='none'&&<FreelaFixedAdjustmentPix key={user.uid+':'+offerId+':'+data.resolution.sourceDigest+':'+pixGeneration} user={user} offerId={offerId} sourceDigest={data.resolution.sourceDigest} amountMinor={data.resolution.amountMinor} direction={data.resolution.direction}/>}
+   {data.resolution&&data.resolution.direction!=='none'&&<FreelaFixedAdjustmentStatements key={'statements:'+user.uid+':'+offerId+':'+data.resolution.sourceDigest} user={user} offerId={offerId} sourceDigest={data.resolution.sourceDigest} amountMinor={data.resolution.amountMinor} direction={data.resolution.direction} onRefresh={()=>setPixGeneration(n=>n+1)}/>}
    {data.restrictionActive&&<p className="text-amber-300">Novas contratações restritas para ambas as partes. A regularização voluntária permanece disponível.</p>}
    {data.dispute?.status==='review_requested'&&<p>Análise administrativa solicitada. </p>}
    {data.dispute?.requestedAt&&data.evidenceSource&&<FreelaHourlyReviewNotes key={user.uid+':'+offerId+':'+data.evidenceSource} user={user} offerId={offerId} kind="fixed_cancellation" sourceDigest={data.evidenceSource}/>}
