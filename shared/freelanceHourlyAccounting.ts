@@ -35,7 +35,7 @@ export function calculateFreelanceHourlyAccounting(input:{
   // Same-timestamp boundary events are rejected conservatively until a unified sequence exists.
   if(input.events.some(event=>event.at===e.proposedAt||event.at===e.acceptedAt))return fail();
   for(const at of [e.proposedAt,e.acceptedAt]){
-   const prefix=input.events.filter(event=>event.at<at);
+   const prefix=input.events.filter(event=>Date.parse(event.at)<Date.parse(at));
    const before=projectFreelanceAttendance(input.schedule,prefix,at);
    if(!['working','waiting','paused'].includes(before.status)||before.elapsedCompensableMs>=authorizedMinutes*60000)return fail();
   }
@@ -45,7 +45,7 @@ export function calculateFreelanceHourlyAccounting(input:{
  const authorizedCapMinor=price(terms.hourlyRateMinor,authorizedMs);
  const recordedMs=projection.compensableMs;
  const excessMs=Math.max(0,recordedMs-authorizedMs);
- const status=projection.status==='suspended'?'requires_cancellation_review':!projection.readyForReview?'awaiting_confirmation':excessMs>0?'requires_excess_review':'calculated';
+ const status=projection.status==='suspended'?'requires_suspension_review':!projection.readyForReview?'awaiting_confirmation':excessMs>0?'requires_excess_review':'calculated';
  const withinCapReferenceMinor=price(terms.hourlyRateMinor,Math.min(recordedMs,authorizedMs));
  return {currency:'BRL' as const,estimatedMinor:input.estimatedMinor,hourlyRateMinor:terms.hourlyRateMinor,
  authorizedMinutes,authorizedCapMinor,workMs:projection.workMs,waitMs:projection.waitMs,breakMs:projection.breakMs,
