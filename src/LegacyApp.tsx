@@ -248,7 +248,7 @@ type RetainedWorkspaceTab = {
 // never write it to the ledger, database, or browser persistence.
 const retainedWorkspaceTabByUser = new Map<string, RetainedWorkspaceTab>();
 
-export default function App({onOpenCanonicalFreela}:{onOpenCanonicalFreela?:(mode:'employer'|'employee')=>void} = {}) {
+export default function App({onOpenCanonicalFreela,onPersonalFinanceActivity}:{onOpenCanonicalFreela?:(mode:'employer'|'employee')=>void;onPersonalFinanceActivity?:(uid:string,active:boolean)=>void} = {}) {
   const isAdminSubdomain = typeof window !== 'undefined' && (
     window.location.hostname === 'admin.kyrub.com' ||
     window.location.hostname.includes('admin') ||
@@ -1805,6 +1805,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
         onClose={() => { setShowUserProfileModal(false); setProfileOpenSaved(false); }}
         walletHistory={walletHistory}
         openSavedInitially={profileOpenSaved}
+        onPersonalFinanceActivity={onPersonalFinanceActivity}
         profileName={profileName}
         setProfileName={setProfileName}
         profileEmail={profileEmail}
