@@ -218,3 +218,21 @@ test('reputation eligibility follows completed contract and separates profession
   assert.throws(()=>freelanceReputationParties(offer,{...application,completedAt:at(7)}),/CONFLICT/);
  }
 });
+
+test('reputation contest workspace is read-only, validates minimal payload and binds current admin session',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {validReputationContestPage}=await import('../src/components/admin/reputationContestPage');
+ const item={caseId:'a'.repeat(64),offerId:'offer',subjectKind:'professional',ratingRole:'requester',stars:4,submittedAt:'2026-11-27T10:00:00.000Z',requestedAt:'2026-11-27T11:00:00.000Z',reason:'Contestação fictícia.',ratingDigest:'b'.repeat(64),status:'pending'};
+ const page={items:[item],nextCursor:null,readOnly:true};
+ assert.equal(validReputationContestPage(page),true);
+ assert.equal(validReputationContestPage({...page,readOnly:false}),false);
+ assert.equal(validReputationContestPage({...page,items:[item,item]}),false);
+ assert.equal(validReputationContestPage({...page,items:[{...item,subjectKind:'store_requester'}]}),false);
+ assert.equal(validReputationContestPage({...page,items:[{...item,challengerUid:'private'}]}),false);
+ assert.equal(validReputationContestPage({...page,nextCursor:'invalid'}),false);
+ const ui=readFileSync('src/components/admin/AdminFreelanceReputationContests.tsx','utf8');
+ assert.match(ui,/method:'GET'/);assert.match(ui,/cache:'no-store'/);assert.match(ui,/auth.currentUser\?\.uid===user.uid/);
+ assert.match(ui,/abort\(\)/);assert.doesNotMatch(ui,/method:'POST'|dangerouslySetInnerHTML|localStorage/);
+ const parent=readFileSync('src/components/admin/AdminFreelanceFinancialReviewWorkspace.tsx','utf8');
+ assert.match(parent,/AdminFreelanceReputationContests key=/);
+});
