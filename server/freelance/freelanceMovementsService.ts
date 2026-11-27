@@ -1,3 +1,4 @@
+import {readHourlyMovement} from './freelanceHourlyMovementsService.js';
 import {readFixedCancellationContext} from './freelanceCancellationAccountingService.js';
 import {readAdjustmentStatementContext} from './freelanceFixedAdjustmentStatementService.js';
 import {prepareAdjustmentRestriction} from './freelanceEngagementRestrictionService.js';
@@ -20,7 +21,7 @@ export async function readOwnFreelanceMovements(uid:string,role:unknown,cursor:u
   let q=adminDb.collection('freelanceOffersV1').where(perspective==='requester'?'ownerUid':'selectedApplicantUid','==',uid).orderBy(FieldPath.documentId()).limit(21);
   if(typeof cursor==='string')q=q.startAfter(cursor);
   const docs=await tx.get(q),page=docs.docs.slice(0,20);
-  const entries=[];
+  const entries=[],hourlyEntries=[];
   let otherMethods=0,operationalReview=0,hourlyPending=0;
   for(const d of page){
    const o=d.data() as FreelanceOffer;
@@ -28,9 +29,7 @@ export async function readOwnFreelanceMovements(uid:string,role:unknown,cursor:u
    if(!states.includes(o.status)||!o.contractedAt)continue;
    const terms=readFreelancePaymentTerms(o.paymentTerms,o.paymentMinor);
    if(!terms||terms.method!=='external_pix'){otherMethods++;continue;}
-   // Hourly estimates must never be mixed with final fixed obligations.
-   // The next parcel will project canonical hourly bases and final obligations.
-   if(o.workTerms?.mode==='hourly'){hourlyPending++;continue;}
+   if(o.workTerms?.mode==='hourly'){hourlyEntries.push(await readHourlyMovement(tx,uid,d.id));continue;}
    const {offer,obligation,events,projection,due}=await readFinancialContext(tx,uid,d.id,true);
    if(typeof offer.title!=='string'||!offer.title.trim()||offer.title.length>120)throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
    const review=checkedReview((await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+d.id))).data(),obligation);
@@ -58,6 +57,6 @@ export async function readOwnFreelanceMovements(uid:string,role:unknown,cursor:u
     timing:obligation.terms.timing,financialState,restrictionActive:restricted,reviewStatus:review?.status??null,
     lastStatementAt:events.at(-1)?.recordedAt??null,bankVerified:false as const});
   }
-  return {role:perspective,currency:'BRL',entries,nextCursor:docs.size>20?page[page.length-1].id:null,otherMethods,operationalReview,hourlyPending,bankVerifiedMinor:null};
+  return {role:perspective,currency:'BRL',entries,hourlyEntries,nextCursor:docs.size>20?page[page.length-1].id:null,otherMethods,operationalReview,hourlyPending,bankVerifiedMinor:null};
  },{readOnly:true});
 }
