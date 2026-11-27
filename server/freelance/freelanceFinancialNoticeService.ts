@@ -5,6 +5,9 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_cancellation_proposed:['Acordo de cancelamento proposto','Consulte o valor proposto em Freelas antes de decidir.'],
+ hourly_cancellation_accepted:['Acordo de cancelamento aceito','Consulte o valor reconhecido. Nenhum pagamento foi confirmado.'],
+ hourly_cancellation_closed:['Proposta de cancelamento encerrada','Consulte o financeiro de Freelas. Nenhum pagamento foi confirmado.'],
  cancellation_accounting_proposed:['Apuração de cancelamento proposta','Consulte a apuração financeira de Freelas e confira os valores antes de aceitar.'],
  cancellation_accounting_accepted:['Apuração de cancelamento aceita','Consulte a apuração acordada. Isso não confirma pagamento ou devolução.'],
  cancellation_accounting_closed:['Proposta de apuração encerrada','Consulte o financeiro de Freelas. Nenhum pagamento ou devolução foi confirmado.'],
@@ -24,12 +27,12 @@ export type FinancialNotice=keyof typeof messages;
  * actual transitions. Atomic create: retries cannot reset an existing readAt.
  * Category system reuses the private Platform inbox; no browser push, no raw
  * party IDs beyond recipient, no title of service, amount, key or evidence. */
-export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,kind:FinancialNotice,recordedAt:string,recipient:'both'|'requester'|'freelancer'='both',revision?:number|string){
+export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,obligation:Pick<FreelancePaymentObligation,'offerId'|'requesterUid'|'beneficiaryUid'>,kind:FinancialNotice,recordedAt:string,recipient:'both'|'requester'|'freelancer'='both',revision?:number|string){
  if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
  !['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!validFreelanceId(obligation.offerId)||!validFreelanceId(obligation.requesterUid)||!validFreelanceId(obligation.beneficiaryUid)||obligation.requesterUid===obligation.beneficiaryUid)throw Error('FREELANCE_INVALID');
  const replacement=kind==='pix_rebind_proposed'||kind==='pix_rebind_accepted';
- const accounting=kind.startsWith('cancellation_accounting_');
+ const accounting=kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_');
  if(replacement?(typeof revision!=='number'||!Number.isSafeInteger(revision)||revision<1):accounting?!validFreelanceId(revision):revision!==undefined)throw Error('FREELANCE_INVALID');
  const sourceId=createHash('sha256').update(JSON.stringify(replacement||accounting?[obligation.offerId,kind,revision]:[obligation.offerId,kind])).digest('hex');
  const ids=recipient==='both'?[obligation.requesterUid,obligation.beneficiaryUid]:[recipient==='requester'?obligation.requesterUid:obligation.beneficiaryUid];
