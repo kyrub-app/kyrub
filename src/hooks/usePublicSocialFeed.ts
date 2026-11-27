@@ -98,6 +98,13 @@ const mapPost = (
     avatar: readString(data.authorAvatar),
     time: formatRelativeTime(createdAt),
     createdAt,
+    reputationSquareDistribution: /^reputation_[a-f0-9]{64}$/.test(id)
+      && typeof data.squareDistributedAtIso === 'string'
+      && Number.isFinite(Date.parse(data.squareDistributedAtIso))
+      && Date.parse(data.squareDistributedAtIso)>=Date.parse(createdAt)
+      && typeof data.squareForwardedById === 'string'
+      && /^[A-Za-z0-9_-]{1,128}$/.test(data.squareForwardedById)
+      ? {distributedAt:data.squareDistributedAtIso,forwardedById:data.squareForwardedById}:undefined,
     content: readString(data.content),
     likes: 0,
     mediaUrls: readStringList(data.mediaUrls),
