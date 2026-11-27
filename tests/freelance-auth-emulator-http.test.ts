@@ -606,6 +606,12 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.equal((await readOwnFreelanceReputationContestation(worker.uid,id)).ratingDigest,null);
   await assert.rejects(contestFreelanceReputation(worker.uid,id,{confirmed:true,ratingDigest:'0'.repeat(64),reason:'Contestação fictícia.'}),/CONFLICT/);
   assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).releasedCountOnPage,0);
+  const unrated=await call(worker,'?view=reputation_summary_professional',200);
+  assert.equal(unrated.historyState,'complete');assert.equal(unrated.completedContracts,1);
+  assert.equal(unrated.aggregate.ratingCount,0);assert.equal(unrated.aggregate.mean,null);
+  await call(worker,'?view=reputation_summary_professional&cursor='+id,400);
+  const otherSummary=await call(outsider,'?view=reputation_summary_professional',200);
+  assert.equal(otherSummary.completedContracts,0);assert.equal(otherSummary.aggregate.mean,null);
   await assert.rejects(submitFreelanceReputation(payer.uid,id,{confirmed:true,scores:reputationFixture('professional',3)}),/CONFLICT/);
   await act(worker,id,'submit_reputation',200,{confirmed:true,scores:reputationFixture('personal_requester',4)});
   const mutual=await call(worker,'?view=reputation&offerId='+id,200);
@@ -625,6 +631,12 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   await assert.rejects(readOwnFreelanceReputationProfile(payer.uid,'other'),/INVALID/);
   assert.equal((await call(worker,'?view=reputation_professional',200)).entries[0].mean,5);
   assert.equal((await call(payer,'?view=reputation_personal',200)).entries[0].mean,4);
+  const historical=await call(payer,'?view=reputation_summary_personal',200);
+  assert.equal(historical.completedContracts,1);assert.equal(historical.aggregate.ratingCount,1);assert.equal(historical.aggregate.mean,4);
+  assert.equal(historical.aggregate.criteria.courtesy.mean,4);
+  assert.ok(!JSON.stringify(historical).includes(worker.uid));
+  assert.equal((await call(payer,'?view=reputation_summary_professional',200)).completedContracts,0);
+  await call(payer,'?view=reputation_summary_store',403);
   await call(payer,'?view=reputation_professional&offerId='+id,400);
   const candidate=await call(payer,'?view=reputation_contestation&offerId='+id,200);assert.equal(candidate.eligible,true);
   const challenge={confirmed:true,ratingDigest:candidate.ratingDigest,reason:'Contestação fictícia da avaliação recebida.'};
@@ -1254,6 +1266,10 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
   await submitFreelanceReputation(owner.uid,id,{confirmed:true,scores:reputationFixture('professional',5)});
   const corporate=await readOwnFreelanceReputationProfile(owner.uid,'store_requester');
   assert.deepEqual(corporate.subject,{kind:'store_requester',id:storeId});assert.equal(corporate.entries[0].mean,4);
+  const historicalStore=await call(owner,'?view=reputation_summary_store',200);
+  assert.equal(historicalStore.completedContracts,1);assert.equal(historicalStore.aggregate.mean,4);
+  assert.equal((await call(owner,'?view=reputation_summary_personal',200)).aggregate.ratingCount,0);
+  await call(manager,'?view=reputation_summary_store',403);
   assert.equal((await readOwnFreelanceReputationProfile(owner.uid,'personal_requester')).releasedCountOnPage,0);
   assert.equal((await readOwnFreelanceReputationProfile(worker.uid,'professional')).entries[0].mean,5);
   await assert.rejects(readOwnFreelanceReputationProfile(manager.uid,'store_requester'),/FORBIDDEN/);
@@ -1262,6 +1278,7 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
   await member.update({status:'inactive'});
   await assert.rejects(contestFreelanceReputation(owner.uid,id,{confirmed:true,ratingDigest:challenge.ratingDigest,reason:'Contestação fictícia empresarial.'}),/FORBIDDEN/);
   await assert.rejects(readOwnFreelanceReputationProfile(owner.uid,'store_requester'),/FORBIDDEN/);
+  await call(owner,'?view=reputation_summary_store',403);
  }finally{if(previous===undefined)delete process.env[rg];else process.env[rg]=previous;}
 
 });

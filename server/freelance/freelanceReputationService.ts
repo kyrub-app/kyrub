@@ -141,3 +141,39 @@ export async function readOwnFreelanceReputationProfile(uid:string,kind:unknown,
   return {subject,entries,releasedCountOnPage:entries.length,pageAggregate:projectReputationAggregate(kind,entries.map(e=>e.scores)),nextCursor:docs.size>20?page.at(-1)!.id:null,rewardsGranted:false as const};
  },{readOnly:true});
 }
+
+/** Bounded private historical snapshot for local homologation only.
+ * Never present a sample as a lifetime average. A larger history needs
+ * an indexed, reconciled projection before commercial activation. */
+export const REPUTATION_HISTORY_SCAN_LIMIT=100;
+export async function readOwnFreelanceReputationSummary(uid:string,kind:unknown){
+ assertFreelanceReputationLocal();
+ if(!validFreelanceId(uid)||(kind!=='professional'&&kind!=='personal_requester'&&kind!=='store_requester'))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
+  if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
+  const subject:ReputationSubject={kind,id:store?.storeId??uid};
+  const docs=await tx.get(adminDb.collection('freelanceOffersV1')
+   .where(kind==='professional'?'selectedApplicantUid':'ownerUid','==',uid)
+   .where('status','==','completed').orderBy(FieldPath.documentId()).limit(REPUTATION_HISTORY_SCAN_LIMIT+1));
+  if(docs.size>REPUTATION_HISTORY_SCAN_LIMIT)return {subject,historyState:'requires_index' as const,completedContracts:null,aggregate:null,rewardsGranted:false as const};
+  const ratings:ReputationScores[]=[];
+  let completedContracts=0;
+  for(const doc of docs.docs){
+   const o=doc.data() as FreelanceOffer;
+   if(o.id!==doc.id||o.status!=='completed'||!validFreelanceId(o.ownerUid)||(kind==='professional'?o.selectedApplicantUid!==uid||o.ownerUid===uid:o.ownerUid!==uid))return fail();
+   if(kind==='personal_requester'&&o.requesterStore!==undefined)continue;
+   if(kind==='store_requester'&&o.requesterStore?.storeId!==store?.storeId)continue;
+   const c=await readFreelanceReputationContext(tx,uid,doc.id);
+   const expected=kind==='professional'?c.parties.worker:c.parties.requester;
+   if(canonicalVariablePaymentRecord(expected)!==canonicalVariablePaymentRecord(subject))return fail();
+   completedContracts++;
+   const v=view(c);
+   if(v.received){
+    if(canonicalVariablePaymentRecord(v.received.subject)!==canonicalVariablePaymentRecord(subject))return fail();
+    ratings.push(v.received.scores);
+   }
+  }
+  return {subject,historyState:'complete' as const,completedContracts,aggregate:projectReputationAggregate(kind,ratings),rewardsGranted:false as const};
+ },{readOnly:true});
+}
