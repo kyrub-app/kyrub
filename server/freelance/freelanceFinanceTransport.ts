@@ -1,3 +1,4 @@
+import {readCancellationAccounting,changeCancellationAccounting} from './freelanceCancellationAccountingService.js';
 import {adminAuth} from '../firebaseAdmin.js';
 import {readOwnFreelanceMovements} from './freelanceMovementsService.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
@@ -53,6 +54,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
+   if(q.view==='cancellation_accounting'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCancellationAccounting(uid,q.offerId));return;}
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
    if(q.view==='pix_rebind'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixRebind(uid,q.offerId));return;}
    if(q.view==='pix_sharing'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixSharing(uid,q.offerId));return;}
@@ -69,8 +71,11 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const max=b.action==='submit_receipt'?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
-  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
+  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share','propose_cancellation_accounting','accept_cancellation_accounting','close_cancellation_accounting'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
   switch(b.action){
+   case 'propose_cancellation_accounting':exact(['proposalId','recognizedServiceMinor','reportedReceivedMinor','confirmed']);await changeCancellationAccounting(uid,b.offerId,'propose',{proposalId:b.proposalId,recognizedServiceMinor:b.recognizedServiceMinor,reportedReceivedMinor:b.reportedReceivedMinor,confirmed:b.confirmed});break;
+   case 'accept_cancellation_accounting':
+   case 'close_cancellation_accounting':exact(['proposalId','confirmed']);await changeCancellationAccounting(uid,b.offerId,b.action==='accept_cancellation_accounting'?'accept':'close',{proposalId:b.proposalId,confirmed:b.confirmed});break;
    case 'propose_pix_rebind':exact(['oldRevision','newRevision','confirmed']);await changeFreelancePixBinding(uid,b.offerId,'propose',{oldRevision:b.oldRevision,newRevision:b.newRevision,confirmed:b.confirmed});break;
    case 'accept_pix_rebind':exact(['oldRevision','newRevision','confirmed','paymentNotSent']);await changeFreelancePixBinding(uid,b.offerId,'accept',{oldRevision:b.oldRevision,newRevision:b.newRevision,confirmed:b.confirmed,paymentNotSent:b.paymentNotSent});break;
    case 'revoke_pix_share':
@@ -89,7 +94,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const code=e instanceof Error?e.message:'';
   const status=['FREELANCE_INVALID','FREELANCE_RECEIPT_INVALID'].includes(code)?400:
    ['FREELANCE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_CANCELLATION_ACCOUNTING_CONFLICT','FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_FINANCE_UNAVAILABLE':code});
  }
 }
