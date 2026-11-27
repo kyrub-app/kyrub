@@ -5,6 +5,10 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_adjustment_pix_proposed:['Substituição Pix da jornada solicitada','Confira a obrigação e não aceite se já enviou o pagamento.'],
+ hourly_adjustment_pix_replaced:['Substituição Pix da jornada aceita','Consulte somente o destino vigente.'],
+ hourly_adjustment_pix_authorized:['Pix de regularização da jornada autorizado','Consulte somente a obrigação específica. Não repita transferências.'],
+ hourly_adjustment_pix_revoked:['Pix de regularização da jornada revogado','Novas consultas foram bloqueadas. Não utilize a chave anterior.'],
  fixed_cancellation_adjustment_pix_proposed:['Substituição Pix solicitada','Confira a obrigação e não aceite se já enviou o pagamento.'],
  fixed_cancellation_adjustment_pix_replaced:['Substituição Pix aceita','A autorização anterior foi arquivada. Consulte somente o destino vigente.'],
  fixed_cancellation_adjustment_admin_resolved:['Análise de regularização encerrada','Consulte a decisão. A restrição deste caso foi retirada, sem confirmação bancária ou extinção automática da obrigação.'],
@@ -55,7 +59,7 @@ export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,
  !['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!validFreelanceId(obligation.offerId)||!validFreelanceId(obligation.requesterUid)||!validFreelanceId(obligation.beneficiaryUid)||obligation.requesterUid===obligation.beneficiaryUid)throw Error('FREELANCE_INVALID');
  const replacement=kind==='pix_rebind_proposed'||kind==='pix_rebind_accepted';
- const accounting=kind==='pix_sharing_revoked'||kind.startsWith('fixed_cancellation_')||kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_');
+ const accounting=kind==='pix_sharing_revoked'||kind.startsWith('fixed_cancellation_')||kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_')||kind.startsWith('hourly_adjustment_');
  if(replacement?(typeof revision!=='number'||!Number.isSafeInteger(revision)||revision<1):accounting?!validFreelanceId(revision):revision!==undefined)throw Error('FREELANCE_INVALID');
  const sourceId=createHash('sha256').update(JSON.stringify(replacement||accounting?[obligation.offerId,kind,revision]:[obligation.offerId,kind])).digest('hex');
  const ids=recipient==='both'?[obligation.requesterUid,obligation.beneficiaryUid]:[recipient==='requester'?obligation.requesterUid:obligation.beneficiaryUid];
