@@ -84,3 +84,9 @@ export function tagPasskeyUnitOrigin(id:string,data:Record<string,unknown>|undef
  }
  return origin;
 }
+
+/** Reconciled CID Pix is intentionally restricted to existing throwaway emulator pilots. */
+export function cidPixEmulatorEnabled():boolean{
+ if(process.env.VERCEL||process.env.VERCEL_ENV==='production'||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS)return false;
+ try{return currentTagPilotIsolation()==='emulator';}catch{return false;}
+}
