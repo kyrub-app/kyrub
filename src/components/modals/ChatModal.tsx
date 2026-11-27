@@ -1,3 +1,4 @@
+import {ConnectedReputationCard} from '../ReputationSquarePreview';
 import React, { useEffect, useRef } from 'react';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { auth } from '../../utils/firebase';
@@ -200,6 +201,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     <p className="break-words text-xs leading-relaxed">
                       {message.text}
                     </p>
+                    {message.reputationPostId&&isChatEnabled&&auth.currentUser&&<ConnectedReputationCard key={selectedChatUser.connectionId+':'+message.id+':'+auth.currentUser.uid} connectionId={selectedChatUser.connectionId} messageId={message.id} viewerId={auth.currentUser.uid}/>}
                     {readInternalPostLink(message.text) && (
                       <button type="button" onClick={() => {
                         const link = readInternalPostLink(message.text);

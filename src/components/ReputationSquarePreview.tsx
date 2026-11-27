@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {Forward} from 'lucide-react';
+import type {Friend} from '../types';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../utils/firebase';
 import {publicReputationCandidateEnabled,validPublicSummaryResponse} from './PublicProfileExperience';
@@ -7,6 +8,7 @@ export type Summary={experience:{completedServices:number;completedHires:number}
 export function reputationSquareCandidateEnabled(){return publicReputationCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY==='true';}
 export function reputationSquarePublishEnabled(){return reputationSquareCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY==='true';}
 export function reputationSquareForwardEnabled(){return reputationSquarePublishEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY==='true';}
+export function reputationDirectForwardEnabled(){return reputationSquareForwardEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY==='true';}
 export const isReputationSquarePost=(id:string)=>/^reputation_[a-f0-9]{64}$/.test(id);
 export function ReputationPublicationIndicators({summary}:{summary:Summary}){
  return <div className="space-y-3 text-sm">
@@ -117,20 +119,24 @@ export function ReputationSquarePostGate({postId,viewerId,createdAt,render}:{pos
 
 /** Redistribute only the canonical post. This candidate exposes only Praça;
  * do not present other destinations until their access rules are integrated. */
-export function ReputationSquareForwardButton({postId,viewerId}:{postId:string;viewerId:string}){
+export function ReputationSquareForwardButton({postId,viewerId,friends=[]}:{postId:string;viewerId:string;friends?:Friend[]}){
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  const inFlight=useRef(false);
+ const [recipient,setRecipient]=useState('');
+ const connected=friends.filter(f=>f.connectionStatus==='accepted'&&f.connectionId&&f.id!==viewerId);
+ const selected=connected.find(f=>f.id===recipient);
  async function forward(){
   const user=auth.currentUser;
   if(!reputationSquareForwardEnabled()||!isReputationSquarePost(postId)||!user||user.uid!==viewerId||inFlight.current)return;
+  if(recipient&&(!selected||!reputationDirectForwardEnabled()))return;
   inFlight.current=true;setBusy(true);setNotice('');
   try{
    const token=await user.getIdToken(true);if(auth.currentUser!==user)return;
-   const response=await fetch('/api/freelance/workspace',{method:'POST',cache:'no-store',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true})});
+   const response=await fetch('/api/freelance/workspace',{method:'POST',cache:'no-store',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(selected?{action:'forward_reputation_connected',offerId:postId,connectionId:selected.connectionId,recipientId:selected.id,confirmed:true}:{action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true})});
    const value=await response.json();if(auth.currentUser!==user)return;
    if(response.status===409){setNotice('Encaminhamento indisponível ou já realizado nas últimas 24 horas.');return;}
    if(!response.ok||value?.confirmed!==true)throw Error('FORWARD_UNCONFIRMED');
-   setNotice('Publicação encaminhada à Praça.');setOpen(false);
+   setNotice(selected?'Publicação encaminhada ao conectado.':'Publicação encaminhada à Praça.');setOpen(false);
   }catch{if(auth.currentUser===user)setNotice('Não foi possível confirmar o encaminhamento.');}
   finally{inFlight.current=false;setBusy(false);}
  }
@@ -138,10 +144,38 @@ export function ReputationSquareForwardButton({postId,viewerId}:{postId:string;v
  return <div className="min-w-0">
   <button type="button" aria-expanded={open} onClick={()=>{setOpen(v=>!v);setNotice('');}} disabled={busy} className="flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-300"><Forward className="h-4 w-4 shrink-0"/>Encaminhar</button>
   {open&&<div className="space-y-2 rounded-xl border border-slate-700 p-2 text-sm">
-   <p>Encaminhar à Praça mantendo a autoria e as interações originais?</p>
+   <p>Escolha o destino. A autoria e as interações originais serão preservadas.</p>
+   {reputationDirectForwardEnabled()&&<select aria-label="Destino do encaminhamento" className="w-full rounded-lg bg-slate-950 p-2" value={recipient} disabled={busy} onChange={e=>setRecipient(e.target.value)}><option value="">Praça</option>{connected.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select>}
    <button type="button" disabled={busy} onClick={()=>void forward()} className="min-h-11 rounded-lg bg-orange-500 px-3 py-2 font-bold text-slate-950">{busy?'Encaminhando…':'Confirmar'}</button>
    <button type="button" disabled={busy} onClick={()=>setOpen(false)} className="min-h-11 px-2">Cancelar</button>
   </div>}
   {notice&&<p role="status" className="mt-1 text-xs text-slate-400">{notice}</p>}
  </div>;
+}
+
+export function ConnectedReputationCard({connectionId,messageId,viewerId}:{connectionId:string;messageId:string;viewerId:string}){
+ const [summary,setSummary]=useState<Summary|null>(null),[status,setStatus]=useState<'idle'|'loading'|'ready'|'unavailable'>('idle');
+ const pending=useRef<AbortController|null>(null);
+ useEffect(()=>{
+  const clear=()=>{pending.current?.abort();pending.current=null;setSummary(null);setStatus('idle');};
+  const stop=onAuthStateChanged(auth,u=>{if(u?.uid!==viewerId)clear();});
+  const hide=()=>{if(document.hidden)clear();};
+  document.addEventListener('visibilitychange',hide);
+  return()=>{stop();pending.current?.abort();document.removeEventListener('visibilitychange',hide);};
+ },[connectionId,messageId,viewerId]);
+ async function load(){
+  const user=auth.currentUser;if(!reputationDirectForwardEnabled()||user?.uid!==viewerId||pending.current)return;
+  const ctrl=new AbortController();pending.current=ctrl;setSummary(null);setStatus('loading');
+  const live=()=>pending.current===ctrl&&!ctrl.signal.aborted&&auth.currentUser===user;
+  try{
+   const token=await user.getIdToken(true);if(!live())return;
+   const res=await fetch('/api/freelance/workspace?view=reputation_connected_card&offerId='+encodeURIComponent(connectionId)+'&cursor='+encodeURIComponent(messageId),{method:'GET',cache:'no-store',headers:{authorization:'Bearer '+token},signal:ctrl.signal});
+   const value=await res.json();if(!live())return;
+   if(!res.ok||!validPublicSummaryResponse(value)||!value.experience||!value.reputations){setStatus('unavailable');return;}
+   setSummary({experience:value.experience,reputations:value.reputations});setStatus('ready');
+  }catch{if(live())setStatus('unavailable');}
+  finally{if(pending.current===ctrl)pending.current=null;}
+ }
+ if(!reputationDirectForwardEnabled()||auth.currentUser?.uid!==viewerId)return null;
+ return <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950 p-2 text-slate-200"><button type="button" disabled={status==='loading'} onClick={()=>void load()} className="min-h-11 rounded-lg border border-slate-700 px-2 text-sm font-bold">{status==='loading'?'Consultando…':status==='ready'?'Atualizar indicadores':'Visualizar publicação'}</button>{status==='unavailable'&&<p role="status">Publicação indisponível.</p>}{summary&&status==='ready'&&<ReputationPublicationIndicators summary={summary}/>}</div>;
 }

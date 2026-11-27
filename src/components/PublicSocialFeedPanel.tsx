@@ -198,7 +198,7 @@ export function PublicSocialFeedPanel({
   const [feedNow, setFeedNow] = useState(Date.now());
   const { communities: directoryCommunities } = useCommunityDirectory();
   const liveSocialAuthors = useLiveAuthorIdentities(
-    posts.filter(post => withinCommunitySquareWindow(Date.parse(squareDistributionTime(post)), feedNow))
+    posts.filter(post => (isReputationSquarePost(post.id)?withinCommunitySquareWindow(Date.parse(squareDistributionTime(post)), feedNow):withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow)))
       .flatMap(post => [post.authorId,post.reputationSquareDistribution?.forwardedById]),
   );
   const currentNamePosts = useMemo(() => posts.map(post => {
@@ -256,7 +256,7 @@ export function PublicSocialFeedPanel({
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
     return currentNamePosts.filter(post => {
       // The 24h window affects only discovery in Praça, never the source post.
-      if (!withinCommunitySquareWindow(Date.parse(squareDistributionTime(post)), feedNow)) return false;
+      if (!(isReputationSquarePost(post.id)?withinCommunitySquareWindow(Date.parse(squareDistributionTime(post)), feedNow):withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow))) return false;
       if (isReputationSquarePost(post.id)&&!reputationSquarePublishEnabled())return false;
       if (normalizedSearch) {
         const matches =
@@ -566,7 +566,7 @@ export function PublicSocialFeedPanel({
                 <MessageCircle className="h-4 w-4" />
                 {comments.length} {comments.length === 1 ? 'comentário' : 'comentários'}
               </button>
-              {canForward&&<ReputationSquareForwardButton postId={post.id} viewerId={currentUserId}/>}
+              {canForward&&<ReputationSquareForwardButton postId={post.id} viewerId={currentUserId} friends={friends}/>}
             </div>
 
             {commentsOpen && (
