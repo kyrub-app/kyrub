@@ -284,6 +284,48 @@ try{
   assert.equal((await financialRef.get()).get('key'),cidKey);
   console.log('PASS CID Pix UI: masked linked choice, separate confirmation, import without retyping, explicit replacement and independent destination');
  }finally{delete process.env.KYRUB_CID_FINANCE_INTEGRATED_TEST;await cidRef.delete();}
+ // Direct publication is intentionally disabled in public transport; create an isolated
+ // contract using real lifecycle services, then exercise financial actions through UI.
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.ts');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.ts');
+ const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.ts');
+ const fp=await account('finance-payer','requester','Pagador teste'),fw=await account('finance-worker','freelancer','Recebedor teste');
+ const directId='browser-direct-'+suffix,directTitle='Freela financeiro '+suffix;
+ await publishFreelanceOffer(fp.uid,directId,{title:directTitle,description:'Contrato direto fictício',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
+ await applyToFreelanceOffer(fw.uid,directId);await selectFreelanceApplication(fp.uid,directId,fw.uid);await confirmFreelanceContract(fw.uid,directId,true);
+ const payerPage=await session(fp,1365),receiverPage=await session(fw,390);
+ async function finance(page,role){
+  const modal=await open(page,role);
+  await button(modal,role==='owner'?'Publicados':'Fazendo').click();await button(modal,'Atualizar consulta').click();
+  const article=modal.locator('article').filter({has:page.getByRole('heading',{name:directTitle,exact:true})}).first();
+  await button(article,'Ver detalhes').click();
+  const panel=modal.getByRole('region',{name:'Financeiro do Freela'});
+  await button(panel,'Consultar situação financeira').click();await waitText(panel,'Aguardando pagamento');return panel;
+ }
+ const payerPanel=await finance(payerPage,'owner'),receiverPanel=await finance(receiverPage,'worker');
+ async function financialAction(panel,label){
+  await button(panel,label).click();
+  const result=panel.page().waitForResponse(r=>r.url().endsWith('/api/freelance/finance')&&r.request().method()==='POST');
+  await button(panel,'Confirmar manifestação').click();
+  const response=await result;assert.equal(response.status(),200,await response.text());
+  await waitText(panel,'Manifestação registrada pelo servidor.');
+ }
+ await financialAction(receiverPanel,'Informar não recebimento');
+ await financialAction(payerPanel,'Informar pagamento');await waitText(payerPanel,'Novas contratações temporariamente indisponíveis');
+ await button(receiverPanel,'Consultar situação financeira').click();await waitText(receiverPanel,'Divergência financeira');
+ await financialAction(receiverPanel,'Solicitar análise administrativa');await waitText(receiverPanel,'Análise administrativa solicitada');
+ await receiverPanel.getByLabel('Manifestação complementar').fill('Relato fictício do não recebimento.');
+ await financialAction(receiverPanel,'Enviar manifestação');
+ await waitText(receiverPanel,'Relato fictício do não recebimento.');
+ await receiverPanel.getByLabel('Comprovante fictício PNG (até 256 KiB)').setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:Buffer.from(receiptFixture(),'base64')});
+ await financialAction(receiverPanel,'Enviar comprovante');await waitText(receiverPanel,'Comprovante privado registrado.');
+ await receiverPage.screenshot({path:'freelance-browser-evidence/financial-dispute.png',fullPage:true});
+ await button(payerPanel,'Consultar situação financeira').click();await waitText(payerPanel,'Análise administrativa solicitada');
+ assert.ok(!(await payerPanel.innerText()).includes('Relato fictício do não recebimento.'));
+ await financialAction(receiverPanel,'Confirmar recebimento');await waitText(receiverPanel,'Regularização voluntária registrada');
+ await button(payerPanel,'Consultar situação financeira').click();await waitText(payerPanel,'Recebimento confirmado pelas partes');
+ for(const a of [fp,fw])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
+ console.log('PASS direct financial UI: two authenticated contexts, reverse-order dispute, private note/PNG, voluntary release');
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){
