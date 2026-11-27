@@ -1,3 +1,4 @@
+import AdminFreelanceFixedCancellationReview from './AdminFreelanceFixedCancellationReview';
 import AdminFreelanceExcessReview from './AdminFreelanceExcessReview';
 import AdminFreelanceCancellationReview from './AdminFreelanceCancellationReview';
 import {useEffect,useRef,useState} from 'react';
@@ -105,5 +106,6 @@ export default function AdminFreelanceFinancialReviewWorkspace({user}:{user:User
   </form>}
   <AdminFreelanceCancellationReview key={'cancellation:'+user.uid} user={user}/>
   <AdminFreelanceExcessReview key={'excess:'+user.uid} user={user}/>
+  <AdminFreelanceFixedCancellationReview key={'fixed:'+user.uid} user={user}/>
  </section>;
 }
