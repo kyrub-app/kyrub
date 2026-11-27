@@ -236,3 +236,19 @@ test('reputation contest workspace is read-only, validates minimal payload and b
  const parent=readFileSync('src/components/admin/AdminFreelanceFinancialReviewWorkspace.tsx','utf8');
  assert.match(parent,/AdminFreelanceReputationContests key=/);
 });
+
+test('approved reputation criteria separate the parties and exclude explicit non-applicable values',async()=>{
+ const {reputationCriteria,normalizeReputationScores,projectReputationRating,projectReputationAggregate}=await import('../shared/freelanceReputationCriteria.js');
+ const professional={punctuality:5,courtesy:5,commitment:4,quality:5,communication:4,cooperation:null,organization:4};
+ const requester={payment_punctuality:5,courtesy:2,agreement:4,communication:5,organization:4,working_conditions:null,resources:null};
+ assert.equal(projectReputationRating('professional',professional).mean,4.5);
+ assert.equal(projectReputationRating('professional',professional).applicableCount,6);
+ assert.equal(projectReputationRating('store_requester',requester).mean,4);
+ assert.deepEqual(reputationCriteria('personal_requester'),reputationCriteria('store_requester'));
+ for(const bad of [{...professional,appearance:5},{...professional,courtesy:0},{...professional,courtesy:2.5},{...professional,courtesy:undefined},Object.fromEntries(Object.keys(professional).map(k=>[k,null])),requester])
+  assert.throws(()=>normalizeReputationScores('professional',bad),/CRITERIA_INVALID/);
+ const agg=projectReputationAggregate('professional',[professional,{...professional,punctuality:1,courtesy:null,commitment:null,quality:null,communication:null,cooperation:null,organization:null}]);
+ assert.equal(agg.ratingCount,2);assert.equal(agg.mean,2.75);assert.deepEqual(agg.criteria.punctuality,{count:2,mean:3});
+ assert.deepEqual(agg.criteria.courtesy,{count:1,mean:5});assert.deepEqual(agg.criteria.cooperation,{count:0,mean:null});
+ assert.equal(projectReputationAggregate('professional',[]).mean,null);
+});
