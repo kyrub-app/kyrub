@@ -33,13 +33,13 @@ export async function handlePersonalPix(req:Request,res:Response){
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>2048){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   if(!personalPixRecentLogin(identity.auth_time)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
-  // Only a verified eligible professional may declare a destination in this candidate.
-  // Revocation remains possible if the professional's eligibility has changed.
+  // Only a verified eligible participant may declare a destination in this candidate.
+  // Revocation remains possible if the participant's eligibility has changed.
   const b=req.body as Record<string,unknown>|undefined;
   if(b?.action==='declare'){
    const profile=await adminDb.doc('identity_verifications/'+identity.uid).get();
    const roles=profile.get('approvedProfiles');
-   if(profile.get('status')!=='approved'||!Array.isArray(roles)||!roles.some(r=>['freelancer','bicycle_courier','motorized_courier'].includes(r))){
+   if(profile.get('status')!=='approved'||!Array.isArray(roles)||!roles.some(r=>['requester','freelancer','bicycle_courier','motorized_courier'].includes(r))){
     res.status(403).json({code:'IDENTITY_VERIFICATION_REQUIRED'});return;
    }
   }
