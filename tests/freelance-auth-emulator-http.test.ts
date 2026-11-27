@@ -2286,6 +2286,35 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
           assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
          }finally{await db.doc('social_posts/'+duplicate.id).delete();await duplicate.ref.delete();}
          await xp.update({idempotencyKey:entry.idempotencyKey});
+         const squareForward='KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY',directForward='KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY';
+         const oldSquareForward=process.env[squareForward],oldDirectForward=process.env[directForward];
+         const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
+         const chat=db.collection('social_chats/'+connectionId+'/messages');
+         const notices=db.collection('users/'+worker.uid+'/notifications').where('eventType','==','reputation_forward_received');
+         try{
+          process.env[squareForward]='true';process.env[directForward]='true';
+          await connection.set({senderId:payer.uid,receiverId:worker.uid,participantIds:[payer.uid,worker.uid],status:'accepted'});
+          await call(payer,'',200,{action:'forward_reputation_connected',offerId:source.id,connectionId,recipientId:worker.uid,confirmed:true});
+          const messages=await chat.get();assert.equal(messages.size,1);
+          const card='?view=reputation_connected_card&offerId='+connectionId+'&cursor='+messages.docs[0].id;
+          const received=await call(worker,card,200);
+          assert.deepEqual(received.experience,published.experience);
+          assert.deepEqual(received.reputations,published.reputations);
+          assert.equal(received.publication.cocaresAtPublication,expectedCocares);
+          assert.equal(received.publication.createdAtIso,source.get('createdAtIso'));
+          assert.deepEqual(await call(payer,card,200),received);
+          await call(null,card,401);
+          await profile.update({isProfileVisible:false});
+          assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});
+          await profile.update({isProfileVisible:true});
+         }finally{
+          await connection.delete();
+          for(const d of (await chat.get()).docs)await d.ref.delete();
+          for(const d of (await notices.get()).docs)await d.ref.delete();
+          for(const d of (await source.ref.collection('directForwards').get()).docs)await d.ref.delete();
+          if(oldSquareForward===undefined)delete process.env[squareForward];else process.env[squareForward]=oldSquareForward;
+          if(oldDirectForward===undefined)delete process.env[directForward];else process.env[directForward]=oldDirectForward;
+         }
          await profile.update({isProfileVisible:false});
          assert.deepEqual(await call(payer,url,200),{experience:null,reputations:null});
          await profile.update({isProfileVisible:true});
