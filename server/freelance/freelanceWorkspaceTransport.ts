@@ -21,7 +21,7 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
  const exact=(fields:string[])=>{if(Object.keys(b).some(k=>!['action','offerId',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
  switch(b.action){
- case 'submit_reputation':exact(['confirmed','stars']);return submitFreelanceReputation(uid,b.offerId,{confirmed:b.confirmed,stars:b.stars});
+ case 'submit_reputation':exact(['confirmed','scores']);return submitFreelanceReputation(uid,b.offerId,{confirmed:b.confirmed,scores:b.scores});
  case 'contest_reputation':exact(['confirmed','ratingDigest','reason']);return contestFreelanceReputation(uid,b.offerId,{confirmed:b.confirmed,ratingDigest:b.ratingDigest,reason:b.reason});
  case 'publish':exact(['terms','requesterStoreId']);{
   const terms=normalizeFreelanceOffer(b.terms);
@@ -68,7 +68,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
   res.status(200).json({confirmed:true});
  }catch(e){
   const code=e instanceof Error?e.message:'';
-  const status=code==='FREELANCE_INVALID'?400:['FREELANCE_FORBIDDEN','FREELANCE_STORE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
+  const status=['FREELANCE_INVALID','FREELANCE_REPUTATION_CRITERIA_INVALID'].includes(code)?400:['FREELANCE_FORBIDDEN','FREELANCE_STORE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
    ['FREELANCE_REPUTATION_CONFLICT','FREELANCE_HOURLY_ACCOUNTING_CONFLICT','FREELANCE_ATTENDANCE_CONFLICT','FREELANCE_WORK_MODE_NOT_ENABLED','FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_UNAVAILABLE':code});
  }
