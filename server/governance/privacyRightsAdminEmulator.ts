@@ -5,6 +5,7 @@ import {getFirestore,type Transaction,type DocumentData} from 'firebase-admin/fi
 import {createHash,randomUUID} from 'node:crypto';
 import {assertPrivacyEmulator,PRIVACY_EMULATOR_PROJECT} from './privacyRightsEmulator.js';
 import {PRIVACY_ASSESSMENT_RIGHTS,PRIVACY_ASSESSMENT_FINDINGS,type PrivacyAssessmentInput,type PrivacyAssessmentReceipt} from '../../shared/privacyRightsAssessment.js';
+import {PRIVACY_RESPONSE_MESSAGES,type PrivacyResponseInput,type PrivacyResponseReviewInput,type PrivacyResponseReceipt} from '../../shared/privacyRightsResponse.js';
 import {normalizePrivacyRequest} from '../../shared/privacyRights.js';
 const deny=():never=>{throw Error('PRIVACY_ADMIN_FORBIDDEN');};
 const APP='privacy-admin-local-emulator';
@@ -15,7 +16,7 @@ export function createPrivacyRightsAdminEmulator(){
  const app=getApps().find(a=>a.name===APP)??initializeApp({projectId:PRIVACY_EMULATOR_PROJECT},APP);
  if(app.options.projectId!==PRIVACY_EMULATOR_PROJECT)return deny();
  const auth=getAuth(app),db=getFirestore(app),requests=db.collection('privacy_emulator_requests'),audit=db.collection('privacy_emulator_audit');
- async function authorize(tx:Transaction,token:string,now:number,permission:'privacy:read'|'privacy:triage'|'privacy:assess'){
+ async function authorize(tx:Transaction,token:string,now:number,permission:'privacy:read'|'privacy:triage'|'privacy:assess'|'privacy:prepare-response'|'privacy:review-response'){
   guard();if(typeof token!=='string'||!token||token.length>8192||!Number.isSafeInteger(now)||now<=0)return deny();
   const identity=await auth.verifyIdToken(token,true);
   if(identity.aud!==PRIVACY_EMULATOR_PROJECT||identity.email_verified!==true||!/^[A-Za-z0-9_-]{1,128}$/.test(identity.uid)||!Number.isSafeInteger(identity.auth_time)||!Number.isSafeInteger(identity.exp)||identity.auth_time*1000>now||identity.exp*1000<=now||now-identity.auth_time*1000>=30*60000)return deny();
@@ -28,7 +29,7 @@ export function createPrivacyRightsAdminEmulator(){
  function project(id:string,v:DocumentData|undefined,now:number){
   if(!uuid(id)||!v||v.protocol!==id||v.simulation!==true||v.status!=='received'||v.identityStatus!=='pending-verification'||v.actionStatus!=='not-executed'||!Number.isSafeInteger(v.receivedAt)||v.receivedAt<=0||v.receivedAt>now||!Number.isSafeInteger(v.revision)||v.revision<0||!['pending-review','verification-required'].includes(v.triageStatus))return deny();
   if(v.assessmentFinding!==undefined&&(typeof v.assessmentFinding!=='string'||!Object.hasOwn(PRIVACY_ASSESSMENT_FINDINGS,v.assessmentFinding)))return deny();
-  return {protocol:id,assessmentRevision:v.assessmentRevision??0,...(v.assessmentFinding?{assessmentFinding:v.assessmentFinding}:{}),evidenceStatus:v.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:v.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
+  return {protocol:id,assessmentRevision:v.assessmentRevision??0,...(v.responseAssessmentRevision===v.assessmentRevision&&['draft','reviewed'].includes(v.responseStatus)?{responseStatus:v.responseStatus}:{}),...(v.assessmentFinding?{assessmentFinding:v.assessmentFinding}:{}),evidenceStatus:v.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:v.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
  }
  return {
   async list(token:string,now:number){
@@ -69,6 +70,43 @@ export function createPrivacyRightsAdminEmulator(){
     tx.update(ref,{assessmentRevision:revision,assessmentFinding:v.finding});
     log(tx,actor,'privacy-right-assessed',now,{protocol:p.protocol,revision,finding:v.finding});
     return {protocol:p.protocol,revision,finding:v.finding,simulation:true,actionStatus:'not-executed'};
+   });
+  },
+  // Only fixed status notices. No user data, internal reason, or claim of fulfillment.
+  async prepareResponse(token:string,input:unknown,now:number):Promise<PrivacyResponseReceipt>{
+   if(!input||typeof input!=='object'||Array.isArray(input))return deny();
+   const v=input as PrivacyResponseInput;
+   if(Object.keys(v).length!==2||Object.keys(v).some(k=>!['protocol','expectedAssessmentRevision'].includes(k))||!uuid(v.protocol)||!Number.isSafeInteger(v.expectedAssessmentRevision)||v.expectedAssessmentRevision<1)return deny();
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,token,now,'privacy:prepare-response'),ref=requests.doc(v.protocol),s=await tx.get(ref),p=project(s.id,s.data(),now);
+    if(p.assessmentRevision!==v.expectedAssessmentRevision||!p.assessmentFinding||!Object.hasOwn(PRIVACY_RESPONSE_MESSAGES,p.assessmentFinding))return deny();
+    const assessment=(await tx.get(db.collection('privacy_emulator_assessments').doc(p.protocol+'_'+p.assessmentRevision))).data();
+    if(!assessment||assessment.protocol!==p.protocol||assessment.revision!==p.assessmentRevision||assessment.right!==p.draft.right||assessment.context!==p.draft.context||assessment.finding!==p.assessmentFinding||assessment.simulation!==true||assessment.authorizesExecution!==false)return deny();
+    const responseRef=db.collection('privacy_emulator_responses').doc(p.protocol+'_'+p.assessmentRevision),prior=(await tx.get(responseRef)).data();
+    if(prior)return deny();
+    const message=PRIVACY_RESPONSE_MESSAGES[p.assessmentFinding as keyof typeof PRIVACY_RESPONSE_MESSAGES];
+    tx.create(responseRef,{protocol:p.protocol,assessmentRevision:p.assessmentRevision,finding:p.assessmentFinding,message,preparedBy:actor.actorId,createdAt:now,revision:1,status:'draft',simulation:true,delivered:false,actionStatus:'not-executed'});
+    tx.update(ref,{responseStatus:'draft',responseAssessmentRevision:p.assessmentRevision});
+    log(tx,actor,'privacy-response-prepared',now,{protocol:p.protocol,assessmentRevision:p.assessmentRevision});
+    return {protocol:p.protocol,revision:1,status:'draft',simulation:true,delivered:false,actionStatus:'not-executed'};
+   });
+  },
+  async reviewResponse(token:string,input:unknown,now:number):Promise<PrivacyResponseReceipt>{
+   if(!input||typeof input!=='object'||Array.isArray(input))return deny();
+   const v=input as PrivacyResponseReviewInput;
+   if(Object.keys(v).length!==4||Object.keys(v).some(k=>!['protocol','expectedAssessmentRevision','expectedResponseRevision','decision'].includes(k))||!uuid(v.protocol)||!Number.isSafeInteger(v.expectedAssessmentRevision)||v.expectedAssessmentRevision<1||!Number.isSafeInteger(v.expectedResponseRevision)||v.expectedResponseRevision<1||!['approve','return'].includes(v.decision))return deny();
+   return db.runTransaction(async tx=>{
+    const actor=await authorize(tx,token,now,'privacy:review-response'),ref=requests.doc(v.protocol),s=await tx.get(ref),p=project(s.id,s.data(),now);
+    if(p.assessmentRevision!==v.expectedAssessmentRevision||!p.assessmentFinding||!Object.hasOwn(PRIVACY_RESPONSE_MESSAGES,p.assessmentFinding))return deny();
+    const responseRef=db.collection('privacy_emulator_responses').doc(p.protocol+'_'+p.assessmentRevision),r=(await tx.get(responseRef)).data();
+    if(!r||r.protocol!==p.protocol||r.assessmentRevision!==p.assessmentRevision||r.finding!==p.assessmentFinding||r.message!==PRIVACY_RESPONSE_MESSAGES[p.assessmentFinding as keyof typeof PRIVACY_RESPONSE_MESSAGES]||r.simulation!==true||r.delivered!==false||r.actionStatus!=='not-executed'||r.status!=='draft'||r.revision!==v.expectedResponseRevision||typeof r.preparedBy!=='string'||r.preparedBy===actor.actorId)return deny();
+    const assessment=(await tx.get(db.collection('privacy_emulator_assessments').doc(p.protocol+'_'+p.assessmentRevision))).data();
+    if(!assessment||assessment.protocol!==p.protocol||assessment.revision!==p.assessmentRevision||assessment.right!==p.draft.right||assessment.context!==p.draft.context||assessment.finding!==p.assessmentFinding||assessment.simulation!==true||assessment.authorizesExecution!==false)return deny();
+    const revision=r.revision+1,status=v.decision==='approve'?'reviewed':'draft';
+    tx.update(responseRef,{revision,status,reviewedBy:actor.actorId,reviewedAt:now,lastDecision:v.decision});
+    tx.update(ref,{responseStatus:status,responseAssessmentRevision:p.assessmentRevision});
+    log(tx,actor,'privacy-response-reviewed',now,{protocol:p.protocol,assessmentRevision:p.assessmentRevision,revision,decision:v.decision});
+    return {protocol:p.protocol,revision,status,simulation:true,delivered:false,actionStatus:'not-executed'};
    });
   },
   async markVerificationRequired(token:string,input:unknown,now:number){
