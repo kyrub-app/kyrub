@@ -1,7 +1,7 @@
 // Only local demo data. No actual processing or marketing dispatch is enabled.
 import {getApps,initializeApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
-import {getFirestore} from 'firebase-admin/firestore';
+import {getFirestore,type DocumentData} from 'firebase-admin/firestore';
 import {assertPrivacyEmulator,PRIVACY_EMULATOR_PROJECT} from './privacyRightsEmulator.js';
 import {OPTIONAL_CONSENT_PURPOSES,normalizeOptionalConsentChoice,type OptionalConsentPurpose,type OptionalConsentRecord} from '../../shared/privacyOptionalConsent.js';
 import {prepareOptionalConsent,projectOptionalConsent} from './privacyOptionalConsentPolicy.js';
@@ -23,7 +23,7 @@ export function createPrivacyOptionalConsentEmulator(){
  }
  const purposes=Object.keys(OPTIONAL_CONSENT_PURPOSES) as OptionalConsentPurpose[];
  const root=(uid:string)=>db.collection('privacy_emulator_optional_consents').doc(uid);
- function record(data:FirebaseFirestore.DocumentData|undefined,uid:string):OptionalConsentRecord|undefined{
+ function record(data:DocumentData|undefined,uid:string):OptionalConsentRecord|undefined{
   if(!data)return undefined;if(data.ownerUid!==uid)return deny();return data as OptionalConsentRecord;
  }
  return {
