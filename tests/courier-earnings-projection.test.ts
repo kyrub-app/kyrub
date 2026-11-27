@@ -374,3 +374,25 @@ test('freelance administrative decision preserves evidence, separates finance an
  assert.match(source,/tx.create\(auditRef/);
  assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
 });
+
+test('freelance review administrative queue is bounded and gated before server access', async()=>{
+ const service=readFileSync('server/admin/freelanceReviewService.ts','utf8');
+ assert.match(service,/where\('status','==','under_review'\).orderBy\(FieldPath.documentId\(\)\).limit\(21\)/);
+ assert.match(service,/assertRole\(uid,role.data\(\)\)/);
+ assert.match(service,/readOnly:true/);
+ const transport=readFileSync('server/admin/freelanceReviewTransport.ts','utf8');
+ assert.match(transport,/KYRUB_FREELANCE_ADMIN_REVIEW_ENABLED==='true'/);
+ assert.match(transport,/VERCEL_ENV==='production'/);
+ const {handleFreelanceReview}=await import('../server/admin/freelanceReviewTransport');
+ let status=0;let calls=0;
+ const response={setHeader(){},status(code:number){status=code;return {json(){}};}};
+ const deps={enabled:()=>false,list:async()=>{calls++;return {items:[],nextCursor:null};},decide:async()=>{calls++;return {decision:undefined,replay:false};}};
+ await handleFreelanceReview({method:'GET',headers:{}},response,deps);assert.equal(status,503);
+ await handleFreelanceReview({method:'GET',headers:{}},response,{...deps,enabled:()=>true});assert.equal(status,401);
+ assert.equal(calls,0);
+ await handleFreelanceReview({method:'GET',headers:{authorization:'Bearer fixture'}},response,{...deps,enabled:()=>true});assert.equal(status,200);assert.equal(calls,1);
+ const ui=readFileSync('src/components/admin/AdminFreelanceReviewWorkspace.tsx','utf8');
+ assert.match(ui,/confirmed&&reason.trim\(\).length>=10/);
+ assert.match(ui,/auth.currentUser\?\.uid===user.uid/);
+ assert.doesNotMatch(ui,/localStorage|setDoc\(|updateDoc\(/);
+});

@@ -47,6 +47,12 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'freelance-review') {
+    const {handleFreelanceReview}=await import('../../../server/admin/freelanceReviewTransport.js');
+    await handleFreelanceReview(request,response);
+    return;
+  }
+
   if (transport === 'global-challenges') {
     const { default: handler } = await import('../../../server/gamification/globalChallengeAdminHandler.js');
     await handler(request, response);
