@@ -29,7 +29,7 @@ export function createPrivacyRightsAdminEmulator(){
  function project(id:string,v:DocumentData|undefined,now:number){
   if(!uuid(id)||!v||v.protocol!==id||v.simulation!==true||v.status!=='received'||v.identityStatus!=='pending-verification'||v.actionStatus!=='not-executed'||!Number.isSafeInteger(v.receivedAt)||v.receivedAt<=0||v.receivedAt>now||!Number.isSafeInteger(v.revision)||v.revision<0||!['pending-review','verification-required'].includes(v.triageStatus))return deny();
   if(v.assessmentFinding!==undefined&&(typeof v.assessmentFinding!=='string'||!Object.hasOwn(PRIVACY_ASSESSMENT_FINDINGS,v.assessmentFinding)))return deny();
-  return {protocol:id,assessmentRevision:v.assessmentRevision??0,...(v.responseAssessmentRevision===v.assessmentRevision&&['draft','reviewed'].includes(v.responseStatus)?{responseStatus:v.responseStatus}:{}),...(v.assessmentFinding?{assessmentFinding:v.assessmentFinding}:{}),evidenceStatus:v.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:v.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
+  return {protocol:id,assessmentRevision:v.assessmentRevision??0,...(v.responseAssessmentRevision===v.assessmentRevision&&['draft','reviewed'].includes(v.responseStatus)?{responseStatus:v.responseStatus,...(Number.isSafeInteger(v.responseRevision)&&v.responseRevision>0?{responseRevision:v.responseRevision}:{})}:{}),...(v.assessmentFinding?{assessmentFinding:v.assessmentFinding}:{}),evidenceStatus:v.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:v.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
  }
  return {
   async list(token:string,now:number){
@@ -86,7 +86,7 @@ export function createPrivacyRightsAdminEmulator(){
     if(prior)return deny();
     const message=PRIVACY_RESPONSE_MESSAGES[p.assessmentFinding as keyof typeof PRIVACY_RESPONSE_MESSAGES];
     tx.create(responseRef,{protocol:p.protocol,assessmentRevision:p.assessmentRevision,finding:p.assessmentFinding,message,preparedBy:actor.actorId,createdAt:now,revision:1,status:'draft',simulation:true,delivered:false,actionStatus:'not-executed'});
-    tx.update(ref,{responseStatus:'draft',responseAssessmentRevision:p.assessmentRevision});
+    tx.update(ref,{responseStatus:'draft',responseRevision:1,responseAssessmentRevision:p.assessmentRevision});
     log(tx,actor,'privacy-response-prepared',now,{protocol:p.protocol,assessmentRevision:p.assessmentRevision});
     return {protocol:p.protocol,revision:1,status:'draft',simulation:true,delivered:false,actionStatus:'not-executed'};
    });
@@ -104,7 +104,7 @@ export function createPrivacyRightsAdminEmulator(){
     if(!assessment||assessment.protocol!==p.protocol||assessment.revision!==p.assessmentRevision||assessment.right!==p.draft.right||assessment.context!==p.draft.context||assessment.finding!==p.assessmentFinding||assessment.simulation!==true||assessment.authorizesExecution!==false)return deny();
     const revision=r.revision+1,status=v.decision==='approve'?'reviewed':'draft';
     tx.update(responseRef,{revision,status,reviewedBy:actor.actorId,reviewedAt:now,lastDecision:v.decision});
-    tx.update(ref,{responseStatus:status,responseAssessmentRevision:p.assessmentRevision});
+    tx.update(ref,{responseStatus:status,responseRevision:revision,responseAssessmentRevision:p.assessmentRevision});
     log(tx,actor,'privacy-response-reviewed',now,{protocol:p.protocol,assessmentRevision:p.assessmentRevision,revision,decision:v.decision});
     return {protocol:p.protocol,revision,status,simulation:true,delivered:false,actionStatus:'not-executed'};
    });
