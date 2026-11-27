@@ -555,7 +555,7 @@ test('private PNG receipt storage: one per party, server-only access, no raw met
 });
 
 test('reputation coverage, index, receipt and private scores remain server-only',async()=>{
- const paths=['freelanceReputationMaintenanceV1/global','freelanceReputationCoverageV1/test-coverage','freelanceReputationIndexesV1/test-index','freelanceReputationIndexReceiptsV1/test-receipt','freelanceOffersV1/test-contract/reputationPrivateV1/worker','freelanceReputationContestsV1/test-contest'];
+ const paths=['freelanceReputationSquarePostsV1/test-proof','freelanceReputationMaintenanceV1/global','freelanceReputationCoverageV1/test-coverage','freelanceReputationIndexesV1/test-index','freelanceReputationIndexReceiptsV1/test-receipt','freelanceOffersV1/test-contract/reputationPrivateV1/worker','freelanceReputationContestsV1/test-contest'];
  for(const path of paths)await adminDb.doc(path).set({fixture:true});
  for(const context of [env.unauthenticatedContext(),env.authenticatedContext(owner),env.authenticatedContext(worker),env.authenticatedContext('unrelated'),env.authenticatedContext('admin-fixture',{admin:true,role:'admin'})]){
   const client=context.firestore();
