@@ -2169,6 +2169,7 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
          const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
          const direct={action:'forward_reputation_connected',offerId:postId,connectionId,recipientId:worker.uid,confirmed:true};
          const chat=db.collection('social_chats/'+connectionId+'/messages');
+         const notices=db.collection('users/'+worker.uid+'/notifications').where('eventType','==','reputation_forward_received');
          try{
           delete process.env[directFlag];await call(payer,'',403,direct);
           process.env[directFlag]='true';
@@ -2181,6 +2182,19 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
           await call(payer,'',400,{...direct,confirmed:false});
           await call(payer,'',200,direct);await call(payer,'',409,direct);
           const messages=await chat.get();assert.equal(messages.size,1);
+          const inbox=await notices.get();assert.equal(inbox.size,1);
+          const notice=inbox.docs[0].data();
+          assert.equal(notice.recipientUserId,worker.uid);assert.equal(notice.actorPrincipalId,payer.uid);
+          assert.equal(notice.category,'social_chat');assert.equal(notice.target.kind,'social_chat');assert.equal(notice.target.connectionId,connectionId);
+          assert.equal(notice.readAt,'');assert.equal(notice.reputations,undefined);
+          const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
+          assert.ok((await listUserNotifications({recipientUserId:worker.uid})).notifications.some(n=>n.id===inbox.docs[0].id));
+          assert.ok(!(await listUserNotifications({recipientUserId:payer.uid})).notifications.some(n=>n.id===inbox.docs[0].id));
+          await markUserNotificationRead({recipientUserId:worker.uid,notificationId:inbox.docs[0].id});
+          assert.ok((await inbox.docs[0].ref.get()).get('readAt'));
+          await call(payer,'',409,direct);
+          assert.equal((await notices.get()).size,1);
+          assert.equal((await chat.get()).size,1);
           assert.equal(messages.docs[0].get('senderId'),payer.uid);assert.equal(messages.docs[0].get('receiverId'),worker.uid);
           assert.equal(messages.docs[0].get('reputationPostId'),postId);assert.equal(messages.docs[0].get('reputations'),undefined);
           assert.deepEqual((await post.get()).data(),stored);
@@ -2203,6 +2217,7 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
          }finally{
           await connection.delete();
           for(const d of (await chat.get()).docs)await d.ref.delete();
+          for(const d of (await notices.get()).docs)await d.ref.delete();
           for(const d of (await proof.collection('directForwards').get()).docs)await d.ref.delete();
           if(oldDirect===undefined)delete process.env[directFlag];else process.env[directFlag]=oldDirect;
          }
