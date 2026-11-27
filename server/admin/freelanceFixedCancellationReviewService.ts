@@ -33,7 +33,7 @@ export async function listFixedCancellationReviews(auth:string,cursor:unknown){
    const r=doc.data();
    if(r.offerId!==doc.id||!validFreelanceId(r.requesterUid)||!validFreelanceId(r.beneficiaryUid))return fail();
    if([r.requesterUid,r.beneficiaryUid].includes(uid))continue;
-   const c=await readFixedCancellationAgreementContext(tx,r.requesterUid,doc.id);
+   const c=await readFixedCancellationContext(tx,r.requesterUid,doc.id);
    if(!c.cancellationRestricted||c.dispute?.status!=='review_requested')return fail();
    items.push({offerId:doc.id,title:c.offer.title,sourceDigest:c.snapshot,requestedAt:c.dispute.requestedAt,capMinor:c.obligation.terms.amountMinor,priorPaymentState:c.projection.state,eligible:c.eligible,proposal:c.proposal?{id:c.proposal.id,status:c.stale?'stale':c.proposal.status,recognizedServiceMinor:c.proposal.recognizedServiceMinor,reportedReceivedMinor:c.proposal.reportedReceivedMinor}:null,proposalDigest:digestVariablePaymentSources(c.proposal??null),evidenceDigest:c.evidence.digest,notes:projectHourlyReviewNotes(c.evidence.notes,c.obligation),attachments:projectHourlyAttachments(c.evidence.attachments,c.obligation),bankVerified:false});
   }
@@ -51,7 +51,7 @@ export async function decideFixedCancellationReview(auth:string,input:unknown){
   const queue=(await tx.get(adminDb.doc('freelanceFixedCancellationReviewsV1/'+id))).data();
   if(!queue||!validFreelanceId(queue.requesterUid)||!validFreelanceId(queue.beneficiaryUid))return fail();
   if([queue.requesterUid,queue.beneficiaryUid].includes(uid))throw Error('FORBIDDEN');
-  const c=await readFixedCancellationAgreementContext(tx,queue.requesterUid,id);
+  const c=await readFixedCancellationContext(tx,queue.requesterUid,id);
   if(!c.dispute||c.snapshot!==b.sourceDigest||c.dispute.requestedAt!==b.expectedRequestedAt||!c.eligible||amount>c.obligation.terms.amountMinor||received>c.obligation.terms.amountMinor||b.proposalDigest!==digestVariablePaymentSources(c.proposal??null)||b.evidenceDigest!==c.evidence.digest)return fail();
   const auditRef=adminDb.doc('kyrub_admin/control_plane/audit_logs/'+auditId),audit=await tx.get(auditRef),reasonHash=createHash('sha256').update(reason).digest('hex');
   if(c.dispute.status==='resolved_administratively'){
@@ -80,7 +80,7 @@ export async function getFixedCancellationAttachment(auth:string,id:unknown,atta
   await role(tx,uid);
   const q=(await tx.get(adminDb.doc('freelanceFixedCancellationReviewsV1/'+id))).data();
   if(!q||!validFreelanceId(q.requesterUid)||!validFreelanceId(q.beneficiaryUid)||[q.requesterUid,q.beneficiaryUid].includes(uid))throw Error('FORBIDDEN');
-  const c=await readFixedCancellationAgreementContext(tx,q.requesterUid,id);
+  const c=await readFixedCancellationContext(tx,q.requesterUid,id);
   if(!c.dispute?.requestedAt||c.dispute.status!=='review_requested')return fail();
   return readHourlyAttachment(tx,c.evidence,attachmentId);
  },{readOnly:true});
