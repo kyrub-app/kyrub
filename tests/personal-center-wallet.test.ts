@@ -246,3 +246,10 @@ test('reputation forwarding uses one original post and separate distribution tim
  assert.match(preview,/VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY/);
  assert.doesNotMatch(preview,/setDoc\(|addDoc\(|localStorage/);
 });
+
+test('connected reputation share uses accepted contacts and protected chat read',()=>{
+ const ui=read('src/components/ReputationSquarePreview.tsx'),chat=read('src/components/modals/ChatModal.tsx'),hook=read('src/hooks/useChatMessages.ts');
+ assert.match(ui,/f.connectionStatus==='accepted'/);assert.match(ui,/action:'forward_reputation_connected'/);
+ assert.match(ui,/reputation_connected_card&offerId=/);assert.match(chat,/<ConnectedReputationCard/);
+ assert.match(hook,/reputationPostId:/);assert.match(ui,/VITE_KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY/);
+});
