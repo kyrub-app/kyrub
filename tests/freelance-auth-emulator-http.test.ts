@@ -1189,11 +1189,31 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    await finance(owner,200,'propose_hourly_cancellation',{...proposal,proposalId:'p2'});
    await finance(worker,409,'accept_hourly_cancellation',decisionFields);
    const second={...decisionFields,proposalId:'p2'};
-   await finance(worker,200,'accept_hourly_cancellation',second);
-   await finance(worker,200,'accept_hourly_cancellation',second);
+   const adminReview=async(actor:Actor,status:number,input?:Record<string,unknown>)=>{
+    const url='http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=hourly_cancellation');
+    const res=await fetch(url,{method:input?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});
+    const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));return data;
+   };
+   await adminReview(other,403);
+   const queue=await adminReview(admin,200),item=queue.items.find((v:any)=>v.offerId===id);
+   assert.ok(item);assert.equal(item.sourceDigest,a.sourceDigest);
+   const adminDecision={action:'decide_hourly_cancellation',offerId:id,sourceDigest:a.sourceDigest,expectedRequestedAt:item.requestedAt,recognizedServiceMinor:proposal.recognizedServiceMinor,reason:'Decisão fictícia fundamentada',confirmed:true};
+   if(started){
+    await adminReview(admin,409,{...adminDecision,sourceDigest:'0'.repeat(64)});
+    await adminReview(admin,409,{...adminDecision,recognizedServiceMinor:a.capMinor+1});
+    assert.equal((await adminReview(admin,200,adminDecision)).replay,false);
+    assert.equal((await adminReview(admin,200,adminDecision)).replay,true);
+    await adminReview(admin,409,{...adminDecision,reason:'Outra decisão fictícia fundamentada'});
+    await finance(worker,409,'accept_hourly_cancellation',second);
+   }else{
+    await finance(worker,200,'accept_hourly_cancellation',second);
+    await finance(worker,200,'accept_hourly_cancellation',second);
+    await adminReview(admin,409,adminDecision);
+   }
+   assert.ok(!(await adminReview(admin,200)).items.some((v:any)=>v.offerId===id));
    const settled=await agreement(owner,200);
-   assert.equal(settled.agreedMinor,proposal.recognizedServiceMinor);
-   assert.equal(settled.dispute.status,'resolved_voluntarily');assert.equal(settled.restrictionActive,false);
+   assert.equal(started?settled.administrativeMinor:settled.agreedMinor,proposal.recognizedServiceMinor);
+   assert.equal(settled.dispute.status,started?'resolved_administratively':'resolved_voluntarily');assert.equal(settled.restrictionActive,false);
    for(const actor of [owner,worker]){
     assert.deepEqual(await financeRestrictions(actor),{restricted:started,openOfferIds:started?[id]:[]});
     if(started)await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[]});
