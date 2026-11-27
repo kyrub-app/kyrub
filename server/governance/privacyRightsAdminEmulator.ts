@@ -26,7 +26,7 @@ export function createPrivacyRightsAdminEmulator(){
  function log(tx:Transaction,actor:{actorId:string;actorRole:string},action:string,now:number,fields:Record<string,unknown>){const id=randomUUID();tx.create(audit.doc(id),{id,...actor,action,createdAt:now,simulation:true,...fields});}
  function project(id:string,v:DocumentData|undefined,now:number){
   if(!uuid(id)||!v||v.protocol!==id||v.simulation!==true||v.status!=='received'||v.identityStatus!=='pending-verification'||v.actionStatus!=='not-executed'||!Number.isSafeInteger(v.receivedAt)||v.receivedAt<=0||v.receivedAt>now||!Number.isSafeInteger(v.revision)||v.revision<0||!['pending-review','verification-required'].includes(v.triageStatus))return deny();
-  return {protocol:id,evidenceStatus:v.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:'awaiting-evidence' as const,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
+  return {protocol:id,evidenceStatus:v.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:v.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,draft:normalizePrivacyRequest(v.draft),receivedAt:v.receivedAt,revision:v.revision as number,triageStatus:v.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const};
  }
  return {
   async list(token:string,now:number){
