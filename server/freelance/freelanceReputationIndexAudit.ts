@@ -380,3 +380,18 @@ export async function forwardReputationToConnected(uid:string,postId:unknown,con
   return {messageId:messageRef.id};
  });
 }
+
+/** Recheck the accepted connection and server-written message before rendering
+ * a shared card. No indicators are retained inside the chat message. */
+export async function readConnectedReputationCard(uid:string,connectionId:unknown,messageId:unknown){
+ assertFreelanceReputationLocal();
+ if(!squarePublicationEnabled()||process.env.KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY!=='true'||process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||!validFreelanceId(connectionId)||!validFreelanceId(messageId))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const hidden={experience:null,reputations:null};
+  const [connection,message]=await tx.getAll(adminDb.doc('connections/'+connectionId),adminDb.doc('social_chats/'+connectionId+'/messages/'+messageId));
+  const c=connection.data(),m=message.data();
+  if(!c||!m||c.status!=='accepted'||!validFreelanceId(m.senderId)||!validFreelanceId(m.receiverId)||m.senderId===m.receiverId||![m.senderId,m.receiverId].includes(uid)||!Array.isArray(c.participantIds)||c.participantIds.length!==2||!c.participantIds.includes(m.senderId)||!c.participantIds.includes(m.receiverId)||!((c.senderId===m.senderId&&c.receiverId===m.receiverId)||(c.receiverId===m.senderId&&c.senderId===m.receiverId))||!validSquarePost(m.reputationPostId))return hidden;
+  return readReputationSquareInTransaction(tx,m.reputationPostId);
+ },{readOnly:true});
+}
