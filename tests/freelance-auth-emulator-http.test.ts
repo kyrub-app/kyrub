@@ -1331,6 +1331,20 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
    assert.equal(manageOwner.owner,true);assert.equal(manageOwner.contracts[0].offerId,id);assert.equal(manageOwner.contracts[0].mean,4);
    assert.equal(manageManager.owner,false);assert.deepEqual(manageManager.contracts,[]);assert.deepEqual(manageManager.moments,manageOwner.moments);
    assert.equal(manageManager.moments[0].rating,3);await call(worker,management,403);await call(null,management,401);
+   assert.equal(manageOwner.nextCursor,null);
+   const batch=db.batch();
+   for(let n=0;n<21;n++){
+    const author='page-test-'+String(n).padStart(2,'0')+'-'+suffix;
+    batch.set(db.doc('store_reviews/'+storeId+'/reviews/'+author),{reviewId:author,authorId:author,storeId,authorName:'Consumidor de teste',content:'Momento fictício para paginação.',rating:4,createdAtIso:'2026-11-27T10:00:00.000Z',status:'published'});
+   }
+   await batch.commit();
+   const first=await call(manager,management,200);
+   assert.equal(first.moments.length,20);assert.equal(first.momentsTruncated,true);assert.equal(typeof first.nextCursor,'string');
+   const second=await call(manager,management+'&cursor='+encodeURIComponent(first.nextCursor),200);
+   assert.equal(second.moments.length,2);assert.equal(second.nextCursor,null);assert.equal(second.momentsTruncated,false);
+   assert.equal(new Set([...first.moments,...second.moments].map((m:any)=>m.reviewId)).size,22);
+   await call(manager,management+'&cursor=invalid',400);
+   await call(manager,management+'&cursor='+encodeURIComponent(JSON.stringify({legacy:null,canonical:null,contracts:id})),403);
    await call(manager,management+'&offerId='+id,400);
    const query='?view=reputation_team&storeId='+owner.uid;
    const own=await call(owner,query,200),team=await call(manager,query,200);
