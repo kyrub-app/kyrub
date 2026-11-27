@@ -1,6 +1,8 @@
+import {readStoreRefundSecret,readStoreRefundDestination,changeStoreRefundDestination} from '../payments/storeRefundDestinationService.js';
+import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {adminDb} from '../firebaseAdmin.js';
 import {readAdjustmentStatementContext} from './freelanceFixedAdjustmentStatementService.js';
-import {readPersonalPixForContract,readPersonalPixSecretForContract} from '../payments/personalPixDestinationService.js';
+import {readPersonalPixSecretForContract} from '../payments/personalPixDestinationService.js';
 import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 const conflict=():never=>{throw Error('FREELANCE_PIX_DESTINATION_CHANGED');};
@@ -32,6 +34,10 @@ async function context(tx:FirebaseFirestore.Transaction,uid:string,id:string){
  }
  return {c,o,consent,consentRef,accessRef,access:a,replacement,replacementRef,paymentBlocked,financialState:financial.projection.state,storeRefund:o.direction==='refund'&&!!o.requesterStoreId};
 }
+async function destinationSecret(tx:FirebaseFirestore.Transaction,o:Awaited<ReturnType<typeof context>>['o']){
+ return o.direction==='refund'&&o.requesterStoreId?readStoreRefundSecret(tx,o.recipientUid,o.requesterStoreId):readPersonalPixSecretForContract(tx,o.recipientUid);
+}
+async function destinationMask(tx:FirebaseFirestore.Transaction,o:Awaited<ReturnType<typeof context>>['o']){const {key,...mask}=await destinationSecret(tx,o);return mask;}
 async function eligible(tx:FirebaseFirestore.Transaction,o:NonNullable<Awaited<ReturnType<typeof context>>['o']>){
  const docs=await tx.getAll(adminDb.doc('identity_verifications/'+o.originalRequesterUid),adminDb.doc('identity_verifications/'+o.originalBeneficiaryUid));
  for(const [i,role] of ['requester','freelancer'].entries()){const d=docs[i],roles=d.get('approvedProfiles');if(d.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes(role))throw Error('IDENTITY_VERIFICATION_REQUIRED');}
@@ -40,17 +46,17 @@ export async function readAdjustmentPix(uid:string,id:string){
  if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const x=await context(tx,uid,id),{o,consent}=x,role=uid===o.recipientUid?'recipient':'payer';
-  let destination:null|Awaited<ReturnType<typeof readPersonalPixForContract>>=null;
+  let destination:null|Awaited<ReturnType<typeof destinationMask>>=null;
   // Only the recipient may see a candidate before consent. Payer sees no key metadata without consent.
-  if(!x.storeRefund&&!x.paymentBlocked&&(role==='recipient'||consent&&(!consent.revokedAt||x.replacement?.status==='pending'))){
-   try{destination=await readPersonalPixForContract(tx,o.recipientUid);}catch(e){if(!(e instanceof Error)||e.message!=='FREELANCE_PIX_DESTINATION_REQUIRED')throw e;}
+  if(!x.paymentBlocked&&(role==='recipient'||consent&&(!consent.revokedAt||x.replacement?.status==='pending'))){
+   try{destination=await destinationMask(tx,o);}catch(e){if(!(e instanceof Error)||e.message!=='FREELANCE_PIX_DESTINATION_REQUIRED')throw e;}
   }
   const current=!!destination&&(!consent||destination.revision===consent.revision&&destination.keyType===consent.keyType);
-  const pending=x.replacement?.status==='pending',replacement=pending?{oldRevision:x.replacement!.oldRevision,newRevision:x.replacement!.newRevision,pending:true,available:!x.paymentBlocked&&!x.storeRefund&&destination?.revision===x.replacement!.newRevision}:consent&&!x.paymentBlocked&&!x.storeRefund&&destination&&destination.revision>consent.revision&&role==='recipient'&&(!x.replacement||destination.revision>x.replacement.newRevision)?{oldRevision:consent.revision,newRevision:destination.revision,pending:false,available:true}:null;
-  return {offerId:id,sourceDigest:o.sourceDigest,direction:o.direction,amountMinor:o.amountMinor,role,replacement,storeRefund:x.storeRefund,consentRevision:consent?.revision??null,authorized:!!consent&&!consent.revokedAt,revoked:!!consent?.revokedAt,disclosed:!!x.access,blocked:x.paymentBlocked||x.storeRefund,financialState:x.financialState, destination:current&&!pending?destination:null,bankVerified:false};
+  const pending=x.replacement?.status==='pending',replacement=pending?{oldRevision:x.replacement!.oldRevision,newRevision:x.replacement!.newRevision,pending:true,available:!x.paymentBlocked&&destination?.revision===x.replacement!.newRevision}:consent&&!x.paymentBlocked&&destination&&destination.revision>consent.revision&&role==='recipient'&&(!x.replacement||destination.revision>x.replacement.newRevision)?{oldRevision:consent.revision,newRevision:destination.revision,pending:false,available:true}:null;
+  return {offerId:id,sourceDigest:o.sourceDigest,direction:o.direction,amountMinor:o.amountMinor,role,replacement,storeRefund:x.storeRefund,consentRevision:consent?.revision??null,authorized:!!consent&&!consent.revokedAt,revoked:!!consent?.revokedAt,disclosed:!!x.access,blocked:x.paymentBlocked,financialState:x.financialState, destination:current&&!pending?destination:null,bankVerified:false};
  },{readOnly:true});
 }
-export async function changeAdjustmentPix(uid:string,id:string,action:'authorize'|'revoke'|'reveal',input:{sourceDigest:unknown;expectedAmountMinor:unknown;expectedRevision:unknown;confirmed:unknown;paymentNotSent?:unknown}){
+export async function changeAdjustmentPix(uid:string,id:string,action:'authorize'|'revoke'|'reveal',input:{sourceDigest:unknown;expectedAmountMinor:unknown;expectedRevision:unknown;confirmed:unknown;paymentNotSent?:unknown},authorization?:string){
  if(!validFreelanceId(uid)||!validFreelanceId(id)||input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest)||!Number.isSafeInteger(input.expectedAmountMinor)||Number(input.expectedAmountMinor)<1||!Number.isSafeInteger(input.expectedRevision)||Number(input.expectedRevision)<1||(action==='reveal'&&input.paymentNotSent!==true))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const x=await context(tx,uid,id),{o,consent}=x,revision=Number(input.expectedRevision);
@@ -66,9 +72,10 @@ export async function changeAdjustmentPix(uid:string,id:string,action:'authorize
    writeFreelanceFinancialNotices(tx,x.c.obligation,'fixed_cancellation_adjustment_pix_revoked',now,o.payerUid===o.originalRequesterUid?'requester':'freelancer',o.sourceDigest+'-'+revision);
    return {changed:true};
   }
-  if(x.storeRefund||x.paymentBlocked||x.replacement?.status==='pending')return blocked();
+  if(x.paymentBlocked||x.replacement?.status==='pending')return blocked();
+  if(x.storeRefund&&action==='authorize'){const mfa=await requireKyrubSessionMfa(authorization??'','financial',300);if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');}
   await eligible(tx,o);
-  const destination=await readPersonalPixSecretForContract(tx,o.recipientUid);
+  const destination=await destinationSecret(tx,o);
   if(destination.revision!==revision||Date.parse(now)<Date.parse(o.dueAt))return conflict();
   if(action==='authorize'){
    if(consent){if(consent.revokedAt||consent.revision!==revision||consent.keyType!==destination.keyType)return conflict();return {changed:false};}
@@ -99,10 +106,12 @@ export async function changeAdjustmentPixReplacement(uid:string,id:string,action
    tx.update(x.replacementRef,{status:'withdrawn',decidedAt:now});return {changed:true};
   }
   if(action==='accept'&&same&&r.status==='accepted')return {changed:false};
-  if(x.storeRefund||x.paymentBlocked)return blocked();
+  if(x.paymentBlocked)return blocked();
   if(consent.revision!==oldRevision)return conflict();
+  if(x.storeRefund&&action==='propose'){const mfa=await requireKyrubSessionMfa(authorization??'','financial',300);if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');}
+  if(x.storeRefund&&action==='propose'){const mfa=await requireKyrubSessionMfa(authorization??'','financial',300);if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');}
   await eligible(tx,o);
-  const destination=await readPersonalPixForContract(tx,o.recipientUid);
+  const destination=await destinationMask(tx,o);
   if(destination.revision!==newRevision||Date.parse(now)<Date.parse(consent.revokedAt??consent.authorizedAt))return conflict();
   if(action==='propose'){
    if(same&&r.status==='pending'&&r.keyType===destination.keyType)return {changed:false};
@@ -124,4 +133,17 @@ export async function changeAdjustmentPixReplacement(uid:string,id:string,action
   writeFreelanceFinancialNotices(tx,x.c.obligation,'fixed_cancellation_adjustment_pix_replaced',now,o.recipientUid===o.originalRequesterUid?'requester':'freelancer',o.sourceDigest+'-'+newRevision);
   return {changed:true};
  });
+}
+
+/** Owner-only setup tied to the immutable store refund, not to a client store ID.
+ * The underlying record is keyed by the canonical store, so future contracts use
+ * its current revision, but sharing remains per obligation. */
+export async function readAdjustmentStoreDestination(uid:string,id:string){
+ const storeId=await adminDb.runTransaction(async tx=>{const x=await context(tx,uid,id);if(!x.storeRefund||uid!==x.o.recipientUid||!x.o.requesterStoreId)throw Error('FREELANCE_FORBIDDEN');return x.o.requesterStoreId;},{readOnly:true});
+ return readStoreRefundDestination(uid,storeId);
+}
+export async function changeAdjustmentStoreDestination(uid:string,id:string,input:unknown,authorization:string){
+ const mfa=await requireKyrubSessionMfa(authorization,'financial',300);if(mfa.uid!==uid)throw Error('FREELANCE_FORBIDDEN');
+ const storeId=await adminDb.runTransaction(async tx=>{const x=await context(tx,uid,id);if(!x.storeRefund||uid!==x.o.recipientUid||!x.o.requesterStoreId)throw Error('FREELANCE_FORBIDDEN');return x.o.requesterStoreId;},{readOnly:true});
+ return changeStoreRefundDestination(uid,storeId,input);
 }
