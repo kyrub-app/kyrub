@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import {assertStoreOrderDeliveryChoice,storeOrderDistributionEnabled} from '../../shared/storeOrderDistributionPolicy.js';
 import {
   FieldValue,
   type DocumentData,
@@ -498,8 +499,9 @@ export const transitionOrderStatusWithInventory = async (
     }
     if (nextStatus === 'accepted' && isDeliveryOrder) {
       if (!requestedProvider) {
-        throw new Error('Escolha como a entrega será realizada: Kyrub ou entregador próprio.');
+        throw new Error(storeOrderDistributionEnabled()?'Escolha como a entrega será realizada: Kyrub ou entregador próprio.':'Confirme que a entrega será realizada pelo entregador próprio da loja.');
       }
+      assertStoreOrderDeliveryChoice({requestedProvider,persistedProvider,currentStatus:order.status});
       if (persistedProvider && persistedProvider !== requestedProvider) {
         throw new Error('A modalidade de entrega já foi definida para este pedido.');
       }
