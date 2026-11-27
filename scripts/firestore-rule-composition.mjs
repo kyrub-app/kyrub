@@ -74,6 +74,7 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
           );
         allow create: if isSignedIn()
           && storeSecClientOrderReleaseIsValid()
+          && (!incoming().keys().hasAny(['deliveryProvider']) || incoming().deliveryProvider != 'kyrub')
           && (!incoming().keys().hasAny(['source']) || incoming().source != 'customer' || incoming().fulfillmentType == 'dine_in')
           && (
             request.auth.uid == tenantId
@@ -87,7 +88,7 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
             )
           );
         allow update: if isSignedIn()
-          && !incoming().diff(existing()).affectedKeys().hasAny(['releaseMode', 'operationalRelease', 'paymentIntentId', 'paymentId'])
+          && !incoming().diff(existing()).affectedKeys().hasAny(['releaseMode', 'operationalRelease', 'paymentIntentId', 'paymentId', 'deliveryProvider', 'deliveryProviderChosenAt'])
           && (
             (request.auth.uid == tenantId && storeSecOrderReleaseUnchanged())
             || (

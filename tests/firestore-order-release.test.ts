@@ -50,3 +50,22 @@ test('unrelated private artifact subcollections retain owner access', async () =
   await assertSucceeds(getDoc(doc(db, 'artifacts/owner/private/settings/items/test')));
   await assertFails(getDoc(doc(environment.authenticatedContext('stranger').firestore(), 'artifacts/owner/private/settings/items/test')));
 });
+
+test('legacy owner cannot forge, replace or erase the server-owned delivery choice',async()=>{
+ const owner=environment.authenticatedContext('owner').firestore();
+ // Non-prepaid legacy fixture makes the order release guard irrelevant to this test.
+ await environment.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),legacy),{id:'order',storeId:'owner',buyerId:'buyer',source:'staff',fulfillmentType:'delivery',status:'pending',paymentStatus:'unpaid',total:20});
+ });
+ const ref=doc(owner,legacy);
+ await assertSucceeds(updateDoc(ref,{customerNote:'Observação de teste'}));
+ await assertFails(updateDoc(ref,{deliveryProvider:'kyrub'}));
+ await assertFails(updateDoc(ref,{deliveryProvider:'merchant'}));
+ await assertFails(updateDoc(ref,{deliveryProviderChosenAt:'2026-11-27T00:00:00Z'}));
+ await environment.withSecurityRulesDisabled(async context=>{
+  await updateDoc(doc(context.firestore(),legacy),{deliveryProvider:'kyrub',deliveryProviderChosenAt:'2026-11-26T00:00:00Z'});
+ });
+ await assertSucceeds(updateDoc(ref,{customerNote:'Histórico preservado'}));
+ await assertFails(updateDoc(ref,{deliveryProvider:'merchant'}));
+ await assertFails(updateDoc(ref,{deliveryProvider:deleteField()}));
+});

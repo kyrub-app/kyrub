@@ -901,7 +901,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     <p className="mt-3 text-[10px] leading-relaxed text-slate-600">
                       {fulfillmentType === 'dine_in'
                         ? 'O pedido no local será enviado para aprovação do atendimento, sem cobrança automática.'
-                        : 'Entrega e retirada exigem pagamento confirmado. O pedido só será criado e enviado à loja depois da confirmação autoritativa do provedor.'}
+                        : 'A loja confirma o atendimento antes do pagamento. O preparo depende da confirmação financeira pelo provedor.'}
                     </p>
                   </section>
 
