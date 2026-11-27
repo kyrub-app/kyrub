@@ -1,3 +1,4 @@
+import AdminFreelanceExcessReview from './AdminFreelanceExcessReview';
 import AdminFreelanceCancellationReview from './AdminFreelanceCancellationReview';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
@@ -103,5 +104,6 @@ export default function AdminFreelanceFinancialReviewWorkspace({user}:{user:User
    <button type="button" className={button} disabled={busy} onClick={reset}>Voltar</button>
   </form>}
   <AdminFreelanceCancellationReview key={user.uid} user={user}/>
+  <AdminFreelanceExcessReview key={user.uid} user={user}/>
  </section>;
 }
