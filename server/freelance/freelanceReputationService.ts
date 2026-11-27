@@ -1,3 +1,4 @@
+import {invalidateUnindexedCoverage} from './freelanceReputationCoverage.js';
 import {prepareFreelanceReputationIndex,reputationIndexEnabled,reputationContractContext} from './freelanceReputationIndexPreparation.js';
 import {normalizeReputationScores,projectReputationRating,projectReputationAggregate,type ReputationScores} from '../../shared/freelanceReputationCriteria.js';
 import type {Transaction} from 'firebase-admin/firestore';
@@ -108,8 +109,8 @@ export async function submitFreelanceReputation(uid:string,id:string,input:unkno
   if(Date.parse(submittedAt)<Date.parse(x.parties.completedAt))return fail();
   const slot:Slot={schemaVersion:2,offerId:id,contractDigest:x.contractDigest,role,authorUid:uid,subject,scores,submittedAt};
   const next={...x,slots:{...x.slots,[role]:slot}};
-  const plan=reputationIndexEnabled()?await prepareFreelanceReputationIndex(tx,next):null;
-  tx.create(x.refs[role],slot);plan?.write();
+  const plan=reputationIndexEnabled()?await prepareFreelanceReputationIndex(tx,next,true):null;
+  tx.create(x.refs[role],slot);plan?.write();if(!plan)invalidateUnindexedCoverage(tx,next.parties);
   return {...view({...x,slots:{...x.slots,[role]:slot}}),changed:true};
  });
 }
