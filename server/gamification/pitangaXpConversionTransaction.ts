@@ -1,3 +1,4 @@
+import { prepareCocarProjectionForNewXp } from './cocarProjectionTransaction.js';
 import { assertLegacyPitangaWriterAllowedInTransaction, assertPitangaCleanBaselineWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { PITANGAS_PER_XP, planVoluntaryPitangaXpConversion } from '../../shared/pitangaXpConversion.js';
@@ -162,6 +163,13 @@ export const applyPitangaXpConversionInTransaction = async (
   const available = balance.data()?.availableKCoins;
   const plan = planVoluntaryPitangaXpConversion(available, input.requestedXp);
   const idempotencyKey = `pitanga_xp_${input.requestId}`;
+  const xpRow = {
+    id: input.xpRef.id, userId: input.userId, sourceType: 'conversion' as const,
+    sourceId: input.requestId, deltaXp: plan.xpToCredit,
+    correlationId: input.requestId, idempotencyKey,
+    occurredAt: input.occurredAt, economy: 'kyrub_xp',
+  };
+  const updateProjection = await prepareCocarProjectionForNewXp(tx, input.xpRef, xpRow);
   tx.update(input.balanceRef, { availableKCoins: plan.remainingPitangas });
   tx.create(input.debitRef, {
     id: input.debitRef.id, userId: input.userId, type: 'redeem', economy: 'k_coin',
@@ -169,12 +177,8 @@ export const applyPitangaXpConversionInTransaction = async (
     sourceId: input.requestId, correlationId: input.requestId,
     idempotencyKey, occurredAt: input.occurredAt,
   });
-  tx.create(input.xpRef, {
-    id: input.xpRef.id, userId: input.userId, sourceType: 'conversion',
-    sourceId: input.requestId, deltaXp: plan.xpToCredit,
-    correlationId: input.requestId, idempotencyKey,
-    occurredAt: input.occurredAt, economy: 'kyrub_xp',
-  });
+  tx.create(input.xpRef, xpRow);
+  updateProjection();
   tx.create(input.receiptRef, {
     userId: input.userId, requestId: input.requestId,
     requestedXp: input.requestedXp, availablePitangasBefore: available,

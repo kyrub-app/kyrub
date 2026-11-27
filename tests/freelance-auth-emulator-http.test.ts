@@ -2354,3 +2354,45 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
  }
 });
+
+
+test('Cocares candidate: canonical writer, concurrency, replay and invalidation in the same emulator transaction',async()=>{
+ const flag='KYRUB_COCAR_PROJECTION_TEST_ONLY',epochKey='KYRUB_COCAR_PROJECTION_TEST_EPOCH';
+ const previousFlag=process.env[flag],previousEpoch=process.env[epochKey];
+ const uid='cocar-projection-'+suffix,epoch='fixture-'+suffix;
+ const ledger=db.collection('users/'+uid+'/xpLedger'),projection=db.doc('users/'+uid+'/cocarProjectionV1/current');
+ const {rebuildCocarProjectionFixture}=await import('../server/gamification/cocarProjectionTransaction.js');
+ const {persistVerifiedKyrubXp,readVerifiedKyrubXpTotal}=await import('../server/gamification/xpLedgerRepository.js');
+ const entry=(key:string,deltaXp:number)=>({userId:uid,sourceType:'achievement' as const,sourceId:'fixture',deltaXp,correlationId:key,idempotencyKey:key,occurredAt:'2026-11-27T12:00:00.000Z'});
+ try{
+  delete process.env[flag];
+  await assert.rejects(rebuildCocarProjectionFixture(db,uid),/COCAR_PROJECTION_EMULATOR_ONLY/);
+  await persistVerifiedKyrubXp(entry('seed',3));
+  assert.equal((await projection.get()).exists,false);
+  process.env[flag]='true';process.env[epochKey]=epoch;
+  assert.equal((await rebuildCocarProjectionFixture(db,uid)).total,3);
+  await Promise.all([persistVerifiedKyrubXp(entry('b',5)),persistVerifiedKyrubXp(entry('b',5)),persistVerifiedKyrubXp(entry('a',7))]);
+  assert.equal((await projection.get()).get('total'),15);
+  assert.equal((await projection.get()).get('entryCount'),3);
+  assert.deepEqual(await readVerifiedKyrubXpTotal(uid),{total:15,entryCount:3});
+  const before=(await projection.get()).data();
+  await persistVerifiedKyrubXp(entry('b',5));
+  assert.deepEqual((await projection.get()).data(),before);
+  await assert.rejects(persistVerifiedKyrubXp(entry('b',6)),/XP_IDEMPOTENCY_CONFLICT/);
+  assert.deepEqual((await projection.get()).data(),before);
+  // Existing historical key in a different document: economic writer retains
+  // its existing contract, but a projection may no longer claim validity.
+  const duplicateKey='other';
+  await ledger.doc('legacy_other').set({...entry(duplicateKey,1),id:'legacy_other',economy:'kyrub_xp'});
+  await rebuildCocarProjectionFixture(db,uid);
+  await persistVerifiedKyrubXp(entry(duplicateKey,2));
+  assert.equal((await projection.get()).exists,false);
+  assert.equal((await ledger.doc('xp_other').get()).exists,true);
+  await assert.rejects(rebuildCocarProjectionFixture(db,uid),/COCAR_LEDGER_ORDER_OR_KEY_INVALID/);
+ }finally{
+  await projection.delete();
+  for(const d of (await ledger.get()).docs)await d.ref.delete();
+  if(previousFlag===undefined)delete process.env[flag];else process.env[flag]=previousFlag;
+  if(previousEpoch===undefined)delete process.env[epochKey];else process.env[epochKey]=previousEpoch;
+ }
+});

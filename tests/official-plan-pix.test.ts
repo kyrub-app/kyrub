@@ -78,10 +78,11 @@ const bundle = await build({ stdin: { contents: `export * from './server/payment
   export {loadVerifiedStoreSubscriptionPrepaidCoverage} from './server/payments/storeSubscriptionService.ts';`, resolveDir: process.cwd() },
   bundle: true, platform: 'node', format: 'esm', write: false,
   plugins: [{ name: 'isolated-official-pix', setup(b) {
-    b.onResolve({ filter: /firebaseAdmin\.js$|consultantAuth\.js$|officialStoreService\.js$|publicPlanCatalogService\.js$|officialPlanProductLookup\.js$|officialPlanPixProvider\.js$|paidPlanSubscriptionService\.js$|mercadoPagoStoreOauthService\.js$|commercialRecipientAuthorityService\.js$|mercadoPagoPixProvider\.js$|^firebase-admin\/firestore$/ }, args => ({ path: args.path, namespace: 'mock' }));
+    b.onResolve({ filter: /firebaseAdmin\.js$|consultantAuth\.js$|officialStoreService\.js$|publicPlanCatalogService\.js$|officialPlanProductLookup\.js$|officialPlanPixProvider\.js$|paidPlanSubscriptionService\.js$|mercadoPagoStoreOauthService\.js$|commercialRecipientAuthorityService\.js$|mercadoPagoPixProvider\.js$|^firebase-admin\/(?:firestore|app)$/ }, args => ({ path: args.path, namespace: 'mock' }));
     b.onLoad({ filter: /.*/, namespace: 'mock' }, args => {
       const prefix = 'const c=globalThis.__officialPix;';
-      const source = args.path.endsWith('firebaseAdmin.js') ? 'export const adminDb=c.db;' :
+      const source = args.path === 'firebase-admin/app' ? 'export const getApps=()=>{throw Error("COCAR_PROJECTION_MUST_REMAIN_DISABLED_IN_PIX_MOCK")};' :
+        args.path.endsWith('firebaseAdmin.js') ? 'export const adminDb=c.db;' :
         args.path.endsWith('consultantAuth.js') ? 'export const authenticateConsultantRequest=c.auth;' :
         args.path.endsWith('officialStoreService.js') ? 'export const getOfficialStoreIdentity=c.official;' :
         args.path.endsWith('publicPlanCatalogService.js') ? 'export const loadPublicActivePlanCatalog=c.catalog;' :
@@ -91,7 +92,7 @@ const bundle = await build({ stdin: { contents: `export * from './server/payment
         args.path.endsWith('mercadoPagoStoreOauthService.js') ? 'export const mercadoPagoStoreRequest=()=>{throw Error("MERCHANT_OAUTH_FORBIDDEN")};' :
         args.path.endsWith('commercialRecipientAuthorityService.js') ? 'export const resolveCommercialRecipientAuthority=()=>{throw Error("MERCHANT_ACCOUNT_FORBIDDEN")};' :
         args.path.endsWith('mercadoPagoPixProvider.js') ? 'export const verifyMercadoPagoWebhookSignature=()=>{throw Error("MERCHANT_WEBHOOK_FORBIDDEN")};' :
-        'export const FieldValue={serverTimestamp:()=>"SERVER_TIME"},FieldPath={documentId:()=>"id"};';
+        'export const FieldValue={serverTimestamp:()=>"SERVER_TIME"},FieldPath={documentId:()=>"id"}; export const getFirestore=()=>{throw Error("COCAR_PROJECTION_MUST_REMAIN_DISABLED_IN_PIX_MOCK")};';
       return { contents: prefix + source };
     });
   } }],
