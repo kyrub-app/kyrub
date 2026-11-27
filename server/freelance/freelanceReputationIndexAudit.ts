@@ -283,7 +283,9 @@ export async function readReputationSquarePublication(uid:string,postId:unknown)
  assertFreelanceReputationLocal();
  if(!squarePublicationEnabled())throw Error('FREELANCE_FORBIDDEN');
  if(!validFreelanceId(uid)||!validSquarePost(postId))throw Error('FREELANCE_INVALID');
- return adminDb.runTransaction(async tx=>{
+ return adminDb.runTransaction(tx=>readReputationSquareInTransaction(tx,postId),{readOnly:true});
+}
+async function readReputationSquareInTransaction(tx:Transaction,postId:string){
   const hidden={experience:null,reputations:null};
   const [post,proof]=await tx.getAll(adminDb.doc('social_posts/'+postId),adminDb.doc('freelanceReputationSquarePostsV1/'+postId));
   const p=post.data(),r=proof.data();
@@ -291,5 +293,30 @@ export async function readReputationSquarePublication(uid:string,postId:unknown)
   const elapsed=Date.now()-Date.parse(r.createdAtIso);
   if(!Number.isFinite(elapsed)||elapsed<0||elapsed>=squareWindow)return hidden;
   return readAddressSummaryInTransaction(tx,r.authorId,r.identifier,true,true);
- },{readOnly:true});
+
+}
+export async function assertReputationSquareInteraction(tx:Transaction,postId:string){
+ if(!postId.startsWith('reputation_'))return;
+ if(!squarePublicationEnabled()||!validSquarePost(postId))throw Error('FREELANCE_FORBIDDEN');
+ const summary=await readReputationSquareInTransaction(tx,postId);
+ if(!summary.experience||!summary.reputations)throw Error('FREELANCE_FORBIDDEN');
+}
+/** Preserve existing comment collection and parent thread identity, but
+ * require a current valid reputation publication in the write transaction. */
+export async function commentReputationSquare(uid:string,postId:unknown,text:unknown,parentCommentId:unknown){
+ assertFreelanceReputationLocal();
+ if(!validFreelanceId(uid)||!validSquarePost(postId)||typeof text!=='string'||text.trim().length<1||text.length>1000||(parentCommentId!==undefined&&!validFreelanceId(parentCommentId)))throw Error('FREELANCE_INVALID');
+ const ref=adminDb.collection('social_post_comments').doc();
+ return adminDb.runTransaction(async tx=>{
+  await assertReputationSquareInteraction(tx,postId);
+  if(parentCommentId!==undefined){
+   const parent=await tx.get(adminDb.doc('social_post_comments/'+parentCommentId));
+   if(!parent.exists||parent.get('postId')!==postId)throw Error('FREELANCE_INVALID');
+  }
+  const profile=(await tx.get(adminDb.doc('users/'+uid))).data();
+  const name=typeof profile?.name==='string'&&profile.name.trim()?profile.name.trim().slice(0,160):'Kairubido';
+  const avatar=typeof profile?.photoUrl==='string'?profile.photoUrl.slice(0,2048):'';
+  const now=new Date();
+  tx.create(ref,{postId,authorId:uid,authorName:name,authorAvatar:avatar,text:text.trim(),...(parentCommentId===undefined?{}:{parentCommentId}),createdAtIso:now.toISOString(),createdAt:now});
+ });
 }
