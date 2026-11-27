@@ -7,6 +7,7 @@ import {normalizePrivacyRequest} from '../../shared/privacyRights.js';
 import {preparePrivacyRequest,projectPrivacyReceipt,type PrivacyRequestRecord} from './privacyRightsPolicy.js';
 export const PRIVACY_EMULATOR_PROJECT='demo-kyrub-privacy';
 const APP='privacy-rights-local-emulator';
+export const PRIVACY_TRACKING_TTL_MS=30*86400000;
 const deny=():never=>{throw Error('PRIVACY_REQUEST_FORBIDDEN');};
 const validTime=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
 const opaque=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v);
@@ -21,12 +22,13 @@ export function createPrivacyRightsEmulator(){
  assertPrivacyEmulator();
  const app=getApps().find(a=>a.name===APP)??initializeApp({projectId:PRIVACY_EMULATOR_PROJECT},APP);
  if(app.options.projectId!==PRIVACY_EMULATOR_PROJECT)return deny();
- const db=getFirestore(app),channels=db.collection('privacy_emulator_channels'),requests=db.collection('privacy_emulator_requests'),index=db.collection('privacy_emulator_request_index'),quota=db.collection('privacy_emulator_intake_quota');
+ const db=getFirestore(app),channels=db.collection('privacy_emulator_channels'),requests=db.collection('privacy_emulator_requests'),index=db.collection('privacy_emulator_request_index'),quota=db.collection('privacy_emulator_intake_quota'),tracking=db.collection('privacy_emulator_tracking');
  return {
   async submit(credential:ChannelCredential,requestId:string,input:unknown,now:number){
    assertPrivacyEmulator();
    if(!credential||Object.keys(credential).length!==2||!opaque(credential.id)||!opaque(credential.secret)||!opaque(requestId)||!validTime(now))return deny();
    const draft=normalizePrivacyRequest(input),digest=hash(JSON.stringify(draft)),key=hash(credential.id+':'+requestId);
+   const trackingCode=createHash('sha256').update('privacy-tracking-v1:'+credential.id+':'+credential.secret+':'+requestId).digest('base64url');
    return db.runTransaction(async tx=>{
     assertPrivacyEmulator();
     const [proof,prior,q]=await Promise.all([tx.get(channels.doc(credential.id)),tx.get(index.doc(key)),tx.get(quota.doc(credential.id))]);
@@ -37,7 +39,9 @@ export function createPrivacyRightsEmulator(){
      if(!p||p.channelReference!==credential.id||p.payloadDigest!==digest||!uuid(p.protocol))return deny();
      const saved=(await tx.get(requests.doc(p.protocol))).data() as PrivacyRequestRecord|undefined;
      if(!saved||saved.protocol!==p.protocol||saved.channelReference!==credential.id||hash(JSON.stringify(normalizePrivacyRequest(saved.draft)))!==digest)return deny();
-     return projectPrivacyReceipt(saved);
+     const t=(await tx.get(tracking.doc(saved.protocol))).data();
+     if(!t||t.protocol!==saved.protocol||t.simulation!==true||t.revokedAt!==undefined||!validTime(t.createdAt)||!validTime(t.expiresAt)||t.createdAt!==saved.receivedAt||now>=t.expiresAt||!equal(t.digest,hash(trackingCode)))return deny();
+     return {...projectPrivacyReceipt(saved),trackingCode,trackingExpiresAt:t.expiresAt as number};
     }
     const bucket=Math.floor(now/900000),count=q.get('bucket')===bucket?q.get('count'):0;
     if(!Number.isSafeInteger(count)||count<0||count>=5)return deny();
@@ -45,7 +49,30 @@ export function createPrivacyRightsEmulator(){
     tx.create(requests.doc(record.protocol),{...record,revision:0,triageStatus:'pending-review'});
     tx.create(index.doc(key),{channelReference:credential.id,protocol:record.protocol,payloadDigest:digest});
     tx.set(q.ref,{bucket,count:count+1});
-    return projectPrivacyReceipt(record);
+    const trackingExpiresAt=now+PRIVACY_TRACKING_TTL_MS;
+    tx.create(tracking.doc(record.protocol),{protocol:record.protocol,digest:hash(trackingCode),createdAt:now,expiresAt:trackingExpiresAt,simulation:true});
+    return {...projectPrivacyReceipt(record),trackingCode,trackingExpiresAt};
+   });
+  },
+  async track(protocol:string,code:string,now:number){
+   assertPrivacyEmulator();if(!uuid(protocol)||!opaque(code)||!validTime(now))return deny();
+   return db.runTransaction(async tx=>{
+    assertPrivacyEmulator();
+    const [t,s]=await Promise.all([tx.get(tracking.doc(protocol)),tx.get(requests.doc(protocol))]);
+    const a=t.data(),r=s.data();
+    if(!a||a.protocol!==protocol||a.simulation!==true||a.revokedAt!==undefined||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||a.expiresAt-a.createdAt>PRIVACY_TRACKING_TTL_MS||!equal(a.digest,hash(code)))return deny();
+    if(!r||r.protocol!==protocol||r.simulation!==true||r.status!=='received'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed'||!validTime(r.receivedAt)||r.receivedAt!==a.createdAt||!['pending-review','verification-required'].includes(r.triageStatus))return deny();
+    // Status only: no draft, channel reference, identity or personal data.
+    return {protocol,receivedAt:r.receivedAt,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
+   });
+  },
+  async revokeTracking(protocol:string,code:string,now:number){
+   assertPrivacyEmulator();if(!uuid(protocol)||!opaque(code)||!validTime(now))return deny();
+   return db.runTransaction(async tx=>{
+    assertPrivacyEmulator();const ref=tracking.doc(protocol),a=(await tx.get(ref)).data();
+    if(!a||a.protocol!==protocol||a.simulation!==true||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||!equal(a.digest,hash(code)))return deny();
+    if(a.revokedAt===undefined)tx.update(ref,{revokedAt:now});
+    return {revoked:true as const,simulated:true as const};
    });
   }
  };
