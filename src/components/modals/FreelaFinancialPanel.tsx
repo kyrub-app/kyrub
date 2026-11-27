@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import FreelaPixSharing from './FreelaPixSharing';
+import FreelaCancellationAccounting from './FreelaCancellationAccounting';
 type Statement={role:'requester'|'freelancer';statement:'paid'|'received'|'not_received';recordedAt:string};
 type Case={offerId:string;role:'requester'|'freelancer';amountMinor:number;currency:'BRL';timing:'advance'|'on_completion';due:boolean;operationalStatus:string;financialState:string;restrictionActive:boolean;reviewStatus:string|null;reviewOutcome:string|null;bankVerified:false;statements:Statement[];ownNotes:{id:string;note:string;recordedAt:string}[];ownReceipts:{id:string;size:number;recordedAt:string;mimeType:'image/png'}[];canRequestReview:boolean;canSubmitEvidence:boolean};
 type Action={action:string;confirmed:true;eventId?:string;statement?:Statement['statement'];evidenceId?:string;note?:string;receiptId?:string;pngBase64?:string};
@@ -93,6 +94,7 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
     {data.ownReceipts.length===0?<><label className="block">Comprovante fictício PNG (até 256 KiB)<input ref={fileInput} className={field} type="file" accept="image/png" disabled={busy||!!pending} onChange={e=>{const f=e.target.files?.[0];setError('');if(f&&(f.size>262144||f.type!=='image/png'||!f.size)){setFile(null);e.target.value='';setError('Selecione um PNG de até 256 KiB.');}else setFile(f??null);}}/></label><button type="button" className={btn} disabled={busy||!!pending||!file} onClick={()=>void prepareReceipt()}>Enviar comprovante</button></>:<p>Comprovante privado registrado.</p>}
    </div>}
   </>}
+  {!busy&&!pending&&(data?.operationalStatus??operationalStatus)==='cancelled'&&<FreelaCancellationAccounting key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {pending&&<div className="rounded-xl border border-teal-700 p-3 space-y-2"><p>Confirma: {pending.label}?</p><button type="button" className={btn} disabled={busy} onClick={()=>void run(pending.body)}>Confirmar manifestação</button>{' '}<button type="button" className={btn} disabled={busy} onClick={clear}>Voltar</button></div>}
  </section>;
 }
