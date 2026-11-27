@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import {test,after} from 'node:test';
+import {randomBytes,createHash} from 'node:crypto';
+import {initializeApp,getApps,deleteApp} from 'firebase-admin/app';
+import {getFirestore} from 'firebase-admin/firestore';
+import {getAuth} from 'firebase-admin/auth';
+import {assertPrivacyEmulator,PRIVACY_EMULATOR_PROJECT,createPrivacyRightsEmulator} from '../server/governance/privacyRightsEmulator';
+import {privacyVerificationPlan} from '../shared/privacyIdentityReview';
+assertPrivacyEmulator();
+const app=initializeApp({projectId:PRIVACY_EMULATOR_PROJECT},'privacy-identity-fixtures'),db=getFirestore(app),auth=getAuth(app);
+const random=()=>randomBytes(32).toString('base64url'),hash=(s:string)=>createHash('sha256').update(s).digest('hex');
+after(async()=>{for(const a of getApps().filter(a=>['privacy-identity-fixtures','privacy-rights-local-emulator'].includes(a.name)))await deleteApp(a);});
+test('proof of control is bound to the original account and does not grant data access',async()=>{
+ async function account(uid:string){
+  const email=uid+'@example.invalid',password='LocalFixturePassword123!';
+  await auth.createUser({uid,email,password,emailVerified:true});
+  const response=await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,returnSecureToken:true})});
+  assert.equal(response.status,200);return (await response.json() as {idToken:string}).idToken;
+ }
+ const uid='privacy-account-fixture',token=await account(uid),other=await account('privacy-other-fixture');
+ const now=Date.now()+1000,intake=createPrivacyRightsEmulator(),credential={id:random(),secret:random()};
+ const channel=db.collection('privacy_emulator_channels').doc(credential.id);
+ await channel.set({id:credential.id,digest:hash(credential.secret),verifiedAt:now-1000,expiresAt:now+600000,simulation:true,boundAccountUid:uid});
+ const draft={right:'access',context:'ecosystem',confirmed:true},receipt=await intake.submit(credential,random(),draft,now);
+ const request=db.collection('privacy_emulator_requests').doc(receipt.protocol);
+ const clock=()=>Date.now()+1000,confirm=(t:string=token)=>intake.confirmExistingAccount(receipt.protocol,receipt.trackingCode,t,clock());
+ await assert.rejects(confirm());
+ await request.update({triageStatus:'verification-required',revision:1});
+ await assert.rejects(confirm(other));
+ await assert.rejects(intake.confirmExistingAccount(receipt.protocol,random(),token,clock()));
+ await channel.update({boundAccountUid:'privacy-other-fixture'});await assert.rejects(confirm(other));await channel.update({boundAccountUid:uid});
+ await assert.rejects(intake.confirmExistingAccount(receipt.protocol,receipt.trackingCode,token,clock()+6*60000));
+ const result=await confirm();assert.equal(result.evidenceStatus,'account-control-confirmed');assert.equal(result.identityStatus,'pending-verification');assert.equal(result.actionStatus,'not-executed');
+ assert.equal((await confirm()).evidenceStatus,'account-control-confirmed');
+ const track=await intake.track(receipt.protocol,receipt.trackingCode,clock());
+ assert.equal(track.evidenceStatus,'account-control-confirmed');assert.ok(!JSON.stringify(track).includes(uid));
+ assert.equal((await db.collection('privacy_emulator_identity_evidence').get()).size,1);
+ const third=await intake.submit(credential,random(),{...draft,context:'thirdParty'},clock());
+ await db.collection('privacy_emulator_requests').doc(third.protocol).update({triageStatus:'verification-required',revision:1});
+ await assert.rejects(intake.confirmExistingAccount(third.protocol,third.trackingCode,token,clock()));
+ await auth.updateUser(uid,{disabled:true});await assert.rejects(confirm());
+ for(const context of ['ecosystem','cid','thirdParty'] as const)assert.equal(privacyVerificationPlan(context,'access').authorizesExecution,false);
+});
