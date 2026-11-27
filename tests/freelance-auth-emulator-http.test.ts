@@ -1974,7 +1974,7 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
  const payer=await account('batch-reputation-payer',['requester']),worker=await account('batch-reputation-worker',['freelancer']);
  const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
  const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
- const {auditOwnFreelanceReputationIndex,auditOwnFreelanceReputationIndexBatched}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+ const {auditOwnFreelanceReputationIndex,auditOwnFreelanceReputationIndexBatched,certifyOwnFreelanceReputationIndex,readCertifiedFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexAudit.js');
  const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:12000});
  const terms={title:'Contrato de auditoria em lotes',description:'Somente emulador',requirements:'',paymentMinor:12000,paymentTerms};
  const ids=[0,1,2].map(n=>'http-batch-reputation-'+n+'-'+suffix);
@@ -1982,6 +1982,9 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
  const prior=flags.map(k=>process.env[k]);
  try{
   for(const k of flags)process.env[k]='true';
+  assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection,null);
+  assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,true);
+  assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection?.completedContracts,0);
   await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'batch-reputation-'+suffix+'@example.invalid'}});
   for(const [n,id] of ids.entries()){
    await act(payer,id,'publish',200,{terms});
@@ -1994,15 +1997,34 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
    }
    await act(worker,id,'start',200,{confirmed:true});
    await act(worker,id,'request_completion',200,{confirmed:true});
+   if(n===2)delete process.env[flags[1]];
    await act(payer,id,'confirm_completion',200,{confirmed:true});
+   if(n===2){
+    process.env[flags[1]]='true';
+    assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).state,'repair_required');
+    assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection,null);
+    assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,false);
+    const {reconcileFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexService.js');
+    assert.equal((await reconcileFreelanceReputationIndex(worker.uid,id)).experienceAdded,true);
+    assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,true);
+   }
+   assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection?.completedContracts,n+1);
    if(n<2){
     const scores=n===0?reputationFixture('professional',5):{...reputationFixture('professional',3),cooperation:null};
     await act(payer,id,'submit_reputation',200,{confirmed:true,scores});
     await act(worker,id,'submit_reputation',200,{confirmed:true,scores:reputationFixture('personal_requester',4)});
+    assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection?.aggregate.ratingCount,n+1);
    }
   }
   const baseline=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
   assert.equal(baseline.state,'verified_snapshot');
+  assert.deepEqual((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection,baseline.projection);
+  const {digestVariablePaymentSources:hash}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
+  const index=db.doc('freelanceReputationIndexesV1/'+hash({subject:{kind:'professional',id:worker.uid},representativeUid:worker.uid}));
+  const old=(await index.get()).get('accumulator');
+  await index.update({'accumulator.ratingUnits':old.ratingUnits+1});
+  assert.equal((await readCertifiedFreelanceReputationIndex(worker.uid,'professional')).projection,null);
+  await index.update({accumulator:old});
   assert.equal(baseline.projection?.completedContracts,3);
   assert.equal(baseline.projection?.aggregate.ratingCount,2);
   assert.equal(baseline.projection?.aggregate.mean,4);
