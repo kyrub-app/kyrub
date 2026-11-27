@@ -46,6 +46,7 @@ test('response preparation and independent review never deliver data or execute 
  await grant.update({permissions:['privacy:read','privacy:assess','privacy:prepare-response','privacy:review-response']});
  const prepared=await admin.prepareResponse(adminToken,draftResponse,clock());
  assert.equal(prepared.status,'draft');assert.equal(prepared.delivered,false);
+ const draftRow=(await admin.list(adminToken,clock())).items.find(x=>x.protocol===receipt.protocol);assert.equal(draftRow?.responseRevision,1);
  assert.equal((await intake.track(receipt.protocol,receipt.trackingCode,clock())).reviewedNotice,undefined);
  const reviewInput={...draftResponse,expectedResponseRevision:1,decision:'approve'};
  await assert.rejects(admin.reviewResponse(adminToken,reviewInput,clock()));
@@ -78,6 +79,7 @@ test('response preparation and independent review never deliver data or execute 
  await assert.rejects(admin.reviewResponse(reviewerToken,{...reviewNext,delivered:true},clock()));
  const reviewed=await admin.reviewResponse(reviewerToken,reviewNext,clock());
  assert.equal(reviewed.status,'reviewed');assert.equal(reviewed.delivered,false);assert.equal(reviewed.actionStatus,'not-executed');
+ const reviewedRow=(await admin.list(adminToken,clock())).items.find(x=>x.protocol===receipt.protocol);assert.equal(reviewedRow?.responseRevision,2);assert.equal(reviewedRow?.responseStatus,'reviewed');
  const visible=await intake.track(receipt.protocol,receipt.trackingCode,clock());assert.ok(visible.reviewedNotice?.includes('Nenhuma entrega'));
  await assert.rejects(intake.track(receipt.protocol,random(),clock()));
  await assert.rejects(admin.reviewResponse(reviewerToken,reviewNext,clock()));
