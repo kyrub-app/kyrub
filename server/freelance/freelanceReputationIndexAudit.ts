@@ -225,7 +225,9 @@ export async function readAddressFreelanceExperience(viewerUid:string,identifier
  if(!certifiedReputationReadEnabled()||process.env.KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
  if(includeReputation&&process.env.KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
  if(!validFreelanceId(viewerUid)||typeof identifier!=='string'||!isSocialAddress('profile',identifier))throw Error('FREELANCE_INVALID');
- return adminDb.runTransaction(async tx=>{
+ return adminDb.runTransaction(tx=>readAddressSummaryInTransaction(tx,viewerUid,identifier,includeReputation,ownerOnly),{readOnly:true});
+}
+async function readAddressSummaryInTransaction(tx:Transaction,viewerUid:string,identifier:string,includeReputation:boolean,ownerOnly:boolean){
   const hidden=includeReputation?{experience:null,reputations:null}:{experience:null};
   const mapping=(await tx.get(adminDb.doc('public_social_addresses/profile:'+identifier))).data();
   if(!mapping||!isDocumentId(mapping.targetId)||!matchesSocialAddressRecord(mapping,'profile',identifier,mapping.targetId))return hidden;
@@ -238,10 +240,56 @@ export async function readAddressFreelanceExperience(viewerUid:string,identifier
   const profile=(await tx.get(ref.collection('public_profile').doc('main'))).data();
   if(!projectSocialAddress({kind:'profile',identifier,targetId:uid},source,profile))return hidden;
   return readExperienceCounts(tx,uid,includeReputation);
- },{readOnly:true});
+
 }
 
 export async function readOwnReputationSquarePreview(uid:string,identifier:unknown){
  if(process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
  return readAddressFreelanceExperience(uid,identifier,true,true);
+}
+
+const squarePublicationEnabled=()=>certifiedReputationReadEnabled()&&process.env.KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY==='true'&&process.env.KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY==='true'&&process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY==='true'&&process.env.KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY==='true';
+const squarePostId=(uid:string,requestId:string)=>'reputation_'+digestVariablePaymentSources({uid,requestId});
+const validSquarePost=(v:unknown):v is string=>typeof v==='string'&&/^reputation_[a-f0-9]{64}$/.test(v);
+const squareWindow=24*60*60*1000;
+/** Only a server-created reference attests this special publication.
+ * Store no numeric snapshot in either document. Request ID is idempotent. */
+export async function publishOwnReputationSquare(uid:string,identifier:unknown,requestId:unknown,confirmed:unknown){
+ assertFreelanceReputationLocal();
+ if(!squarePublicationEnabled())throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||typeof identifier!=='string'||!isSocialAddress('profile',identifier)||!validFreelanceId(requestId)||confirmed!==true)throw Error('FREELANCE_INVALID');
+ const postId=squarePostId(uid,requestId),postRef=adminDb.doc('social_posts/'+postId),proofRef=adminDb.doc('freelanceReputationSquarePostsV1/'+postId);
+ return adminDb.runTransaction(async tx=>{
+  const [post,proof]=await tx.getAll(postRef,proofRef);
+  const expected={schemaVersion:1,postId,authorId:uid,identifier,requestId};
+  if(proof.exists){
+   const raw=proof.data();
+   if(!post.exists||!raw||!equal(raw,{...expected,createdAtIso:raw.createdAtIso})||post.get('authorId')!==uid||post.get('createdAtIso')!==raw.createdAtIso)throw Error('FREELANCE_REPUTATION_CONFLICT');
+   return {postId,created:false};
+  }
+  if(post.exists)throw Error('FREELANCE_REPUTATION_CONFLICT');
+  const summary=await readAddressSummaryInTransaction(tx,uid,identifier,true,true);
+  if(!summary.experience||!summary.reputations)throw Error('FREELANCE_FORBIDDEN');
+  const userRef=adminDb.doc('users/'+uid),[source,publicProfile]=await tx.getAll(userRef,userRef.collection('public_profile').doc('main'));
+  const identity=projectSocialAddress({kind:'profile',identifier,targetId:uid},source.data(),publicProfile.data());
+  if(!identity)throw Error('FREELANCE_FORBIDDEN');
+  const now=new Date(),createdAtIso=now.toISOString();
+  tx.create(proofRef,{...expected,createdAtIso});
+  tx.create(postRef,{postId,sourcePostId:postId,authorId:uid,authorName:identity.name,authorAvatar:identity.image,content:'Conheça minha Experiência e Reputações no Kyrub!',publicationType:'feed',taggedUsers:[],taggedUserIds:[],mediaUrls:[],visibility:'public',audienceIds:[],createdAtIso,createdAt:now,updatedAt:now});
+  return {postId,created:true};
+ });
+}
+export async function readReputationSquarePublication(uid:string,postId:unknown){
+ assertFreelanceReputationLocal();
+ if(!squarePublicationEnabled())throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||!validSquarePost(postId))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const hidden={experience:null,reputations:null};
+  const [post,proof]=await tx.getAll(adminDb.doc('social_posts/'+postId),adminDb.doc('freelanceReputationSquarePostsV1/'+postId));
+  const p=post.data(),r=proof.data();
+  if(!p||!r||Object.keys(r).length!==6||r.schemaVersion!==1||r.postId!==postId||!validFreelanceId(r.authorId)||!validFreelanceId(r.requestId)||squarePostId(r.authorId,r.requestId)!==postId||typeof r.identifier!=='string'||!isSocialAddress('profile',r.identifier)||typeof r.createdAtIso!=='string'||p.createdAtIso!==r.createdAtIso||p.authorId!==r.authorId||p.postId!==postId||p.visibility!=='public'||p.publicationType!=='feed')return hidden;
+  const elapsed=Date.now()-Date.parse(r.createdAtIso);
+  if(!Number.isFinite(elapsed)||elapsed<0||elapsed>=squareWindow)return hidden;
+  return readAddressSummaryInTransaction(tx,r.authorId,r.identifier,true,true);
+ },{readOnly:true});
 }
