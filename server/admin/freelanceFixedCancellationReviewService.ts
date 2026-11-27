@@ -1,3 +1,4 @@
+import {buildFixedCancellationResolution,writeFixedResolution} from '../freelance/freelanceFixedCancellationResolution.js';
 import {digestVariablePaymentSources} from '../freelance/freelanceVariablePaymentBasisService.js';
 import {projectHourlyReviewNotes,projectHourlyAttachments,readHourlyAttachment} from '../freelance/freelanceHourlyReviewNotes.js';
 import {calculateCancellationAccounting} from '../../shared/freelanceCancellationAccounting.js';
@@ -65,6 +66,8 @@ export async function decideFixedCancellationReview(auth:string,input:unknown){
   if(Date.parse(now)<Date.parse(c.dispute.requestedAt!))return fail();
   calculateCancellationAccounting(c.obligation,c.events,amount,received);
   const decision={actorUid:uid,recognizedServiceMinor:amount,reportedReceivedMinor:received,snapshot:c.snapshot,reason,decidedAt:now,proposalDigest:digestVariablePaymentSources(c.proposal??null),evidenceDigest:c.evidence.digest};
+  const resolution=buildFixedCancellationResolution({...c.resolutionBase,kind:'administrative',resolvedAt:now,recognizedServiceMinor:amount,reportedReceivedMinor:received,decision});
+  writeFixedResolution(tx,c.resolutionRecords,resolution);
   tx.update(c.disputeRef,{status:'resolved_administratively',decision});
   tx.update(c.queueRef,{status:'resolved_administratively'});
   tx.create(auditRef,{id:auditId,action:'admin.freelance.fixed_cancellation_resolved',actorId:uid,actorRole:'super_admin',targetType:'freelance_fixed_cancellation_review',targetId:id,sourceDigest:b.sourceDigest,recognizedServiceMinor:amount,reportedReceivedMinor:received,proposalDigest:decision.proposalDigest,evidenceDigest:decision.evidenceDigest,reasonHash,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});

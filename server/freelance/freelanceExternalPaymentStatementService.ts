@@ -150,6 +150,13 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
    (Date.parse(now)<Date.parse(offer.completedAt!)||events.some(e=>Date.parse(e.recordedAt)<Date.parse(offer.completedAt!))))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   const next=appendExternalPixStatement(obligation,events,{id:b.eventId as string,actorUid:uid,statement:b.statement as ExternalPixStatement,recordedAt:now});
   if(next.changed){
+   // A resolved fixed cancellation has its own directional balance. Never
+   // append to the original full-price declaration history after resolution.
+   if(offer.status==='cancelled'&&offer.workTerms?.mode!=='hourly'){
+    const direct=adminDb.doc('freelanceOffersV1/'+offerId).collection('directPayment');
+    const [resolution,adjustment]=await tx.getAll(direct.doc('fixedCancellationResolution'),direct.doc('fixedCancellationAdjustment'));
+    if(resolution.exists||adjustment.exists)throw Error('FREELANCE_CANCELLATION_ACCOUNTING_CONFLICT');
+   }
    const existing=checkedReview(reviewSnapshot.data(),obligation);
    const administrativelyClosed=existing?.status==='resolved_administratively';
    // Actual receipt may be recorded later without reopening or rewriting the decision.
