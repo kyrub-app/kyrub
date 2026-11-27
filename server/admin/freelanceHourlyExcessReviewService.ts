@@ -1,4 +1,4 @@
-import {buildHourlyExcessAdministrativeResolution,readHourlyExcessContext} from '../freelance/freelanceHourlyExcessReviewService.js';
+import {buildHourlyExcessAdministrativeResolution,buildHourlyExcessObligation,readHourlyExcessContext} from '../freelance/freelanceHourlyExcessReviewService.js';
 import {digestVariablePaymentSources} from '../freelance/freelanceVariablePaymentBasisService.js';
 import {createHash} from 'node:crypto';
 import {FieldPath,FieldValue} from 'firebase-admin/firestore';
@@ -62,7 +62,8 @@ export async function decideHourlyExcessReview(auth:string,input:unknown){
   if(Date.parse(now)<Date.parse(c.dispute.requestedAt!))return fail();
   const decision={actorUid:uid,recognizedExcessMs:amount,reason,decidedAt:now,proposalDigest:digestVariablePaymentSources(c.proposal)};
   const resolution=buildHourlyExcessAdministrativeResolution(c.record,decision);
-  tx.create(c.resolutionRef,resolution);
+  const final=buildHourlyExcessObligation(c.record,resolution);
+  tx.create(c.resolutionRef,resolution);if(final)tx.create(c.finalRef,final);
   tx.update(c.disputeRef,{status:'resolved_administratively',decision});
   tx.update(c.queueRef,{status:'resolved_administratively'});
   tx.create(auditRef,{id:auditId,action:'admin.freelance.hourly_excess_resolved',actorId:uid,actorRole:'super_admin',targetType:'freelance_hourly_excess_review',targetId:id,sourceDigest:b.sourceDigest,recognizedExcessMs:amount,proposalDigest:decision.proposalDigest,reasonHash,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});
