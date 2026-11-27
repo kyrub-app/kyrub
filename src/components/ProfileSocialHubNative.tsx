@@ -526,6 +526,9 @@ export function ProfileSocialHubNative() {
   const [removeContactTarget, setRemoveContactTarget] = useState<Friend | null>(null);
   const [chatTarget, setChatTarget] = useState<Friend | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
+  const [pendingChatNotification, setPendingChatNotification] = useState<{
+    friendId: string; connectionId: string; recipientId: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const socialFeed = usePublicSocialFeed();
@@ -561,6 +564,9 @@ export function ProfileSocialHubNative() {
   useEffect(() => {
     return onAuthStateChanged(auth, nextUser => {
       setUser(nextUser);
+      setPendingChatNotification(null);
+      setChatTarget(null);
+      setChatMessageText('');
       if (!nextUser) {
         setEditOpen(false);
         setOpen(false);
@@ -587,6 +593,36 @@ export function ProfileSocialHubNative() {
     window.addEventListener('kyrub:open-connections', openConnections);
     return () => window.removeEventListener('kyrub:open-connections', openConnections);
   }, []);
+
+  useEffect(() => {
+    const openSocialChatFromNotification = (event: Event) => {
+      const detail = (event as CustomEvent<{ friendId?: string; connectionId?: string; recipientId?: string }>).detail;
+      if (!user || auth.currentUser?.uid !== user.uid || detail?.recipientId !== user.uid ||
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(detail.friendId ?? '') ||
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(detail.connectionId ?? '')) return;
+      setPendingChatNotification({ friendId: detail.friendId!, connectionId: detail.connectionId!, recipientId: user.uid });
+      setActiveTab('connected');
+      setConnectionSection('connected');
+      setOpen(true);
+    };
+    window.addEventListener('kyrub:open-social-chat', openSocialChatFromNotification);
+    return () => window.removeEventListener('kyrub:open-social-chat', openSocialChatFromNotification);
+  }, [user]);
+
+  useEffect(() => {
+    if (!open || !pendingChatNotification || !user ||
+        auth.currentUser?.uid !== pendingChatNotification.recipientId ||
+        user.uid !== pendingChatNotification.recipientId) return;
+    const friend = directory.friends.find(item =>
+      item.id === pendingChatNotification.friendId &&
+      item.connectionId === pendingChatNotification.connectionId &&
+      item.connectionStatus === 'accepted'
+    );
+    if (!friend) return;
+    setChatMessageText('');
+    setChatTarget(friend);
+    setPendingChatNotification(null);
+  }, [open, pendingChatNotification, directory.friends, user]);
 
   useEffect(() => {
     // Legacy links use the exact same editor as the Central Pessoal.

@@ -3,6 +3,7 @@ export const USER_NOTIFICATION_MAX_TITLE_LENGTH = 120;
 export const USER_NOTIFICATION_MAX_BODY_LENGTH = 500;
 
 export type UserNotificationCategory =
+  | 'social_chat'
   | 'note_invitation'
   | 'store_chat'
   | 'order'
@@ -13,6 +14,7 @@ export type UserNotificationCategory =
   | 'system';
 
 export type UserNotificationTargetKind =
+  | 'social_chat'
   | 'note_invitation'
   | 'store_chat'
   | 'storefront'
@@ -32,6 +34,7 @@ export interface UserNotificationTarget {
   groupId?: string;
   postId?: string;
   noteInvitationId?: string;
+  connectionId?: string;
 }
 
 export interface UserNotification {
@@ -129,6 +132,7 @@ export const buildUserNotification = (input: {
 
   const targetKind = input.target?.kind ?? 'none';
   if (
+    targetKind !== 'social_chat' &&
     targetKind !== 'note_invitation' &&
     targetKind !== 'store_chat' &&
     targetKind !== 'storefront' &&
@@ -140,6 +144,9 @@ export const buildUserNotification = (input: {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
 
+  if (targetKind === 'social_chat' && !validPathId(clean(input.target?.connectionId))) {
+    throw new Error('USER_NOTIFICATION_TARGET_INVALID');
+  }
   if (targetKind === 'note_invitation' && !validPathId(clean(input.target?.noteInvitationId))) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
@@ -164,6 +171,7 @@ export const buildUserNotification = (input: {
     body,
     target: {
       kind: targetKind,
+      ...(targetKind === 'social_chat' ? { connectionId: clean(input.target?.connectionId) } : {}),
       ...(targetKind === 'note_invitation' ? { noteInvitationId: clean(input.target?.noteInvitationId) } : {}),
       storeId: clean(input.target?.storeId),
       customerId: clean(input.target?.customerId),

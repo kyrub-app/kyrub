@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Timestamp,
-  addDoc,
   collection,
   limitToLast,
   onSnapshot,
   orderBy,
-  query,
-  serverTimestamp
+  query
 } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
 
@@ -54,6 +52,8 @@ export function useChatMessages({
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingSendRef = useRef<{ key: string; messageId: string } | null>(null);
+  const sendingRef = useRef(false);
 
   useEffect(() => {
     setMessages([]);
@@ -140,28 +140,37 @@ export function useChatMessages({
       throw lengthError;
     }
 
+    if (sendingRef.current) throw new Error('Aguarde a confirmação do envio.');
+    sendingRef.current = true;
     setIsSending(true);
     setError(null);
 
     try {
-      await addDoc(
-        collection(
-          db,
-          'social_chats',
-          connectionId,
-          'messages'
-        ),
-        {
-          senderId: currentUser.uid,
-          receiverId,
-          text: normalizedText,
-          createdAt: serverTimestamp()
-        }
-      );
+      const key = JSON.stringify([currentUser.uid, connectionId, receiverId, normalizedText]);
+      const messageId = pendingSendRef.current?.key === key
+        ? pendingSendRef.current.messageId
+        : 'dm_' + globalThis.crypto.randomUUID().replace(/-/g, '');
+      pendingSendRef.current = { key, messageId };
+      const token = await currentUser.getIdToken();
+      if (auth.currentUser?.uid !== currentUser.uid) throw new Error('Sessão alterada.');
+      const response = await fetch('/api/notifications/social-messages/send', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ connectionId, receiverId, messageId, text: normalizedText }),
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || 'Não foi possível entregar a mensagem.');
+      }
+      const receipt = await response.json() as { messageId?: string; created?: boolean };
+      if (receipt.messageId !== messageId || typeof receipt.created !== 'boolean') throw new Error('Envio não confirmado.');
+      pendingSendRef.current = null;
     } catch (sendError) {
       setError(getErrorMessage(sendError));
       throw sendError;
     } finally {
+      sendingRef.current = false;
       setIsSending(false);
     }
   }, [connectionId, enabled, receiverId]);

@@ -38,6 +38,12 @@ const CATEGORY_ITEMS: Array<{
     icon: MessageSquareText,
   },
   {
+    key: 'social_chat',
+    label: 'Mensagens entre Kairubidos',
+    description: 'Avisos de mensagens de pessoas conectadas a você.',
+    icon: MessageSquareText,
+  },
+  {
     key: 'note_invitation',
     label: 'Convites de notas e tarefas',
     description: 'Quando alguém convidar você para colaborar numa nota.',

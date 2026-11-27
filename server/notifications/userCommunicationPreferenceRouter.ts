@@ -39,6 +39,8 @@ const categoriesFromBody = (
       ? true : boolean(data.user_forward),
     note_invitation: data.note_invitation === undefined
       ? true : boolean(data.note_invitation),
+    social_chat: data.social_chat === undefined
+      ? true : boolean(data.social_chat),
   };
 };
 
