@@ -1,3 +1,4 @@
+import {buildUserNotification,userNotificationPath} from '../../shared/userNotifications.js';
 import {isSocialAddress,isDocumentId,matchesSocialAddressRecord,projectSocialAddress} from '../identity/publicSocialAddressPolicy.js';
 import {coverageRef,indexDigest,checkedCoverage,writeCoverage,readReputationMaintenance} from './freelanceReputationCoverage.js';
 import type {Transaction,QueryDocumentSnapshot} from 'firebase-admin/firestore';
@@ -362,6 +363,7 @@ export async function forwardReputationToConnected(uid:string,postId:unknown,con
  if(!validFreelanceId(uid)||!validSquarePost(postId)||!validFreelanceId(connectionId)||!validFreelanceId(recipientId)||uid===recipientId||confirmed!==true||(connectionId!==uid+'_'+recipientId&&connectionId!==recipientId+'_'+uid))throw Error('FREELANCE_INVALID');
  const receiptRef=adminDb.doc('freelanceReputationSquarePostsV1/'+postId+'/directForwards/'+digestVariablePaymentSources({uid,recipientId}));
  const messageRef=adminDb.collection('social_chats/'+connectionId+'/messages').doc();
+ const notificationIdSource=digestVariablePaymentSources({connectionId,uid,messageId:messageRef.id});
  return adminDb.runTransaction(async tx=>{
   await assertReputationSquareInteraction(tx,postId);
   const [connection,receipt]=await tx.getAll(adminDb.doc('connections/'+connectionId),receiptRef);
@@ -375,6 +377,16 @@ export async function forwardReputationToConnected(uid:string,postId:unknown,con
    if(!Number.isFinite(elapsed)||elapsed<0)throw Error('FREELANCE_REPUTATION_CONFLICT');
    if(elapsed<squareWindow)throw Error('FREELANCE_CONFLICT');
   }
+  const notification=buildUserNotification({
+   recipientUserId:recipientId,category:'social_chat',eventType:'reputation_forward_received',
+   sourceId:notificationIdSource,actorPrincipalId:uid,
+   title:'Publicação encaminhada por um Kairubido',
+   body:'Você recebeu uma publicação de Experiência e Reputações. Abra a conversa para consultar o conteúdo original.',
+   target:{kind:'social_chat',connectionId},createdAt:forwardedAtIso,
+  });
+  const noticeRef=adminDb.doc(userNotificationPath(recipientId,notification.id));
+  if((await tx.get(noticeRef)).exists)throw Error('FREELANCE_CONFLICT');
+  tx.create(noticeRef,notification);
   tx.create(messageRef,{senderId:uid,receiverId:recipientId,text:'Encaminhou uma publicação de Experiência e Reputações.',reputationPostId:postId,createdAt:now});
   tx.set(receiptRef,{...scope,connectionId,messageId:messageRef.id,forwardedAtIso});
   return {messageId:messageRef.id};
