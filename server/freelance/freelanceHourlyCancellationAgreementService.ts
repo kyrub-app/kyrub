@@ -1,3 +1,4 @@
+import {prepareCancellationRestriction} from './freelanceEngagementRestrictionService.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
@@ -27,22 +28,34 @@ async function context(tx:Transaction,uid:string,id:string){
   else if(!iso(proposal.decidedAt)||Date.parse(proposal.decidedAt)<Date.parse(proposal.proposedAt)||!['worker','requester'].includes(proposal.decidedBy??'')||
    (proposal.status==='withdrawn'?proposal.decidedBy!==proposal.proposedBy:proposal.decidedBy===proposal.proposedBy))return fail();
  }
- return {c,record,capMinor,direct,pointer,proposal};
+ const disputeRef=direct.doc('hourlyCancellationDispute'),rawDispute=(await tx.get(disputeRef)).data();
+ const dispute=rawDispute as {schemaVersion:1;sourceDigest:string;openedBy:Role;openedAt:string;status:'open'|'review_requested'|'resolved_voluntarily';requestedBy?:Role;requestedAt?:string;resolvedAt?:string;agreementId?:string}|undefined;
+ if(dispute){
+  const requested=dispute.requestedAt!==undefined||dispute.requestedBy!==undefined;
+  if(dispute.schemaVersion!==1||dispute.sourceDigest!==record.sourceDigest||!['worker','requester'].includes(dispute.openedBy)||!iso(dispute.openedAt)||Date.parse(dispute.openedAt)<Date.parse(record.cancelledAt)||
+   !['open','review_requested','resolved_voluntarily'].includes(dispute.status)||Object.keys(dispute).length!==5+(requested?2:0)+(dispute.status==='resolved_voluntarily'?2:0)||
+   (requested&&(!iso(dispute.requestedAt)||Date.parse(dispute.requestedAt)<Date.parse(dispute.openedAt)||!['worker','requester'].includes(dispute.requestedBy??'')))||
+   (dispute.status==='open'&&requested)||(dispute.status==='review_requested'&&!requested)||
+   (dispute.status==='resolved_voluntarily'?(!iso(dispute.resolvedAt)||Date.parse(dispute.resolvedAt)<Date.parse(dispute.requestedAt??dispute.openedAt)||proposal?.status!=='accepted'||dispute.agreementId!==proposal.id||dispute.resolvedAt!==proposal.decidedAt):proposal?.status==='accepted'))return fail();
+ }
+ const restricted=!!dispute&&dispute.status!=='resolved_voluntarily';
+ await prepareCancellationRestriction(tx,record.commitment,restricted,restricted);
+ return {c,record,capMinor,direct,pointer,proposal,dispute,disputeRef,restricted};
 }
 export async function readHourlyCancellationAgreement(uid:string,id:string){
  return adminDb.runTransaction(async tx=>{
-  const {c,record,capMinor,proposal}=await context(tx,uid,id);
+  const {c,record,capMinor,proposal,dispute,restricted}=await context(tx,uid,id);
   return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,capMinor,
    referenceMinor:record.accounting?.withinCapReferenceMinor??null,recordedMs:record.accounting?.compensableMs??null,
    excessMs:record.accounting?.excessMs??null,proposal,agreedMinor:proposal?.status==='accepted'?proposal.recognizedServiceMinor:null,
-   payable:false,bankVerified:false};
+   dispute:dispute??null,restrictionActive:restricted,payable:false,bankVerified:false};
  },{readOnly:true});
 }
 export async function changeHourlyCancellationAgreement(uid:string,id:string,action:'propose'|'accept'|'decline'|'withdraw',input:{proposalId:unknown;sourceDigest:unknown;recognizedServiceMinor?:unknown;confirmed:unknown}){
  if(!validFreelanceId(input.proposalId)||input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest))throw Error('FREELANCE_INVALID');
  const proposalId=input.proposalId;
  return adminDb.runTransaction(async tx=>{
-  const {c,record,capMinor,direct,pointer,proposal:p}=await context(tx,uid,id);
+  const {c,record,capMinor,direct,pointer,proposal:p,dispute,disputeRef,restricted}=await context(tx,uid,id);
   if(input.sourceDigest!==record.sourceDigest)return fail();
   const now=new Date().toISOString(),ref=direct.doc('hourlyCancellationAgreement-'+proposalId);
   if(Date.parse(now)<Date.parse(record.cancelledAt))return fail();
@@ -62,8 +75,35 @@ export async function changeHourlyCancellationAgreement(uid:string,id:string,act
   if(action==='withdraw'?c.actor!==p.proposedBy:c.actor===p.proposedBy)throw Error('FREELANCE_FORBIDDEN');
   if(p.status===status&&p.decidedBy===c.actor)return {changed:false};
   if(p.status!=='pending'||Date.parse(now)<Date.parse(p.proposedAt))return fail();
+  const release=status==='accepted'&&restricted?await prepareCancellationRestriction(tx,record.commitment,true,false):()=>{};
+  if(status==='accepted'&&restricted){if(!dispute||Date.parse(now)<Date.parse(dispute.requestedAt??dispute.openedAt))return fail();tx.update(disputeRef,{status:'resolved_voluntarily',resolvedAt:now,agreementId:p.id});release();}
   tx.update(ref,{status,decidedBy:c.actor,decidedAt:now});
   writeFreelanceFinancialNotices(tx,record.commitment,status==='accepted'?'hourly_cancellation_accepted':'hourly_cancellation_closed',now,recipient,proposalId);
+  return {changed:true};
+ });
+}
+
+/** Declining is not itself a dispute. Explicit opening after a declined
+ * proposal; agreement remains available while restricted or awaiting review. */
+export async function changeHourlyCancellationDispute(uid:string,id:string,action:'open'|'request_review',input:{sourceDigest:unknown;confirmed:unknown}){
+ if(input.confirmed!==true||typeof input.sourceDigest!=='string'||!/^[a-f0-9]{64}$/.test(input.sourceDigest))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const {c,record,proposal,dispute,disputeRef,restricted}=await context(tx,uid,id);
+  if(input.sourceDigest!==record.sourceDigest)return fail();
+  const now=new Date().toISOString();
+  if(action==='open'){
+   if(dispute){if(restricted&&dispute.openedBy===c.actor)return {changed:false};return fail();}
+   if(proposal?.status!=='declined'||!proposal.decidedAt||Date.parse(now)<Date.parse(proposal.decidedAt))return fail();
+   const write=await prepareCancellationRestriction(tx,record.commitment,false,true);
+   tx.create(disputeRef,{schemaVersion:1,sourceDigest:record.sourceDigest,openedBy:c.actor,openedAt:now,status:'open'});
+   write();writeFreelanceFinancialNotices(tx,record.commitment,'hourly_cancellation_disputed',now,'both','dispute');
+   return {changed:true};
+  }
+  if(!dispute||!restricted)return fail();
+  if(dispute.status==='review_requested'){if(dispute.requestedBy===c.actor)return {changed:false};return fail();}
+  if(dispute.status!=='open'||Date.parse(now)<Date.parse(dispute.openedAt))return fail();
+  tx.update(disputeRef,{status:'review_requested',requestedBy:c.actor,requestedAt:now});
+  writeFreelanceFinancialNotices(tx,record.commitment,'hourly_cancellation_review_requested',now,'both','dispute');
   return {changed:true};
  });
 }
