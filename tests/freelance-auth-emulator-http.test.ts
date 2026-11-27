@@ -1969,3 +1969,65 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
   }
  }finally{t.mock.restoreAll();if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
 });
+
+test('reputation index batched audit: real completed contracts, mixed ratings, exhaustion and missing receipts',async()=>{
+ const payer=await account('batch-reputation-payer',['requester']),worker=await account('batch-reputation-worker',['freelancer']);
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const {auditOwnFreelanceReputationIndex,auditOwnFreelanceReputationIndexBatched}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+ const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:12000});
+ const terms={title:'Contrato de auditoria em lotes',description:'Somente emulador',requirements:'',paymentMinor:12000,paymentTerms};
+ const ids=[0,1,2].map(n=>'http-batch-reputation-'+n+'-'+suffix);
+ const flags=['KYRUB_FREELANCE_REPUTATION_TEST_ONLY','KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY'];
+ const prior=flags.map(k=>process.env[k]);
+ try{
+  for(const k of flags)process.env[k]='true';
+  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'batch-reputation-'+suffix+'@example.invalid'}});
+  for(const [n,id] of ids.entries()){
+   await act(payer,id,'publish',200,{terms});
+   await act(worker,id,'apply',200,{expectedPaymentTerms:paymentTerms});
+   await act(payer,id,'select',200,{applicantUid:worker.uid});
+   await act(worker,id,'confirm',200,{confirmed:true,expectedPaymentTerms:paymentTerms});
+   for(const action of ['bind_pix','authorize_pix_share']){
+    const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance',{method:'POST',headers:{authorization:'Bearer '+worker.token,'content-type':'application/json'},body:JSON.stringify({offerId:id,action,confirmed:true,expectedRevision:1})});
+    const b=await r.json();assert.equal(r.status,200,JSON.stringify(b));
+   }
+   await act(worker,id,'start',200,{confirmed:true});
+   await act(worker,id,'request_completion',200,{confirmed:true});
+   await act(payer,id,'confirm_completion',200,{confirmed:true});
+   if(n<2){
+    const scores=n===0?reputationFixture('professional',5):{...reputationFixture('professional',3),cooperation:null};
+    await act(payer,id,'submit_reputation',200,{confirmed:true,scores});
+    await act(worker,id,'submit_reputation',200,{confirmed:true,scores:reputationFixture('personal_requester',4)});
+   }
+  }
+  const baseline=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
+  assert.equal(baseline.state,'verified_snapshot');
+  assert.equal(baseline.projection?.completedContracts,3);
+  assert.equal(baseline.projection?.aggregate.ratingCount,2);
+  assert.equal(baseline.projection?.aggregate.mean,4);
+  assert.deepEqual(baseline.projection?.aggregate.criteria.cooperation,{count:1,mean:5});
+  for(const pageSize of [1,2,3]){
+   const a=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize,maxPages:3});
+   assert.equal(a.state,'verified_snapshot');assert.equal(a.pages,Math.ceil(3/pageSize));
+   assert.deepEqual(a.projection,baseline.projection);
+   assert.ok(Number.isFinite(Date.parse(a.asOf)));
+  }
+  const limited=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:1,maxPages:2});
+  assert.equal(limited.state,'requires_batched_audit');assert.equal(limited.pages,2);
+  assert.equal(limited.projection,null);assert.equal(limited.missingReceipts,null);
+  const requester=await auditOwnFreelanceReputationIndexBatched(payer.uid,'personal_requester',{pageSize:1,maxPages:3});
+  assert.equal(requester.projection?.completedContracts,3);assert.equal(requester.projection?.aggregate.ratingCount,2);assert.equal(requester.projection?.aggregate.mean,4);
+  const receipt=db.doc('freelanceReputationIndexReceiptsV1/'+ids[1]),record=(await receipt.get()).data()!;
+  assert.ok(record);
+  await receipt.delete();
+  try{
+   const broken=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:1,maxPages:3});
+   assert.equal(broken.state,'repair_required');assert.equal(broken.missingReceipts,1);assert.equal(broken.projection,null);
+  }finally{await receipt.set(record);}
+  const restored=await auditOwnFreelanceReputationIndexBatched(worker.uid,'professional',{pageSize:1,maxPages:3});
+  assert.deepEqual(restored.projection,baseline.projection);
+ }finally{
+  for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
+ }
+});
