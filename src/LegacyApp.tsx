@@ -248,7 +248,7 @@ type RetainedWorkspaceTab = {
 // never write it to the ledger, database, or browser persistence.
 const retainedWorkspaceTabByUser = new Map<string, RetainedWorkspaceTab>();
 
-export default function App() {
+export default function App({onOpenCanonicalFreela}:{onOpenCanonicalFreela?:(mode:'employer'|'employee')=>void} = {}) {
   const isAdminSubdomain = typeof window !== 'undefined' && (
     window.location.hostname === 'admin.kyrub.com' ||
     window.location.hostname.includes('admin') ||
@@ -1418,8 +1418,8 @@ const handleLogin = async (provider: 'google' | 'apple') => {
                 freelanceJobs={freelanceJobs}
                 setShowDeliveryModal={setShowDeliveryModal}
                 setShowFazerEntregasModal={setShowFazerEntregasModal}
-                setShowFreelaModal={setShowFreelaModal}
-                setShowFazerFreelasModal={setShowFazerFreelasModal}
+                setShowFreelaModal={show=>{if(show&&onOpenCanonicalFreela)onOpenCanonicalFreela('employer');else setShowFreelaModal(show);}}
+                setShowFazerFreelasModal={show=>{if(show&&onOpenCanonicalFreela)onOpenCanonicalFreela('employee');else setShowFazerFreelasModal(show);}}
                 setIsGestaoOpen={setIsGestaoOpen}
                 setGestaoRole={setGestaoRole}
                 triggerToast={triggerToast}

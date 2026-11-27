@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
+import { CanonicalFreelaWorkspace, useLocalFreelaCandidate } from './components/modals/CanonicalFreelaWorkspace';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
 import { KyrubAiConversationHeaderGuard } from './components/KyrubAiConversationHeaderGuard';
@@ -183,6 +184,13 @@ function KyrubTagActivationReturn(){
 }
 
 function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
+  const localFreelaCandidate = useLocalFreelaCandidate();
+  const [freelaWorkspace, setFreelaWorkspace] = useState<{uid:string;mode:'employer'|'employee'}|null>(null);
+  const openFreelaWorkspace = useCallback((mode:'employer'|'employee') => {
+    const uid=auth.currentUser?.uid;
+    if(uid)setFreelaWorkspace({uid,mode});
+  }, []);
+  const closeFreelaWorkspace = useCallback(()=>setFreelaWorkspace(null),[]);
   const [legacyCacheRevision, setLegacyCacheRevision] = useState(0);
   const [authResolved, setAuthResolved] = useState(false);
   const [legacyRefreshing, setLegacyRefreshing] = useState(true);
@@ -196,7 +204,8 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   }, []);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, () => {
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      setFreelaWorkspace(previous=>previous?.uid===user?.uid?previous:null);
       setAuthResolved(true);
       settleVisualBootstrap();
     });
@@ -269,7 +278,10 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <CatalogCustomizationInheritanceBridge />
       {operational && <OperationalAppEntryBridge />}
       <StorefrontReturnBridge />
-      <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} />
+      <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} onOpenCanonicalFreela={localFreelaCandidate?openFreelaWorkspace:undefined} />
+      {localFreelaCandidate&&freelaWorkspace&&freelaWorkspace.uid===auth.currentUser?.uid&&
+        <CanonicalFreelaWorkspace key={freelaWorkspace.uid+':'+freelaWorkspace.mode} mode={freelaWorkspace.mode} onClose={closeFreelaWorkspace}/>}
+
       {legacyRefreshing && <KyrubBootstrapScreen />}
     </>
   );

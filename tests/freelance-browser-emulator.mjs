@@ -118,6 +118,8 @@ try{
  assert.equal(offers.size,1);const offerId=offers.docs[0].id;
  await detail(employee,'Solicitações');await action(employee,'Candidatar-se');
  await detail(employer,'Publicados');await action(employer,'Selecionar Prestador teste');
+ // The worker's independently authenticated panel must survive the other account's mutation.
+ await employee.waitFor({state:'visible',timeout:15000});
  await detail(employee,'Fazendo');await action(employee,'Confirmar contratação');
  await detail(employee,'Fazendo');
  assert.equal((await action(employee,'Iniciar serviço',409)).code,'FREELANCE_FUNDING_REQUIRED');
