@@ -1263,7 +1263,7 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
  await db.doc('tenants/'+owner.uid).set({ownerId:owner.uid,canonicalStoreId:storeId});
  await db.doc('stores/'+storeId).set({ownerId:owner.uid,legacyTenantId:owner.uid});
  await member.set({userId:owner.uid,status:'active',role:'owner'});
- await db.doc('stores/'+storeId+'/members/'+manager.uid).set({userId:manager.uid,status:'active',role:'manager'});
+ await db.doc('stores/'+storeId+'/members/'+manager.uid).set({storeId,userId:manager.uid,status:'active',role:'manager'});
  assert.deepEqual((await call(owner,'?view=requester_stores',200)).items,[store]);
  assert.deepEqual((await call(manager,'?view=requester_stores',200)).items,[]);
  const id='http-store-'+suffix,personalId='http-personal-'+suffix;
@@ -1324,6 +1324,17 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
    assert.equal(verified.state,'verified_snapshot');assert.equal(verified.projection?.completedContracts,1);assert.equal(verified.projection?.aggregate.mean,4);
    assert.equal((await auditOwnFreelanceReputationIndex(owner.uid,'personal_requester')).projection?.completedContracts,0);
    await assert.rejects(auditOwnFreelanceReputationIndex(manager.uid,'store_requester'),/FORBIDDEN/);
+   const query='?view=reputation_team&storeId='+owner.uid;
+   const own=await call(owner,query,200),team=await call(manager,query,200);
+   assert.deepEqual(team,own);assert.equal(team.projection.aggregate.mean,4);
+   assert.equal(team.legacyStoreId,owner.uid);assert.deepEqual(Object.keys(team).sort(),['legacyStoreId','projection','state','subject']);
+   assert.ok(!JSON.stringify(team).includes(worker.uid));
+   await call(worker,query,403);await call(null,query,401);await call(manager,query+'&offerId='+id,400);
+   const staffRef=db.doc('stores/'+storeId+'/members/'+manager.uid);
+   for(const role of ['cashier','seller','production']){await staffRef.update({role});assert.deepEqual(await call(manager,query,200),own);}
+   for(const status of ['invited','suspended','removed']){await staffRef.update({status});await call(manager,query,403);}
+   await staffRef.update({role:'manager',status:'active'});
+   await call(manager,'?view=reputation_team&storeId='+manager.uid,403);
   }finally{if(oldIndex===undefined)delete process.env[ig];else process.env[ig]=oldIndex;}
   assert.equal(historicalStore.completedContracts,1);assert.equal(historicalStore.aggregate.mean,4);
   assert.equal((await call(owner,'?view=reputation_summary_personal',200)).aggregate.ratingCount,0);
