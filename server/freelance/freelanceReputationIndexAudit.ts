@@ -1,3 +1,5 @@
+import type {Transaction} from 'firebase-admin/firestore';
+import {isStoreRole} from '../../src/utils/storeSecurity.js';
 import {FieldPath} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {readOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
@@ -16,7 +18,9 @@ export async function auditOwnFreelanceReputationIndex(uid:string,kind:unknown){
  assertFreelanceReputationLocal();
  if(!reputationIndexEnabled())throw Error('FREELANCE_FORBIDDEN');
  if(!validFreelanceId(uid)||(kind!=='professional'&&kind!=='personal_requester'&&kind!=='store_requester'))throw Error('FREELANCE_INVALID');
- return adminDb.runTransaction(async tx=>{
+ return adminDb.runTransaction(tx=>auditInTransaction(tx,uid,kind),{readOnly:true});
+}
+async function auditInTransaction(tx:Transaction,uid:string,kind:'professional'|'personal_requester'|'store_requester'){
   const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
   if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
   const subject:ReputationSubject={kind,id:store?.storeId??uid};
@@ -48,5 +52,24 @@ export async function auditOwnFreelanceReputationIndex(uid:string,kind:unknown){
   }
   if(missingReceipts||staleReceipts||!matches)return {subject,state:'repair_required' as const,missingReceipts,staleReceipts,projection:null};
   return {subject,state:'verified_snapshot' as const,missingReceipts:0,staleReceipts:0,projection:projectReputationAccumulator(kind,expected)};
+}
+
+/** Read-only team access; legacy store ID is the ERP's current owner scope.
+ * Resolve canonical identity and membership in the same consistent snapshot.
+ * No power to contract, rate, contest or read private records is granted. */
+export async function readStoreTeamReputation(uid:string,legacyStoreId:unknown){
+ assertFreelanceReputationLocal();
+ if(!reputationIndexEnabled())throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(uid)||!validFreelanceId(legacyStoreId))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const store=await readOwnedFreelanceStore(tx,legacyStoreId);
+  if(!store)throw Error('FREELANCE_STORE_FORBIDDEN');
+  if(uid!==legacyStoreId){
+   const member=(await tx.get(adminDb.doc('stores/'+store.storeId+'/members/'+uid))).data();
+   if(!member||member.userId!==uid||member.storeId!==store.storeId||member.status!=='active'||!isStoreRole(member.role)||member.role==='owner')throw Error('FREELANCE_STORE_FORBIDDEN');
+  }
+  const {subject,state,projection}=await auditInTransaction(tx,legacyStoreId,'store_requester');
+  if(subject.id!==store.storeId)throw Error('FREELANCE_STORE_FORBIDDEN');
+  return {legacyStoreId,subject,state,projection};
  },{readOnly:true});
 }
