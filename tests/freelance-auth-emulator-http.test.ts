@@ -1796,6 +1796,33 @@ test('hourly advance persistence: authenticated contract, private service, bilat
   assert.equal((await freezeHourlyReconciliation(owner.uid,id,freeze)).changed,true);
   assert.equal((await freezeHourlyReconciliation(worker.uid,id,freeze)).changed,false);
   assert.equal((await readHourlyReconciliation(owner.uid,id)).frozen,true);
+
+  const {readHourlyAdjustment,issueHourlyAdjustment,recordHourlyAdjustmentStatement}=await import('../server/freelance/freelanceHourlyAdjustmentService.js');
+  const adjustment=await readHourlyAdjustment(owner.uid,id);
+  assert.equal(adjustment.amountMinor,Math.abs(gross-6000));assert.equal(adjustment.bankVerified,false);
+  if(adjustment.amountMinor>0){
+   const payer=gross>6000?owner:worker,recipient=gross>6000?worker:owner;
+   assert.equal((await readHourlyAdjustment(payer.uid,id)).role,'payer');assert.equal((await readHourlyAdjustment(recipient.uid,id)).role,'recipient');
+   const issue={confirmed:true,sourceDigest:adjustment.sourceDigest};
+   await assert.rejects(issueHourlyAdjustment(other.uid,id,issue),/FORBIDDEN/);
+   await assert.rejects(issueHourlyAdjustment(payer.uid,id,{...issue,sourceDigest:'0'.repeat(64)}),/CONFLICT/);
+   assert.equal((await issueHourlyAdjustment(payer.uid,id,issue)).changed,true);
+   assert.equal((await issueHourlyAdjustment(recipient.uid,id,issue)).changed,false);
+   const pay={confirmed:true,eventId:'adjust-paid',statement:'paid',expectedAmountMinor:adjustment.amountMinor,sourceDigest:adjustment.sourceDigest};
+   await assert.rejects(recordHourlyAdjustmentStatement(recipient.uid,id,pay),/FORBIDDEN/);
+   await assert.rejects(recordHourlyAdjustmentStatement(payer.uid,id,{...pay,expectedAmountMinor:adjustment.amountMinor+1}),/CONFLICT/);
+   assert.equal((await recordHourlyAdjustmentStatement(payer.uid,id,pay)).state,'awaiting_receipt');
+   assert.equal((await recordHourlyAdjustmentStatement(payer.uid,id,pay)).changed,false);
+   assert.equal((await recordHourlyAdjustmentStatement(recipient.uid,id,{...pay,eventId:'adjust-denied',statement:'not_received'})).restrictionActive,true);
+   for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:true,openOfferIds:[id]});
+   assert.equal((await recordHourlyAdjustmentStatement(recipient.uid,id,{...pay,eventId:'adjust-received',statement:'received'})).state,'bilaterally_reported_received');
+   for(const a of [owner,worker])assert.deepEqual(await readOwnFreelanceRestrictions(a.uid),{restricted:false,openOfferIds:[]});
+   assert.equal((await ref.collection('directPayment').doc('hourlyAdjustmentStatements').get()).get('events').length,3);
+   assert.equal((await ref.collection('directPayment').doc('hourlyStatements').get()).exists,false);
+   assert.equal((await ref.collection('financialBasis').doc('hourlyCompletion').get()).get('finalAmountMinor'),gross);
+   const obligation=ref.collection('directPayment').doc('hourlyAdjustmentObligation');
+   await obligation.update({amountMinor:1});await assert.rejects(readHourlyAdjustment(owner.uid,id),/CONFLICT/);
+  }else{assert.equal(adjustment.state,'no_adjustment');assert.equal((await ref.collection('directPayment').doc('hourlyAdjustmentObligation').get()).exists,false);}
   const snapshot=ref.collection('directPayment').doc('hourlyReconciliation');
   await snapshot.update({bilateralMinor:1});await assert.rejects(readHourlyReconciliation(owner.uid,id),/CONFLICT/);
 
