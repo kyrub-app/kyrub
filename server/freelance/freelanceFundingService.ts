@@ -13,6 +13,7 @@ type Funding={schemaVersion:1;environment:'emulator';provider:'fixture';paymentI
  requesterUid:string;beneficiaryUid:string;amountMinor:number;currency:'BRL';status:'confirmed'|'revoked';
  confirmedAt:string;revokedAt?:string};
 function binding(offer:FreelanceOffer,app:FreelanceApplication){
+ if(offer.paymentTerms!==undefined||app.paymentTerms!==undefined)throw Error('FREELANCE_FUNDING_CONFLICT');
  if(!validFreelanceId(offer.id)||!validFreelanceId(offer.ownerUid)||!validFreelanceId(offer.selectedApplicantUid)||
    app.offerId!==offer.id||app.ownerUid!==offer.ownerUid||app.applicantUid!==offer.selectedApplicantUid||
    offer.ownerUid===app.applicantUid||offer.status!==app.status||!offer.contractedAt||

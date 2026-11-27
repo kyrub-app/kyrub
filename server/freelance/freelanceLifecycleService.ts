@@ -1,5 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
-import { adminDb } from '../firebaseAdmin.js';
+import { adminDb,getFirebaseAdminProjectId } from '../firebaseAdmin.js';
+import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
 import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import { sameFreelancePaymentTerms,createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
@@ -87,6 +88,20 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
     const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
+    if(result.offer.paymentTerms!==undefined){
+      // No new financial obligations outside the disposable local candidate.
+      if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
+         process.env.GOOGLE_APPLICATION_CREDENTIALS||
+         !/^(127\\.0\\.0\\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
+         getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+      const obligation=buildFreelancePaymentObligation(result.offer,result.application);
+      const obligationRef=offerRef.collection('directPayment').doc('obligation');
+      const existing=await tx.get(obligationRef);
+      if(result.changed){
+        if(existing.exists)throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+        tx.create(obligationRef,obligation);
+      }else if(!matchesFreelancePaymentObligation(existing.data(),obligation))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+    }
     if (result.changed) {
       tx.update(offerRef,{status:result.offer.status,contractedAt:result.offer.contractedAt!});
       tx.update(applicationRef,{status:result.application.status,contractedAt:result.application.contractedAt!});
