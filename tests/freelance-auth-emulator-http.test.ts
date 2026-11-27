@@ -628,6 +628,25 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   const before=(await indexRef.get()).get('accumulator');
   assert.equal(before.completedContracts,1);assert.equal(before.ratingCount,1);assert.equal(before.ratingUnits,2100);
   assert.equal(before.criteria.courtesy.count,1);
+  const {auditOwnFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+  const audited=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
+  assert.equal(audited.state,'verified_snapshot');assert.equal(audited.projection?.completedContracts,1);assert.equal(audited.projection?.aggregate.mean,5);
+  const requesterAudit=await auditOwnFreelanceReputationIndex(payer.uid,'personal_requester');
+  assert.equal(requesterAudit.state,'verified_snapshot');assert.equal(requesterAudit.projection?.aggregate.mean,4);
+  assert.equal((await auditOwnFreelanceReputationIndex(outsider.uid,'professional')).projection?.completedContracts,0);
+  await assert.rejects(auditOwnFreelanceReputationIndex(payer.uid,'store_requester'),/FORBIDDEN/);
+  await indexRef.update({'accumulator.ratingUnits':1680});
+  const mismatch=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
+  assert.equal(mismatch.state,'repair_required');assert.equal(mismatch.projection,null);
+  await indexRef.update({accumulator:before});
+  const receiptRef=db.doc('freelanceReputationIndexReceiptsV1/'+id),originalReceipt=(await receiptRef.get()).data()!;
+  await receiptRef.update({releaseDigest:null});
+  const stale=await auditOwnFreelanceReputationIndex(worker.uid,'professional');
+  assert.equal(stale.state,'repair_required');assert.equal(stale.staleReceipts,1);assert.equal(stale.projection,null);
+  await receiptRef.set(originalReceipt);
+  delete process.env[indexGate];
+  await assert.rejects(auditOwnFreelanceReputationIndex(worker.uid,'professional'),/FORBIDDEN/);
+  process.env[indexGate]='true';
   const replay=await Promise.all([reconcileFreelanceReputationIndex(payer.uid,id),reconcileFreelanceReputationIndex(worker.uid,id)]);
   assert.ok(replay.every(r=>!r.experienceAdded&&!r.ratingsAdded&&r.coverage==='unverified'));
   assert.deepEqual((await indexRef.get()).get('accumulator'),before);
@@ -1285,6 +1304,20 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
   const corporate=await readOwnFreelanceReputationProfile(owner.uid,'store_requester');
   assert.deepEqual(corporate.subject,{kind:'store_requester',id:storeId});assert.equal(corporate.entries[0].mean,4);
   const historicalStore=await call(owner,'?view=reputation_summary_store',200);
+  const ig='KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY',oldIndex=process.env[ig];
+  try{
+   process.env[ig]='true';
+   const {auditOwnFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexAudit.js');
+   const {reconcileFreelanceReputationIndex}=await import('../server/freelance/freelanceReputationIndexService.js');
+   const missing=await auditOwnFreelanceReputationIndex(owner.uid,'store_requester');
+   assert.equal(missing.state,'repair_required');assert.equal(missing.missingReceipts,1);assert.equal(missing.projection,null);
+   const rebuilt=await reconcileFreelanceReputationIndex(owner.uid,id);
+   assert.equal(rebuilt.experienceAdded,true);assert.equal(rebuilt.ratingsAdded,true);
+   const verified=await auditOwnFreelanceReputationIndex(owner.uid,'store_requester');
+   assert.equal(verified.state,'verified_snapshot');assert.equal(verified.projection?.completedContracts,1);assert.equal(verified.projection?.aggregate.mean,4);
+   assert.equal((await auditOwnFreelanceReputationIndex(owner.uid,'personal_requester')).projection?.completedContracts,0);
+   await assert.rejects(auditOwnFreelanceReputationIndex(manager.uid,'store_requester'),/FORBIDDEN/);
+  }finally{if(oldIndex===undefined)delete process.env[ig];else process.env[ig]=oldIndex;}
   assert.equal(historicalStore.completedContracts,1);assert.equal(historicalStore.aggregate.mean,4);
   assert.equal((await call(owner,'?view=reputation_summary_personal',200)).aggregate.ratingCount,0);
   await call(manager,'?view=reputation_summary_store',403);
