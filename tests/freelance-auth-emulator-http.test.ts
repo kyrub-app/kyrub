@@ -2128,6 +2128,31 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
       assert.deepEqual(await call(payer,preview,200),{experience:null,reputations:null});
       assert.deepEqual(await call(worker,preview,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
       await call(worker,preview+'&ratingCount=999',400);
+      const publishFlag='KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY',oldPublish=process.env[publishFlag];
+      const input={action:'publish_reputation_square',identifier,requestId:'square-'+suffix,confirmed:true};
+      try{
+       delete process.env[publishFlag];await call(worker,'',403,input);
+       process.env[publishFlag]='true';
+       await call(payer,'',403,input);await call(worker,'',400,{...input,confirmed:false});await call(worker,'',400,{...input,mean:5});
+       await Promise.all([call(worker,'',200,input),call(worker,'',200,input)]);
+       const records=await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get();
+       assert.equal(records.size,1);
+       const postId=records.docs[0].id,post=db.doc('social_posts/'+postId),proof=records.docs[0].ref;
+       try{
+        const stored=(await post.get()).data()!;
+        assert.equal(stored.authorId,worker.uid);assert.equal(stored.visibility,'public');
+        assert.equal(stored.experience,undefined);assert.equal(stored.reputations,undefined);
+        assert.equal(stored.content,'Conheça minha Experiência e Reputações no Kyrub!');
+        const read='?view=reputation_square_post&offerId='+postId;
+        await call(null,read,401);
+        assert.deepEqual(await call(payer,read,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+        await profile.update({isProfileVisible:false});assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
+        await profile.update({isProfileVisible:true});
+        const expired=new Date(Date.now()-86400001).toISOString();
+        await proof.update({createdAtIso:expired});await post.update({createdAtIso:expired});
+        assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
+       }finally{await post.delete();await proof.delete();}
+      }finally{if(oldPublish===undefined)delete process.env[publishFlag];else process.env[publishFlag]=oldPublish;}
       await profile.update({isProfileVisible:false});
       assert.deepEqual(await call(worker,preview,200),{experience:null,reputations:null});
       await profile.update({isProfileVisible:true});
