@@ -855,3 +855,33 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
  await act(manager,personalId,'publish',200,{terms});
  assert.equal((await db.doc('freelanceOffersV1/'+personalId).get()).get('requesterStore'),undefined);
 });
+
+test('schedule HTTP: private, bilateral, immutable decisions and server-derived duration',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const owner=await account('schedule-owner',['requester']),worker=await account('schedule-worker',['freelancer']),other=await account('schedule-other',['freelancer']);
+ const id='http-schedule-'+suffix,paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:12000});
+ const workTerms={mode:'fixed',location:'remote',estimatedMinutes:360};
+ const terms={title:'Agenda fictícia',description:'Somente emulador',requirements:'',paymentMinor:12000,paymentTerms,workTerms};
+ const expected={expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms};
+ await act(owner,id,'publish',200,{terms});await act(worker,id,'apply',200,expected);await act(owner,id,'select',200,{applicantUid:worker.uid});await act(worker,id,'confirm',200,{confirmed:true,...expected});
+ const read=(actor:Actor,status=200)=>call(actor,'?view=attendance_schedule&offerId='+id,status);
+ const future=new Date(Date.now()+86400000).toISOString();
+ await read(other,403);
+ await act(other,id,'propose_schedule',403,{proposalId:'p1',scheduledStartAt:future,confirmed:true});
+ await act(owner,id,'propose_schedule',409,{proposalId:'old',scheduledStartAt:'2020-01-01T00:00:00.000Z',confirmed:true});
+ await act(owner,id,'propose_schedule',400,{proposalId:'p1',scheduledStartAt:future,confirmed:true,agreedMinutes:1});
+ await act(owner,id,'propose_schedule',200,{proposalId:'p1',scheduledStartAt:future,confirmed:true});
+ await act(owner,id,'propose_schedule',200,{proposalId:'p1',scheduledStartAt:future,confirmed:true});
+ await act(owner,id,'accept_schedule',403,{proposalId:'p1',confirmed:true});
+ await act(worker,id,'decline_schedule',200,{proposalId:'p1',confirmed:true});
+ await act(worker,id,'propose_schedule',200,{proposalId:'p2',scheduledStartAt:future,confirmed:true});
+ await act(owner,id,'accept_schedule',409,{proposalId:'p1',confirmed:true});
+ await act(owner,id,'accept_schedule',200,{proposalId:'p2',confirmed:true});
+ await act(owner,id,'accept_schedule',200,{proposalId:'p2',confirmed:true});
+ const result=await read(worker);
+ assert.equal(result.schedule.status,'accepted');assert.deepEqual(result.schedule.schedule,{location:'remote',scheduledStartAt:future,agreedMinutes:360});
+ assert.equal(result.executionIntegrated,false);
+ assert.equal((await db.doc('freelanceOffersV1/'+id+'/attendance/schedule-p1').get()).get('status'),'declined');
+ assert.equal((await db.doc('freelanceOffersV1/'+id+'/directPayment/obligation').get()).get('terms.amountMinor'),12000);
+ await act(worker,id,'propose_schedule',409,{proposalId:'p3',scheduledStartAt:future,confirmed:true});
+});

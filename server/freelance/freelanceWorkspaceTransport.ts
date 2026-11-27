@@ -1,3 +1,4 @@
+import {readFreelanceAttendanceSchedule,changeFreelanceAttendanceSchedule} from './freelanceAttendanceScheduleService.js';
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,normalizeFreelanceOffer} from '../../shared/freelanceLifecycle.js';
 import {readFreelanceWorkspace} from './freelanceWorkspaceReadService.js';
@@ -25,6 +26,8 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  case 'apply':exact(['expectedPaymentTerms','expectedWorkTerms','counterproposal','expectedRequesterStore']);return lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms,expectedRequesterStore:b.expectedRequesterStore,counterproposal:b.counterproposal});
  case 'select':exact(['applicantUid','expectedCounterproposal']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid,b.expectedCounterproposal);
  case 'confirm':exact(['confirmed','expectedPaymentTerms','expectedWorkTerms','expectedRequesterStore']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms,expectedRequesterStore:b.expectedRequesterStore});
+ case 'propose_schedule':exact(['proposalId','scheduledStartAt','confirmed']);return changeFreelanceAttendanceSchedule(uid,b.offerId,'propose',{proposalId:b.proposalId,scheduledStartAt:b.scheduledStartAt,confirmed:b.confirmed});
+ case 'accept_schedule':case 'decline_schedule':case 'withdraw_schedule':exact(['proposalId','confirmed']);return changeFreelanceAttendanceSchedule(uid,b.offerId,b.action==='accept_schedule'?'accept':b.action==='decline_schedule'?'decline':'withdraw',{proposalId:b.proposalId,confirmed:b.confirmed});
  case 'release':exact(['applicantUid','confirmed']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.releaseFreelanceReservation(uid,b.offerId,b.applicantUid,b.confirmed);
  case 'withdraw':exact(['confirmed']);return lifecycle.withdrawPendingFreelanceApplication(uid,b.offerId,b.confirmed);
  case 'cancel_open':exact(['confirmed']);return lifecycle.cancelUncontractedFreelanceOffer(uid,b.offerId,b.confirmed);
@@ -37,7 +40,7 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
 type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>Promise<unknown>;mutate:(uid:string,input:unknown)=>Promise<unknown>};
-const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
+const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='attendance_schedule'?(validFreelanceId(offerId)&&!cursor?readFreelanceAttendanceSchedule(uid,offerId):Promise.reject(Error('FREELANCE_INVALID'))):view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
 export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dependencies=defaults){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
  try{if(!deps.enabled()){res.status(503).json({code:'FREELANCE_DISABLED'});return;}}catch{res.status(503).json({code:'FREELANCE_DISABLED'});return;}
@@ -58,7 +61,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
  }catch(e){
   const code=e instanceof Error?e.message:'';
   const status=code==='FREELANCE_INVALID'?400:['FREELANCE_FORBIDDEN','FREELANCE_STORE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_WORK_MODE_NOT_ENABLED','FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_ATTENDANCE_CONFLICT','FREELANCE_WORK_MODE_NOT_ENABLED','FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_SHARING_REQUIRED','FREELANCE_ADVANCE_RECEIPT_REQUIRED','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_UNAVAILABLE':code});
  }
 }
