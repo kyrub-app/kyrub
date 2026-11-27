@@ -24,20 +24,29 @@ export async function readHourlyExcessContext(tx:Transaction,uid:string,id:strin
   if(proposal.status==='pending'){if(proposal.decidedAt!==undefined||proposal.decidedBy!==undefined)return fail();}
   else if(!iso(proposal.decidedAt)||Date.parse(proposal.decidedAt)<Date.parse(proposal.proposedAt)||!['worker','requester'].includes(proposal.decidedBy??'')||(proposal.status==='withdrawn'?proposal.decidedBy!==proposal.proposedBy:proposal.decidedBy===proposal.proposedBy))return fail();
  }
- const resolved=proposal?.status==='accepted'?buildResolution(record,proposal):null;
- if(resolved?(!resolution.exists||canonicalVariablePaymentRecord(resolution.data())!==canonicalVariablePaymentRecord(resolved)):resolution.exists)return fail();
- const disputeRef=direct.doc('hourlyExcessDispute'),dispute=(await tx.get(disputeRef)).data() as {schemaVersion:1;sourceDigest:string;openedBy:Role;openedAt:string;status:'open'|'review_requested'|'resolved_voluntarily';requestedAt?:string;requestedBy?:Role;resolvedAt?:string;agreementId?:string}|undefined;
+ let resolved=proposal?.status==='accepted'?buildResolution(record,proposal):null;
+ const disputeRef=direct.doc('hourlyExcessDispute'),dispute=(await tx.get(disputeRef)).data() as {schemaVersion:1;sourceDigest:string;openedBy:Role;openedAt:string;status:'open'|'review_requested'|'resolved_voluntarily'|'resolved_administratively';decision?:HourlyExcessAdminDecision;requestedAt?:string;requestedBy?:Role;resolvedAt?:string;agreementId?:string}|undefined;
  if(dispute){
   const requested=dispute.requestedAt!==undefined||dispute.requestedBy!==undefined;
-  if(dispute.schemaVersion!==1||dispute.sourceDigest!==record.sourceDigest||!['worker','requester'].includes(dispute.openedBy)||!iso(dispute.openedAt)||Date.parse(dispute.openedAt)<Date.parse(record.completedAt)||!['open','review_requested','resolved_voluntarily'].includes(dispute.status)||Object.keys(dispute).length!==5+(requested?2:0)+(dispute.status==='resolved_voluntarily'?2:0)||(requested&&(!iso(dispute.requestedAt)||Date.parse(dispute.requestedAt)<Date.parse(dispute.openedAt)||!['worker','requester'].includes(dispute.requestedBy??'')))||(dispute.status==='open'&&requested)||(dispute.status==='review_requested'&&!requested)||(dispute.status==='resolved_voluntarily'?(!resolved||dispute.agreementId!==proposal?.id||dispute.resolvedAt!==proposal?.decidedAt||!iso(dispute.resolvedAt)||Date.parse(dispute.resolvedAt)<Date.parse(dispute.requestedAt??dispute.openedAt)):!!resolved))return fail();
+  if(dispute.schemaVersion!==1||dispute.sourceDigest!==record.sourceDigest||!['worker','requester'].includes(dispute.openedBy)||!iso(dispute.openedAt)||Date.parse(dispute.openedAt)<Date.parse(record.completedAt)||!['open','review_requested','resolved_voluntarily','resolved_administratively'].includes(dispute.status)||Object.keys(dispute).length!==5+(requested?2:0)+(dispute.status==='resolved_voluntarily'?2:dispute.status==='resolved_administratively'?1:0)||(requested&&(!iso(dispute.requestedAt)||Date.parse(dispute.requestedAt)<Date.parse(dispute.openedAt)||!['worker','requester'].includes(dispute.requestedBy??'')))||(dispute.status==='open'&&requested)||(['review_requested','resolved_administratively'].includes(dispute.status)&&!requested)||(dispute.status==='resolved_voluntarily'?(!resolved||dispute.agreementId!==proposal?.id||dispute.resolvedAt!==proposal?.decidedAt||!iso(dispute.resolvedAt)||Date.parse(dispute.resolvedAt)<Date.parse(dispute.requestedAt??dispute.openedAt)):!!resolved))return fail();
  }
- const restricted=!!dispute&&dispute.status!=='resolved_voluntarily';
+ if(dispute?.status==='resolved_administratively'){
+  const d=dispute.decision;
+  if(!d||Object.keys(d).length!==5||!validFreelanceId(d.actorUid)||[record.commitment.requesterUid,record.commitment.beneficiaryUid].includes(d.actorUid)||typeof d.reason!=='string'||d.reason.trim()!==d.reason||d.reason.length<10||d.reason.length>1000||!iso(d.decidedAt)||Date.parse(d.decidedAt)<Date.parse(dispute.requestedAt!)||d.proposalDigest!==digestVariablePaymentSources(proposal))return fail();
+  resolved=buildHourlyExcessAdministrativeResolution(record,d);
+ }
+ if(resolved?(!resolution.exists||canonicalVariablePaymentRecord(resolution.data())!==canonicalVariablePaymentRecord(resolved)):resolution.exists)return fail();
+ const restricted=!!dispute&&['open','review_requested'].includes(dispute.status);
  const queueRef=adminDb.doc('freelanceHourlyExcessReviewsV1/'+id),queue=(await tx.get(queueRef)).data();
  if(dispute?.requestedAt){
-  if(!queue||Object.keys(queue).length!==6||queue.offerId!==id||queue.requesterUid!==record.commitment.requesterUid||queue.beneficiaryUid!==record.commitment.beneficiaryUid||queue.sourceDigest!==record.sourceDigest||queue.requestedAt!==dispute.requestedAt||queue.status!==(restricted?'pending':'resolved_voluntarily'))return fail();
+  if(!queue||Object.keys(queue).length!==6||queue.offerId!==id||queue.requesterUid!==record.commitment.requesterUid||queue.beneficiaryUid!==record.commitment.beneficiaryUid||queue.sourceDigest!==record.sourceDigest||queue.requestedAt!==dispute.requestedAt||queue.status!==(restricted?'pending':dispute.status))return fail();
  }else if(queue)return fail();
  await prepareExcessRestriction(tx,record.commitment,restricted,restricted);
  return {s,record,c,direct,pointer,proposal,resolutionRef,resolved,dispute,disputeRef,restricted,queueRef};
+}
+export type HourlyExcessAdminDecision={actorUid:string;recognizedExcessMs:number;reason:string;decidedAt:string;proposalDigest:string};
+export function buildHourlyExcessAdministrativeResolution(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],d:HourlyExcessAdminDecision){
+ return {schemaVersion:1,kind:'hourly_excess_resolution',offerId:record.commitment.offerId,baseDigest:record.sourceDigest,sourceDigest:digestVariablePaymentSources({base:record.sourceDigest,decision:d}),resolvedAt:d.decidedAt,...calculateHourlyExcessResolution(record,d.recognizedExcessMs),payable:false};
 }
 function buildResolution(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record'],p:Proposal){
  return {schemaVersion:1,kind:'hourly_excess_resolution',offerId:record.commitment.offerId,baseDigest:record.sourceDigest,sourceDigest:digestVariablePaymentSources({base:record.sourceDigest,proposal:p}),resolvedAt:p.decidedAt!,...calculateHourlyExcessResolution(record,p.recognizedExcessMs),payable:false};
@@ -45,7 +54,7 @@ function buildResolution(record:Awaited<ReturnType<typeof readVariablePaymentSou
 export async function readHourlyExcessReview(uid:string,id:string){
  return adminDb.runTransaction(async tx=>{
   const {record,c,proposal,resolved,dispute,restricted}=await readHourlyExcessContext(tx,uid,id),a=record.accounting;
-  return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,hourlyRateMinor:a.hourlyRateMinor,authorizedMinor:a.withinCapReferenceMinor,excessMs:a.excessMs,recordedMs:a.compensableMs,proposal,resolved,dispute:dispute??null,restrictionActive:restricted,payable:false,bankVerified:false};
+  return {offerId:id,role:c.actor,sourceDigest:record.sourceDigest,estimatedMinor:record.commitment.estimatedMinor,hourlyRateMinor:a.hourlyRateMinor,authorizedMinor:a.withinCapReferenceMinor,excessMs:a.excessMs,recordedMs:a.compensableMs,proposal,resolved,dispute:dispute?{status:dispute.status,openedAt:dispute.openedAt,requestedAt:dispute.requestedAt??null,...(dispute.decision?{decision:{recognizedExcessMs:dispute.decision.recognizedExcessMs,reason:dispute.decision.reason,decidedAt:dispute.decision.decidedAt}}:{})}:null,restrictionActive:restricted,payable:false,bankVerified:false};
  },{readOnly:true});
 }
 export async function changeHourlyExcessReview(uid:string,id:string,action:'propose'|'accept'|'decline'|'withdraw',input:{proposalId:unknown;sourceDigest:unknown;recognizedExcessMs?:unknown;confirmed:unknown}){
@@ -53,7 +62,7 @@ export async function changeHourlyExcessReview(uid:string,id:string,action:'prop
  const proposalId=input.proposalId;
  return adminDb.runTransaction(async tx=>{
   const {record,c,direct,pointer,proposal:p,resolutionRef,dispute,disputeRef,restricted,queueRef}=await readHourlyExcessContext(tx,uid,id);
-  if(input.sourceDigest!==record.sourceDigest)return fail();
+  if(input.sourceDigest!==record.sourceDigest||dispute?.status==='resolved_administratively')return fail();
   const now=new Date().toISOString(),ref=direct.doc('hourlyExcessAgreement-'+proposalId),recipient=c.actor==='worker'?'requester':'freelancer';
   if(Date.parse(now)<Date.parse(record.completedAt))return fail();
   if(action==='propose'){

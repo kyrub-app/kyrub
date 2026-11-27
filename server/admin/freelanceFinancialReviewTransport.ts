@@ -1,3 +1,4 @@
+import {listHourlyExcessReviews,decideHourlyExcessReview} from './freelanceHourlyExcessReviewService.js';
 import {listHourlyCancellationReviews,decideHourlyCancellationReview} from './freelanceHourlyCancellationReviewService.js';
 import {financialReviewAdminEnabled,listFreelanceFinancialReviews,decideFreelanceFinancialReview,getFreelanceFinancialReceipt} from './freelanceFinancialReviewService.js';
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
@@ -9,14 +10,15 @@ export async function handleFreelanceFinancialReview(req:Request,res:Response){
  if(req.method!=='GET'&&req.method!=='POST'){res.setHeader('Allow','GET, POST');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;}
  const h=req.headers.authorization;
  if(typeof h!=='string'||h.length>8199||!/^Bearer [^\s]+$/i.test(h)){res.status(401).json({code:'AUTH_REQUIRED'});return;}
- const q=req.query??{},keys=Object.keys(q),receipt=q.view==='receipt',cancellation=q.view==='hourly_cancellation';
- if(req.method==='POST'?keys.length!==0:receipt?(keys.length!==3||keys.some(k=>!['view','offerId','receiptId'].includes(k))):cancellation?keys.some(k=>!['cursor','view'].includes(k)):keys.some(k=>k!=='cursor')){res.status(400).json({code:'FREELANCE_INVALID'});return;}
+ const q=req.query??{},keys=Object.keys(q),receipt=q.view==='receipt',cancellation=q.view==='hourly_cancellation',excess=q.view==='hourly_excess';
+ if(req.method==='POST'?keys.length!==0:receipt?(keys.length!==3||keys.some(k=>!['view','offerId','receiptId'].includes(k))):(cancellation||excess)?keys.some(k=>!['cursor','view'].includes(k)):keys.some(k=>k!=='cursor')){res.status(400).json({code:'FREELANCE_INVALID'});return;}
  try{
-  if(req.method==='GET'){res.status(200).json(receipt?await getFreelanceFinancialReceipt(h,q.offerId,q.receiptId):cancellation?await listHourlyCancellationReviews(h,q.cursor):await listFreelanceFinancialReviews(h,q.cursor));return;}
+  if(req.method==='GET'){res.status(200).json(receipt?await getFreelanceFinancialReceipt(h,q.offerId,q.receiptId):excess?await listHourlyExcessReviews(h,q.cursor):cancellation?await listHourlyCancellationReviews(h,q.cursor):await listFreelanceFinancialReviews(h,q.cursor));return;}
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>8192){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const body=req.body as Record<string,unknown>|undefined;
+  if(body?.action==='decide_hourly_excess'){const {action,...input}=body;res.status(200).json(await decideHourlyExcessReview(h,input));return;}
   if(body?.action==='decide_hourly_cancellation'){const {action,...input}=body;res.status(200).json(await decideHourlyCancellationReview(h,input));return;}
   res.status(200).json(await decideFreelanceFinancialReview(h,req.body));
  }

@@ -943,7 +943,7 @@ test('attendance HTTP: check-in, presence, server timestamps, early authorizatio
  assert.equal((await extensions(owner)).records.length,2);
 });
 
-test('variable basis from persisted emulator-only hourly fixture: immutable source, amount and isolation',async()=>{
+test('variable basis from persisted emulator-only hourly fixture: immutable source, amount and isolation',async t=>{
  const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
  const {recordFreelanceVariablePaymentBasis}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
  const owner=await account('variable-owner',['requester']),worker=await account('variable-worker',['freelancer']),other=await account('variable-other',['freelancer']);
@@ -1015,9 +1015,9 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  await er.set({...offer,id:excessId});await er.collection('applications').doc(worker.uid).set({...application,offerId:excessId});
  for(const name of ['schedule','schedule-schedule','timeline'])await er.collection('attendance').doc(name).set((await ref.collection('attendance').doc(name).get()).data()!);
  const eb=await recordFreelanceVariablePaymentBasis(owner.uid,excessId);
- const excessApi=async(actor:Actor,status:number,action?:string,extra:Record<string,unknown>={})=>{
-  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view=hourly_excess_review&offerId='+excessId);
-  const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:excessId,action,confirmed:true,...extra})}:{})});
+ const excessApi=async(actor:Actor,status:number,action?:string,extra:Record<string,unknown>={},target=excessId)=>{
+  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view=hourly_excess_review&offerId='+target);
+  const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:target,action,confirmed:true,...extra})}:{})});
   const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));return data;
  };
  await excessApi(other,403);
@@ -1052,6 +1052,44 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  for(const actor of [owner,worker]){assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[excessId]});const root=db.doc('freelanceEngagementRestrictionsV1/'+actor.uid);const stored=(await root.get()).data()!;assert.deepEqual(stored.openOfferIds,[excessId]);assert.deepEqual(stored.openCancellationOfferIds,[excessId]);assert.equal(stored.openExcessOfferIds,undefined);await root.set({schemaVersion:1,uid:actor.uid,openOfferIds:[]});}
  assert.equal((await er.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
  await excessApi(owner,409,'propose_hourly_excess',{...ep,proposalId:'third'});
+ // Separate excess case for administrative decision, with synthetic MFA only in emulator.
+ const adminId=excessId+'-admin',ar=db.doc('freelanceOffersV1/'+adminId);
+ await ar.set({...offer,id:adminId});await ar.collection('applications').doc(worker.uid).set({...application,offerId:adminId});
+ for(const name of ['schedule','schedule-schedule','timeline'])await ar.collection('attendance').doc(name).set((await er.collection('attendance').doc(name).get()).data()!);
+ await recordFreelanceVariablePaymentBasis(owner.uid,adminId);
+ const ax=await excessApi(worker,200,undefined,{},adminId),af={sourceDigest:ax.sourceDigest};
+ await excessApi(worker,200,'propose_hourly_excess',{...af,proposalId:'first',recognizedExcessMs:1800000},adminId);
+ await excessApi(owner,200,'decline_hourly_excess',{...af,proposalId:'first'},adminId);
+ await excessApi(worker,200,'dispute_hourly_excess',af,adminId);
+ await excessApi(owner,200,'request_hourly_excess_review',af,adminId);
+ const admin=await account('excess-review-admin',[]);
+ await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
+ const review=async(actor:Actor,status:number,input?:Record<string,unknown>)=>{
+  const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=hourly_excess'),{method:input?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});
+  const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;
+ };
+ await review(admin,403);
+ const original=auth.verifyIdToken.bind(auth);
+ const mock=t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
+ try{
+  const item=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(item);
+  const decision={action:'decide_hourly_excess',offerId:adminId,sourceDigest:ax.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,recognizedExcessMs:1800000,reason:'Decisão fictícia fundamentada do excedente',confirmed:true};
+  await excessApi(owner,200,'propose_hourly_excess',{...af,proposalId:'second',recognizedExcessMs:0},adminId);
+  await review(admin,409,decision);
+  const fresh=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
+  const next={...decision,proposalDigest:fresh.proposalDigest};
+  await review(admin,409,{...next,recognizedExcessMs:3600001});
+  await review(other,403,next);
+  assert.equal((await review(admin,200,next)).replay,false);assert.equal((await review(admin,200,next)).replay,true);
+  await review(admin,409,{...next,recognizedExcessMs:0});
+  await excessApi(worker,409,'accept_hourly_excess',{...af,proposalId:'second'},adminId);
+  const av=await excessApi(worker,200,undefined,{},adminId);
+  assert.equal(av.dispute.status,'resolved_administratively');assert.equal(av.resolved.recognizedServiceMinor,13000);assert.equal(av.restrictionActive,false);assert.equal(av.payable,false);
+  assert.equal('actorUid' in av.dispute.decision,false);
+  assert.equal((await ar.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+  for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:false,openOfferIds:[]});
+  assert.ok(!(await review(admin,200)).items.some((x:any)=>x.offerId===adminId));
+ }finally{mock.mock.restore();}
  await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);
  await ref.collection('directPayment').doc('obligation').set({fixture:true});
  await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
