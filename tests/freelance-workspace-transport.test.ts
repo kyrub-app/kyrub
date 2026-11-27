@@ -193,3 +193,28 @@ test('variable payment basis never treats a zero result or unconfirmed excess as
  const {startedAt:sa,completionRequestedAt:ca,completedAt:co,...preApp}=application;
  assert.throws(()=>buildFreelancePaymentObligation({...preOffer,status:'contracted'},{...preApp,status:'contracted'}),/NOT_ENABLED/);
 });
+
+test('reputation eligibility follows completed contract and separates professional, personal and store subjects',async()=>{
+ const {createFreelanceOffer,createFreelanceApplication,selectFreelanceApplicant,confirmFreelanceSelection,advanceFreelanceExecution}=await import('../shared/freelanceLifecycle.js');
+ const {freelanceReputationSlot,freelanceReputationParties}=await import('../shared/freelanceReputation.js');
+ const at=(n:number)=>new Date(Date.UTC(2026,10,27,12,n)).toISOString();
+ for(const corporate of [false,true]){
+  const o=createFreelanceOffer('offer','owner',{title:'Serviço fictício',description:'Teste',requirements:'',paymentMinor:15000},at(0));
+  if(corporate)o.requesterStore={storeId:'shop',displayName:'Loja fictícia',representativeRole:'owner'};
+  const a=createFreelanceApplication(o,'worker',at(1));
+  const s=selectFreelanceApplicant(o,a,'owner',at(2));
+  const c=confirmFreelanceSelection(s.offer,s.application,'worker',true,at(3));
+  assert.throws(()=>freelanceReputationSlot(c.offer,c.application,'worker'),/CONFLICT/);
+  const running=advanceFreelanceExecution(c.offer,c.application,'worker','start',true,at(4));
+  const pending=advanceFreelanceExecution(running.offer,running.application,'worker','request_completion',true,at(5));
+  assert.throws(()=>freelanceReputationParties(pending.offer,pending.application),/CONFLICT/);
+  const done=advanceFreelanceExecution(pending.offer,pending.application,'owner','confirm_completion',true,at(6));
+  const {offer,application}=done;
+  assert.deepEqual(freelanceReputationSlot(offer,application,'owner'),{offerId:'offer',role:'requester',subject:{kind:'professional',id:'worker'},completedAt:at(6)});
+  assert.deepEqual(freelanceReputationSlot(offer,application,'worker'),{offerId:'offer',role:'worker',subject:{kind:corporate?'store_requester':'personal_requester',id:corporate?'shop':'owner'},completedAt:at(6)});
+  assert.throws(()=>freelanceReputationSlot(offer,application,'outsider'),/FORBIDDEN/);
+  for(const patch of [{status:'cancelled' as const},{selectedApplicantUid:'outsider'},{completedAt:at(4)},{ownerUid:'worker'},{requesterStore:{storeId:'wrong',displayName:'Outra loja',representativeRole:'owner' as const}}])
+   assert.throws(()=>freelanceReputationParties({...offer,...patch},application),/CONFLICT/);
+  assert.throws(()=>freelanceReputationParties(offer,{...application,completedAt:at(7)}),/CONFLICT/);
+ }
+});
