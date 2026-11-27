@@ -1355,6 +1355,15 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    assert.ok(item);assert.equal(item.sourceDigest,a.sourceDigest);
    const adminDecision={action:'decide_hourly_cancellation',offerId:id,sourceDigest:a.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedServiceMinor:proposal.recognizedServiceMinor,reason:'Decisão fictícia fundamentada',confirmed:true};
    if(started){
+    const note={kind:'cancellation',sourceDigest:a.sourceDigest,evidenceId:'cancel-note',note:'Manifestação fictícia sobre o cancelamento.'};
+    await finance(worker,200,'submit_hourly_review_note',note);
+    await finance(worker,200,'submit_hourly_review_note',note);
+    await finance(owner,409,'submit_hourly_review_note',note);
+    await adminReview(admin,409,adminDecision);
+    const fresh=(await adminReview(admin,200)).items.find((v:any)=>v.offerId===id);
+    assert.equal(fresh.notes.length,1);assert.equal(fresh.notes[0].note,note.note);
+    Object.assign(adminDecision,{evidenceDigest:fresh.evidenceDigest});
+    await adminReview(admin,409,{...adminDecision,proposalDigest:'0'.repeat(64)});
     await adminReview(admin,409,{...adminDecision,sourceDigest:'0'.repeat(64)});
     await adminReview(admin,409,{...adminDecision,recognizedServiceMinor:a.capMinor+1});
     assert.equal((await adminReview(admin,200,adminDecision)).replay,false);
