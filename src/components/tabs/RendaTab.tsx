@@ -14,6 +14,7 @@ import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
+import { FreelanceEarningsPlanningCard } from '../renda/FreelanceEarningsPlanningCard';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
 import { ErpManagementAlertsBell } from '../store/ErpManagementAlertsBell';
 
@@ -75,6 +76,14 @@ export function RendaTab({
   const [isProvisioningFree, setIsProvisioningFree] = useState(false);
   const [isDeliveryEarningsOpen, setIsDeliveryEarningsOpen] =
     useState(false);
+  const [isFreelanceEarningsOpen, setIsFreelanceEarningsOpen] = useState(false);
+  useEffect(() => {
+    let previousUid = auth.currentUser?.uid;
+    return onAuthStateChanged(auth, user => {
+      if (previousUid !== user?.uid || !user) setIsFreelanceEarningsOpen(false);
+      previousUid = user?.uid;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,11 +157,11 @@ export function RendaTab({
   }, []);
 
   useEffect(() => {
-    if (!isDeliveryEarningsOpen) return;
+    if (!isDeliveryEarningsOpen && !isFreelanceEarningsOpen) return;
 
     const previousOverflow = document.body.style.overflow;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsDeliveryEarningsOpen(false);
+      if (event.key === 'Escape') { setIsDeliveryEarningsOpen(false); setIsFreelanceEarningsOpen(false); }
     };
 
     document.body.style.overflow = 'hidden';
@@ -162,7 +171,7 @@ export function RendaTab({
       document.body.style.overflow = previousOverflow;
       window.removeEventListener('keydown', closeOnEscape);
     };
-  }, [isDeliveryEarningsOpen]);
+  }, [isDeliveryEarningsOpen, isFreelanceEarningsOpen]);
 
   const openRetailerWorkspace = async () => {
     if (guestReadOnly) {
@@ -286,11 +295,21 @@ export function RendaTab({
 
         <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
           <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <Briefcase className="h-4 w-4 text-orange-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Freelas
-              </h3>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Briefcase className="h-4 w-4 shrink-0 text-orange-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">Kyrub Freelas</h3>
+              </div>
+              <button type="button"
+                onClick={() => guestReadOnly || !auth.currentUser
+                  ? onGuestLoginRequired?.('planejar seus ganhos')
+                  : setIsFreelanceEarningsOpen(true)}
+                className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] text-orange-300 transition hover:border-orange-400/35 hover:bg-orange-500/[0.14] active:scale-95"
+                id="btn-freelance-earnings" aria-label="Ver ganhos em freelas"
+                aria-haspopup="dialog" aria-controls="freelance-earnings-sheet"
+                aria-expanded={isFreelanceEarningsOpen} title="Ganhos em freelas">
+                <CircleDollarSign className="h-4 w-4" />
+              </button>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
               Contrate profissionais para sua loja ou preste
@@ -375,6 +394,26 @@ export function RendaTab({
         </section>
 
       </div>
+
+      {isFreelanceEarningsOpen && !guestReadOnly && auth.currentUser && createPortal(
+        <div className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-6"
+          role="presentation" onMouseDown={() => setIsFreelanceEarningsOpen(false)}>
+          <section id="freelance-earnings-sheet" role="dialog" aria-modal="true"
+            aria-labelledby="freelance-earnings-sheet-title"
+            className="max-h-[88dvh] w-full overflow-y-auto rounded-t-[2rem] border border-slate-700/80 bg-slate-950 shadow-2xl sm:max-w-2xl sm:rounded-[2rem]"
+            onMouseDown={event => event.stopPropagation()}>
+            <header className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/5 bg-slate-950/95 px-5 py-4">
+              <div className="min-w-0">
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-orange-300">Kyrub Freelas</p>
+                <h2 id="freelance-earnings-sheet-title" className="mt-0.5 text-sm font-black text-white">Ganhos em freelas</h2>
+              </div>
+              <button type="button" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-300"
+                aria-label="Fechar ganhos em freelas" onClick={() => setIsFreelanceEarningsOpen(false)}><X className="h-4 w-4"/></button>
+            </header>
+            <div className="p-3 pb-[max(1rem,env(safe-area-inset-bottom))] sm:p-4"><FreelanceEarningsPlanningCard /></div>
+          </section>
+        </div>, document.body
+      )}
 
       {isDeliveryEarningsOpen && createPortal(
         <div

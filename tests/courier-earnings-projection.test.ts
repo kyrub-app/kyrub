@@ -170,3 +170,24 @@ test('statement exposes lifecycle timestamps and only settled entries receive se
   assert.match(card, /Liquidação confirmada por evidência autoritativa/);
   assert.match(card, /entry\.settlementProvider/);
 });
+
+test('freelance planning remains separate from canonical delivery earnings', async () => {
+  const { calculateFreelanceEarningsPlan, parseFreelancePlanningMoney } = await import('../shared/freelanceEarningsPlanning');
+  assert.equal(parseFreelancePlanningMoney('120,50'), 12050);
+  assert.equal(parseFreelancePlanningMoney('0,01'), 1);
+  assert.equal(parseFreelancePlanningMoney('1,234'), null);
+  assert.equal(parseFreelancePlanningMoney('-1'), null);
+  assert.deepEqual(calculateFreelanceEarningsPlan({ jobs: 8, feeMinor: 12000, costMinor: 2000 }), {
+    grossMinor: 96000, totalCostMinor: 16000, netMinor: 80000,
+  });
+  assert.equal(calculateFreelanceEarningsPlan({ jobs: 2, feeMinor: 1000, costMinor: 2000 })?.netMinor, -2000);
+  assert.equal(calculateFreelanceEarningsPlan({ jobs: 1.5, feeMinor: 100, costMinor: 0 }), null);
+  assert.match(renda, /id="btn-freelance-earnings"/);
+  assert.match(renda, /id="freelance-earnings-sheet"/);
+  assert.match(renda, /<FreelanceEarningsPlanningCard \/>/);
+  assert.match(renda, /<CourierEarningsProjectionCard \/>/);
+  const freelancer = readFileSync('src/components/renda/FreelanceEarningsPlanningCard.tsx', 'utf8');
+  assert.match(freelancer, /não recebimentos confirmados/);
+  assert.match(freelancer, /Histórico financeiro confirmado ainda indisponível/);
+  assert.doesNotMatch(freelancer, /fetch\(|localStorage|freelanceJobs|setDoc\(|addDoc\(/);
+});
