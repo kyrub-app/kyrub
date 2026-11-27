@@ -524,7 +524,7 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
  assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).get('destinationRevision'),1);
 });
 
-test('direct publication HTTP: canonical terms, explicit acceptance, immutable obligation and completion payment execution',async()=>{
+test('direct publication HTTP: canonical terms, explicit acceptance, immutable obligation and completion payment execution',async t=>{
  const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
  const payer=await account('terms-payer',['requester']),worker=await account('terms-worker',['freelancer']);
  const id='http-direct-terms-'+suffix,base={title:'Freela Pix fictício',description:'Somente emulador',requirements:'',paymentMinor:15000};
@@ -630,6 +630,37 @@ test('direct publication HTTP: canonical terms, explicit acceptance, immutable o
   assert.equal((await readOwnFreelanceRestrictions(worker.uid)).restricted,false);
   const {digestVariablePaymentSources}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
   const contestRef=db.doc('freelanceReputationContestsV1/'+digestVariablePaymentSources([id,'worker']));
+  const reviewer=await account('reputation-review-admin',[]),authz='Bearer '+reviewer.token;
+  const reviewerRef=db.doc('kyrub_admin/control_plane/admins/'+reviewer.uid);
+  await reviewerRef.set({uid:reviewer.uid,role:'super_admin',status:'active'});
+  const adminUrl='http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review?view=reputation_contests';
+  const adminRead=async(a:Actor|null,status:number,query='')=>{
+   const r=await fetch(adminUrl+query,{headers:a?{authorization:'Bearer '+a.token}:{}});
+   assert.equal(r.headers.get('cache-control'),'private, no-store, max-age=0');
+   const payload=await r.json();assert.equal(r.status,status,JSON.stringify(payload));return payload;
+  };
+  await adminRead(null,401);await adminRead(reviewer,403);
+  const verify=auth.verifyIdToken.bind(auth);
+  t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+   const d=await verify(token,checkRevoked);return [reviewer.token,payer.token,worker.token,outsider.token].includes(token)?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
+  });
+  try{
+   await adminRead(outsider,403);
+   await db.doc('kyrub_admin/control_plane/admins/'+payer.uid).set({uid:payer.uid,role:'super_admin',status:'active'});
+   await db.doc('kyrub_admin/control_plane/admins/'+worker.uid).set({uid:worker.uid,role:'super_admin',status:'active'});
+   assert.ok(!(await adminRead(payer,200)).items.some((r:any)=>r.offerId===id));
+   assert.ok(!(await adminRead(worker,200)).items.some((r:any)=>r.offerId===id));
+   const queue=await adminRead(reviewer,200),item=queue.items.find((r:any)=>r.offerId===id);
+   assert.equal(queue.readOnly,true);assert.equal(item.stars,4);assert.equal(item.reason,challenge.reason);
+   assert.equal(item.subjectKind,'personal_requester');assert.equal(item.caseId,contestRef.id);
+   assert.ok(!JSON.stringify(item).includes(payer.uid));assert.ok(!JSON.stringify(item).includes(worker.uid));
+   await adminRead(reviewer,400,'&cursor=invalid');
+   assert.ok(!(await adminRead(reviewer,200,'&cursor='+contestRef.id)).items.some((r:any)=>r.offerId===id));
+   await reviewerRef.update({status:'inactive'});await adminRead(reviewer,403);
+   await reviewerRef.update({status:'active'});
+   delete process.env[rg];await adminRead(reviewer,403);process.env[rg]='true';
+   await contestRef.update({ratingDigest:'0'.repeat(64)});await adminRead(reviewer,409);
+  }finally{t.mock.restoreAll();}
   await contestRef.update({ratingDigest:'0'.repeat(64)});
   await assert.rejects(readOwnFreelanceReputationContestation(payer.uid,id),/CONFLICT/);
   await ref.collection('reputationPrivateV1').doc('worker').update({contractDigest:'0'.repeat(64)});
