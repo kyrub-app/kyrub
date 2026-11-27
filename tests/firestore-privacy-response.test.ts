@@ -46,6 +46,7 @@ test('response preparation and independent review never deliver data or execute 
  await grant.update({permissions:['privacy:read','privacy:assess','privacy:prepare-response','privacy:review-response']});
  const prepared=await admin.prepareResponse(adminToken,draftResponse,clock());
  assert.equal(prepared.status,'draft');assert.equal(prepared.delivered,false);
+ assert.equal((await intake.track(receipt.protocol,receipt.trackingCode,clock())).reviewedNotice,undefined);
  const reviewInput={...draftResponse,expectedResponseRevision:1,decision:'approve'};
  await assert.rejects(admin.reviewResponse(adminToken,reviewInput,clock()));
  const reviewerUid='privacy-reviewer-fixture',reviewerToken=await account(reviewerUid),reviewerGrant=db.doc('kyrub_admin/control_plane/privacy_rights_grants/'+reviewerUid);
@@ -77,6 +78,8 @@ test('response preparation and independent review never deliver data or execute 
  await assert.rejects(admin.reviewResponse(reviewerToken,{...reviewNext,delivered:true},clock()));
  const reviewed=await admin.reviewResponse(reviewerToken,reviewNext,clock());
  assert.equal(reviewed.status,'reviewed');assert.equal(reviewed.delivered,false);assert.equal(reviewed.actionStatus,'not-executed');
+ const visible=await intake.track(receipt.protocol,receipt.trackingCode,clock());assert.ok(visible.reviewedNotice?.includes('Nenhuma entrega'));
+ await assert.rejects(intake.track(receipt.protocol,random(),clock()));
  await assert.rejects(admin.reviewResponse(reviewerToken,reviewNext,clock()));
  const responseRecord=(await db.collection('privacy_emulator_responses').doc(receipt.protocol+'_2').get()).data()!;
  assert.equal(responseRecord.delivered,false);assert.equal(responseRecord.status,'reviewed');
