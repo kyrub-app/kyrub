@@ -6,6 +6,7 @@ import {
   BOSQUES_PER_XP, SEEDS_PER_BOSQUE, SEEDS_PER_PITANGUEIRA,
   calculatePitangueiraJourney, planPostSemeadura, sumVerifiedPersonalSeeds,
 } from '../shared/pitangueiraJourney';
+import {planSeedAllowanceDebit,planReputationSeedGrant,projectSeedAllowance} from '../shared/semeaduraReserve';
 import { PITANGAS_PER_XP } from '../shared/pitangaXpConversion';
 
 test('one tree earns exactly one Pitanga equivalent and 100 trees form one bosque', () => {
@@ -96,4 +97,24 @@ test('accepted seeds alone consume quota in the receipt transaction and communit
   assert.match(source, /tx\.set\(quotaRef,/);
   assert.doesNotMatch(source, /communityProgressRef|nextCommunityTotal/);
   assert.match(source, /tx\.create\(receiptRef,/);
+});
+
+test('a received seed is progress, not an extra spending allowance',()=>{
+ const reserve={earned:0,spent:0};
+ assert.equal(calculatePitangueiraJourney(1).totalSeeds,1);
+ assert.equal(calculatePitangueiraJourney(1).brotos,0);
+ assert.equal(calculatePitangueiraJourney(10).brotos,1);
+ assert.deepEqual(projectSeedAllowance(0,reserve),{dailyRemaining:100,reserveRemaining:0});
+});
+test('daily allowance is consumed before reputation reserve; rollover preserves reserve',()=>{
+ const reserve=planReputationSeedGrant({earned:0,spent:0},7); // fictitious test grant, not policy
+ assert.deepEqual(planSeedAllowanceDebit(99,reserve),{source:'daily',dailyUsed:100,reserve});
+ const spent=planSeedAllowanceDebit(100,reserve);
+ assert.deepEqual(spent,{source:'reserve',dailyUsed:100,reserve:{earned:7,spent:1}});
+ assert.deepEqual(projectSeedAllowance(0,spent.reserve),{dailyRemaining:100,reserveRemaining:6});
+ assert.throws(()=>planSeedAllowanceDebit(100,{earned:7,spent:7}),/DAILY_LIMIT_REACHED/);
+ assert.throws(()=>projectSeedAllowance(101,reserve),/RESERVE_INVALID/);
+ assert.throws(()=>projectSeedAllowance(0,{earned:1,spent:2}),/RESERVE_INVALID/);
+ assert.throws(()=>planReputationSeedGrant(reserve,0),/RESERVE_INVALID/);
+ assert.throws(()=>planReputationSeedGrant({earned:Number.MAX_SAFE_INTEGER,spent:0},1),/RESERVE_INVALID/);
 });
