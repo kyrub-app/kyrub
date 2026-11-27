@@ -13,11 +13,11 @@ function assertLocal(){
  !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
  getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
 }
-function readRoot(raw:unknown,uid:string):{payment:string[];cancellation:string[];excess:string[];adjustment:string[]}{
- if(raw===undefined)return {payment:[],cancellation:[],excess:[],adjustment:[]};
+function readRoot(raw:unknown,uid:string):{payment:string[];cancellation:string[];excess:string[];adjustment:string[];advance:string[]}{
+ if(raw===undefined)return {payment:[],cancellation:[],excess:[],adjustment:[],advance:[]};
  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw Error('FREELANCE_RESTRICTION_CONFLICT');
- const r=raw as {schemaVersion:unknown;uid:unknown;openOfferIds:unknown;openCancellationOfferIds?:unknown;openExcessOfferIds?:unknown;openAdjustmentOfferIds?:unknown};
- if(![3,4,5,6].includes(Object.keys(r).length)||Object.keys(r).some(k=>!['schemaVersion','uid','openOfferIds','openCancellationOfferIds','openExcessOfferIds','openAdjustmentOfferIds'].includes(k))||r.schemaVersion!==1||r.uid!==uid||!Array.isArray(r.openOfferIds)||
+ const r=raw as {schemaVersion:unknown;uid:unknown;openOfferIds:unknown;openCancellationOfferIds?:unknown;openExcessOfferIds?:unknown;openAdjustmentOfferIds?:unknown;openHourlyAdvanceOfferIds?:unknown};
+ if(![3,4,5,6,7].includes(Object.keys(r).length)||Object.keys(r).some(k=>!['schemaVersion','uid','openOfferIds','openCancellationOfferIds','openExcessOfferIds','openAdjustmentOfferIds','openHourlyAdvanceOfferIds'].includes(k))||r.schemaVersion!==1||r.uid!==uid||!Array.isArray(r.openOfferIds)||
  !r.openOfferIds.every(validFreelanceId)||new Set(r.openOfferIds).size!==r.openOfferIds.length)throw Error('FREELANCE_RESTRICTION_CONFLICT');
  const cancellation=r.openCancellationOfferIds===undefined?[]:r.openCancellationOfferIds;
  if(!Array.isArray(cancellation)||!cancellation.every(validFreelanceId)||new Set(cancellation).size!==cancellation.length)throw Error('FREELANCE_RESTRICTION_CONFLICT');
@@ -25,11 +25,13 @@ function readRoot(raw:unknown,uid:string):{payment:string[];cancellation:string[
  if(!Array.isArray(excess)||!excess.every(validFreelanceId)||new Set(excess).size!==excess.length)throw Error('FREELANCE_RESTRICTION_CONFLICT');
  const adjustment=r.openAdjustmentOfferIds===undefined?[]:r.openAdjustmentOfferIds;
  if(!Array.isArray(adjustment)||!adjustment.every(validFreelanceId)||new Set(adjustment).size!==adjustment.length)throw Error('FREELANCE_RESTRICTION_CONFLICT');
- return {payment:r.openOfferIds,cancellation,excess,adjustment};
+ const advance=r.openHourlyAdvanceOfferIds===undefined?[]:r.openHourlyAdvanceOfferIds;
+ if(!Array.isArray(advance)||!advance.every(validFreelanceId)||new Set(advance).size!==advance.length)throw Error('FREELANCE_RESTRICTION_CONFLICT');
+ return {payment:r.openOfferIds,cancellation,excess,adjustment,advance};
 }
 const readIds=(raw:unknown,uid:string)=>readRoot(raw,uid).payment;
-function rootRecord(uid:string,payment:string[],cancellation:string[],excess:string[],adjustment:string[]){return {schemaVersion:1,uid,openOfferIds:payment,...(cancellation.length?{openCancellationOfferIds:cancellation}:{}),...(excess.length?{openExcessOfferIds:excess}:{}),...(adjustment.length?{openAdjustmentOfferIds:adjustment}:{})};}
-const combined=(raw:unknown,uid:string)=>{const r=readRoot(raw,uid);return [...new Set([...r.payment,...r.cancellation,...r.excess,...r.adjustment])].sort();};
+function rootRecord(uid:string,payment:string[],cancellation:string[],excess:string[],adjustment:string[],advance:string[]){return {schemaVersion:1,uid,openOfferIds:payment,...(cancellation.length?{openCancellationOfferIds:cancellation}:{}),...(excess.length?{openExcessOfferIds:excess}:{}),...(adjustment.length?{openAdjustmentOfferIds:adjustment}:{}),...(advance.length?{openHourlyAdvanceOfferIds:advance}:{})};}
+const combined=(raw:unknown,uid:string)=>{const r=readRoot(raw,uid);return [...new Set([...r.payment,...r.cancellation,...r.excess,...r.adjustment,...r.advance])].sort();};
 export async function assertFreelanceEngagementAllowed(tx:FirebaseFirestore.Transaction,...uids:string[]){
  const unique=[...new Set(uids)];
  if(!unique.every(validFreelanceId))throw Error('FREELANCE_INVALID');
@@ -55,7 +57,7 @@ export async function prepareVoluntaryDisputeRestriction(tx:FirebaseFirestore.Tr
  const updates=docs.map((d,i)=>{
   const open=readIds(d.data(),ids[i]),has=open.includes(obligation.offerId);
   if(opening?has:!has)throw Error('FREELANCE_RESTRICTION_CONFLICT');
-  return rootRecord(ids[i],opening?[...open,obligation.offerId].sort():open.filter(id=>id!==obligation.offerId),readRoot(d.data(),ids[i]).cancellation,readRoot(d.data(),ids[i]).excess,readRoot(d.data(),ids[i]).adjustment);
+  return rootRecord(ids[i],opening?[...open,obligation.offerId].sort():open.filter(id=>id!==obligation.offerId),readRoot(d.data(),ids[i]).cancellation,readRoot(d.data(),ids[i]).excess,readRoot(d.data(),ids[i]).adjustment,readRoot(d.data(),ids[i]).advance);
  });
  return ()=>{for(let i=0;i<refs.length;i++)tx.set(refs[i],updates[i]);};
 }
@@ -76,7 +78,7 @@ export async function prepareAdministrativeDisputeRelease(tx:FirebaseFirestore.T
  const updates=docs.map((d,i)=>{
   const open=readIds(d.data(),ids[i]);
   if(!open.includes(obligation.offerId))throw Error('FREELANCE_RESTRICTION_CONFLICT');
-  return rootRecord(ids[i],open.filter(id=>id!==obligation.offerId),readRoot(d.data(),ids[i]).cancellation,readRoot(d.data(),ids[i]).excess,readRoot(d.data(),ids[i]).adjustment);
+  return rootRecord(ids[i],open.filter(id=>id!==obligation.offerId),readRoot(d.data(),ids[i]).cancellation,readRoot(d.data(),ids[i]).excess,readRoot(d.data(),ids[i]).adjustment,readRoot(d.data(),ids[i]).advance);
  });
  return ()=>{for(let i=0;i<refs.length;i++)tx.set(refs[i],updates[i]);};
 }
@@ -99,7 +101,7 @@ export async function prepareCancellationRestriction(tx:FirebaseFirestore.Transa
  const updates=docs.map((d,i)=>{
   const r=readRoot(d.data(),ids[i]);
   if(r.cancellation.includes(p.offerId)!==expected)throw Error('FREELANCE_RESTRICTION_CONFLICT');
-  return rootRecord(ids[i],r.payment,next?[...new Set([...r.cancellation,p.offerId])].sort():r.cancellation.filter(id=>id!==p.offerId),r.excess,r.adjustment);
+  return rootRecord(ids[i],r.payment,next?[...new Set([...r.cancellation,p.offerId])].sort():r.cancellation.filter(id=>id!==p.offerId),r.excess,r.adjustment,r.advance);
  });
  return ()=>{if(expected!==next)refs.forEach((ref,i)=>tx.set(ref,updates[i]));};
 }
@@ -112,7 +114,7 @@ export async function prepareExcessRestriction(tx:FirebaseFirestore.Transaction,
  const updates=docs.map((d,i)=>{
   const r=readRoot(d.data(),ids[i]);
   if(r.excess.includes(p.offerId)!==expected)throw Error('FREELANCE_RESTRICTION_CONFLICT');
-  return rootRecord(ids[i],r.payment,r.cancellation,next?[...new Set([...r.excess,p.offerId])].sort():r.excess.filter(id=>id!==p.offerId),r.adjustment);
+  return rootRecord(ids[i],r.payment,r.cancellation,next?[...new Set([...r.excess,p.offerId])].sort():r.excess.filter(id=>id!==p.offerId),r.adjustment,r.advance);
  });
  return ()=>{if(expected!==next)refs.forEach((ref,i)=>tx.set(ref,updates[i]));};
 }
@@ -125,7 +127,21 @@ export async function prepareAdjustmentRestriction(tx:FirebaseFirestore.Transact
  const updates=docs.map((d,i)=>{
   const r=readRoot(d.data(),ids[i]);
   if(r.adjustment.includes(p.offerId)!==expected)throw Error('FREELANCE_RESTRICTION_CONFLICT');
-  return rootRecord(ids[i],r.payment,r.cancellation,r.excess,next?[...new Set([...r.adjustment,p.offerId])].sort():r.adjustment.filter(id=>id!==p.offerId));
+  return rootRecord(ids[i],r.payment,r.cancellation,r.excess,next?[...new Set([...r.adjustment,p.offerId])].sort():r.adjustment.filter(id=>id!==p.offerId),r.advance);
+ });
+ return ()=>{if(expected!==next)refs.forEach((ref,i)=>tx.set(ref,updates[i]));};
+}
+
+/** Independent restriction cause: never release another financial case. */
+export async function prepareHourlyAdvanceRestriction(tx:FirebaseFirestore.Transaction,p:Parties,expected:boolean,next:boolean){
+ assertLocal();
+ const ids=[p.requesterUid,p.beneficiaryUid];
+ if(!validFreelanceId(p.offerId)||!ids.every(validFreelanceId)||ids[0]===ids[1])throw Error('FREELANCE_INVALID');
+ const refs=ids.map(root),docs=await tx.getAll(...refs);
+ const updates=docs.map((d,i)=>{
+  const r=readRoot(d.data(),ids[i]);
+  if(r.advance.includes(p.offerId)!==expected)throw Error('FREELANCE_RESTRICTION_CONFLICT');
+  return rootRecord(ids[i],r.payment,r.cancellation,r.excess,r.adjustment,next?[...new Set([...r.advance,p.offerId])].sort():r.advance.filter(id=>id!==p.offerId));
  });
  return ()=>{if(expected!==next)refs.forEach((ref,i)=>tx.set(ref,updates[i]));};
 }
