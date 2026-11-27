@@ -6,7 +6,7 @@ import {readFinancialContext,checkedReview,recordFreelanceExternalPaymentStateme
 import {submitFreelanceFinancialEvidence,readFinancialEvidence} from './freelanceFinancialEvidenceService.js';
 import {submitFreelanceFinancialReceipt,readFinancialReceiptManifest,readFinancialReceiptBytes} from './freelanceFinancialReceiptService.js';
 import {personalPixRecentLogin} from '../payments/personalPixTransport.js';
-import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination} from './freelancePixDestinationService.js';
+import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination,changeFreelancePixBinding,readFreelancePixRebind} from './freelancePixDestinationService.js';
 import {readOwnFreelanceRestrictions,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 import {adminDb} from '../firebaseAdmin.js';
 
@@ -54,6 +54,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
+   if(q.view==='pix_rebind'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixRebind(uid,q.offerId));return;}
    if(q.view==='pix_sharing'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixSharing(uid,q.offerId));return;}
    if(q.view==='restrictions'&&keys.length===1){res.status(200).json(await readOwnFreelanceRestrictions(uid));return;}
    if(q.view==='case'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCase(uid,q.offerId));return;}
@@ -68,8 +69,10 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const max=b.action==='submit_receipt'?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
-  if(['bind_pix','authorize_pix_share','reveal_pix'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
+  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
   switch(b.action){
+   case 'propose_pix_rebind':exact(['oldRevision','newRevision','confirmed']);await changeFreelancePixBinding(uid,b.offerId,'propose',{oldRevision:b.oldRevision,newRevision:b.newRevision,confirmed:b.confirmed});break;
+   case 'accept_pix_rebind':exact(['oldRevision','newRevision','confirmed','paymentNotSent']);await changeFreelancePixBinding(uid,b.offerId,'accept',{oldRevision:b.oldRevision,newRevision:b.newRevision,confirmed:b.confirmed,paymentNotSent:b.paymentNotSent});break;
    case 'bind_pix':exact(['expectedRevision','confirmed']);await bindFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
    case 'authorize_pix_share':exact(['expectedRevision','confirmed']);await authorizeFreelancePixSharing(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
    case 'reveal_pix':exact(['expectedRevision','confirmed']);res.status(200).json(await revealFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed}));return;
