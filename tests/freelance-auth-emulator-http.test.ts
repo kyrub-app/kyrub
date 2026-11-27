@@ -2100,6 +2100,22 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
    assert.deepEqual(await call(payer,query,200),{experience:null});
    assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'personal_requester')).certified,true);
    assert.deepEqual(await call(payer,query,200),{experience:{completedServices:3,completedHires:0}});
+   const identifier='batch-experience-'+suffix,record={kind:'profile',identifier,targetId:worker.uid};
+   const forward=db.doc('public_social_addresses/profile:'+identifier),reverse=db.doc('public_social_address_targets/profile:'+worker.uid);
+   const byAddress='?view=reputation_public_address_experience&identifier='+identifier;
+   assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+   await forward.set(record);
+   try{
+    assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+    await reverse.set(record);
+    assert.deepEqual(await call(payer,byAddress,200),{experience:{completedServices:3,completedHires:0}});
+    await call(null,byAddress,401);await call(payer,byAddress+'&targetUid='+worker.uid,400);
+    await profile.update({isProfileVisible:false});
+    assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+    await profile.update({isProfileVisible:true});
+    await reverse.update({identifier:'wrong-address'});
+    assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+   }finally{await forward.delete();await reverse.delete();}
    await call(payer,query+'&offerId='+ids[0],400);
    await call(payer,'?view=reputation_public_experience&targetUid=invalid%2Fid',400);
    await profile.update({isProfileVisible:false});
