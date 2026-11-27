@@ -275,3 +275,20 @@ test('reputation criterion guidance covers both roles and accessible stars start
  assert.match(ui,/!complete/);
  assert.match(ui,/Média da avaliação/);
 });
+
+test('incremental reputation arithmetic exactly preserves equal rating weights and separate experience',async()=>{
+ const {emptyReputationAccumulator,incrementReputationExperience,incrementReleasedReputation,projectReputationAccumulator,validateReputationAccumulator}=await import('../shared/freelanceReputationAccumulator.js');
+ const {projectReputationAggregate}=await import('../shared/freelanceReputationCriteria.js');
+ const kind='professional',r1={punctuality:5,courtesy:4,commitment:4,quality:5,communication:4,cooperation:null,organization:null} as const;
+ const r2={punctuality:1,courtesy:null,commitment:null,quality:null,communication:null,cooperation:null,organization:null} as const;
+ let a=emptyReputationAccumulator(kind);
+ assert.equal(projectReputationAccumulator(kind,a).aggregate.mean,null);
+ assert.throws(()=>incrementReleasedReputation(kind,a,r1),/INDEX_CONFLICT/);
+ a=incrementReputationExperience(kind,a);a=incrementReputationExperience(kind,a);a=incrementReputationExperience(kind,a);
+ a=incrementReleasedReputation(kind,a,r1);a=incrementReleasedReputation(kind,a,r2);
+ const p=projectReputationAccumulator(kind,a);
+ assert.equal(p.completedContracts,3);assert.deepEqual(p.aggregate,projectReputationAggregate(kind,[r1,r2]));
+ assert.throws(()=>validateReputationAccumulator(kind,{...a,ratingCount:4}),/INDEX_CONFLICT/);
+ assert.throws(()=>validateReputationAccumulator(kind,{...a,ratingUnits:0}),/INDEX_CONFLICT/);
+ assert.throws(()=>validateReputationAccumulator(kind,{...a,criteria:{...a.criteria,courtesy:{count:0,sum:5}}}),/INDEX_CONFLICT/);
+});
