@@ -717,7 +717,13 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await propose(payer,409,id,'invalid-amount',15001,15000);
  await propose(payer,409,id,'wrong-receipt',5000,0);
  await propose(payer,200,id,'refund-proposal',5000,15000);
+ const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
+ const inbox=(uid:string)=>listUserNotifications({recipientUserId:uid});
+ const notices=(await inbox(worker.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_proposed');
+ assert.equal(notices.length,1);assert.equal(notices[0].target.kind,'none');
+ await markUserNotificationRead({recipientUserId:worker.uid,notificationId:notices[0].id});
  await propose(payer,200,id,'refund-proposal',5000,15000);
+ assert.ok((await inbox(worker.uid)).notifications.find(n=>n.id===notices[0].id)?.readAt);
  await accept(payer,409,id,'refund-proposal');
  await accept(other,403,id,'refund-proposal');
  const accepted=await Promise.all([accept(worker,200,id,'refund-proposal'),accept(worker,200,id,'refund-proposal')]);assert.ok(accepted.every(a=>a.confirmed));
@@ -725,6 +731,9 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal(refund.proposal.status,'accepted');assert.equal(refund.proposal.amounts.proposedRefundMinor,10000);
  assert.equal(refund.proposal.amounts.proposedAdditionalMinor,0);assert.equal(refund.proposal.amounts.bankVerified,false);
  assert.equal(refund.settlement,'not_verified');
+ const acceptedNotices=(await inbox(payer.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_accepted');assert.equal(acceptedNotices.length,1);assert.equal(acceptedNotices[0].target.kind,'none');
+ assert.ok(!JSON.stringify(acceptedNotices).includes('10000'));assert.ok(!JSON.stringify(acceptedNotices).includes('refund-proposal'));
+ assert.equal((await inbox(other.uid)).notifications.length,0);
  await propose(worker,409,id,'replace-accepted',0,15000);
  assert.equal((await db.doc('freelanceOffersV1/'+id+'/financialBasis/remuneration').get()).get('confirmedServiceMinor'),null);
  // Payment on completion: zero must be explicitly agreed, not inferred.
@@ -732,6 +741,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await propose(worker,200,completionId,'first-proposal',6000,0);
  await finance(payer,200,completionId,'close_cancellation_accounting',{proposalId:'first-proposal'});
  await accept(worker,409,completionId,'first-proposal');
+ assert.equal((await inbox(worker.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_closed').length,1);
  await propose(payer,200,completionId,'second-proposal',4000,0);
  await accept(worker,200,completionId,'second-proposal');
  const additional=await accounting(worker,200,completionId);
