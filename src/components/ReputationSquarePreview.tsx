@@ -1,10 +1,12 @@
 import {useEffect,useRef,useState,type ReactNode} from 'react';
+import {Forward} from 'lucide-react';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../utils/firebase';
 import {publicReputationCandidateEnabled,validPublicSummaryResponse} from './PublicProfileExperience';
 export type Summary={experience:{completedServices:number;completedHires:number};reputations:{professional:{ratingCount:number;mean:number|null};personalRequester:{ratingCount:number;mean:number|null}}};
 export function reputationSquareCandidateEnabled(){return publicReputationCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY==='true';}
 export function reputationSquarePublishEnabled(){return reputationSquareCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY==='true';}
+export function reputationSquareForwardEnabled(){return reputationSquarePublishEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY==='true';}
 export const isReputationSquarePost=(id:string)=>/^reputation_[a-f0-9]{64}$/.test(id);
 export function ReputationPublicationIndicators({summary}:{summary:Summary}){
  return <div className="space-y-3 text-sm">
@@ -111,4 +113,35 @@ export function ReputationSquarePostGate({postId,viewerId,createdAt,render}:{pos
  },[postId,viewerId,visible,tabVisible,expired,expiresAt]);
  if(!reputationSquarePublishEnabled()||expired||!viewerId||auth.currentUser?.uid!==viewerId)return null;
  return <div ref={holder}>{visible&&tabVisible&&summary?render(summary):<div className="min-h-16 rounded-2xl border border-slate-800 p-3 text-sm text-slate-400" role="status">{failed?'Publicação indisponível.':'Consultando publicação…'}</div>}</div>;
+}
+
+/** Redistribute only the canonical post. This candidate exposes only Praça;
+ * do not present other destinations until their access rules are integrated. */
+export function ReputationSquareForwardButton({postId,viewerId}:{postId:string;viewerId:string}){
+ const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
+ const inFlight=useRef(false);
+ async function forward(){
+  const user=auth.currentUser;
+  if(!reputationSquareForwardEnabled()||!isReputationSquarePost(postId)||!user||user.uid!==viewerId||inFlight.current)return;
+  inFlight.current=true;setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);if(auth.currentUser!==user)return;
+   const response=await fetch('/api/freelance/workspace',{method:'POST',cache:'no-store',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true})});
+   const value=await response.json();if(auth.currentUser!==user)return;
+   if(response.status===409){setNotice('Encaminhamento indisponível ou já realizado nas últimas 24 horas.');return;}
+   if(!response.ok||value?.confirmed!==true)throw Error('FORWARD_UNCONFIRMED');
+   setNotice('Publicação encaminhada à Praça.');setOpen(false);
+  }catch{if(auth.currentUser===user)setNotice('Não foi possível confirmar o encaminhamento.');}
+  finally{inFlight.current=false;setBusy(false);}
+ }
+ if(!reputationSquareForwardEnabled()||!viewerId||auth.currentUser?.uid!==viewerId)return null;
+ return <div className="min-w-0">
+  <button type="button" aria-expanded={open} onClick={()=>{setOpen(v=>!v);setNotice('');}} disabled={busy} className="flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-300"><Forward className="h-4 w-4 shrink-0"/>Encaminhar</button>
+  {open&&<div className="space-y-2 rounded-xl border border-slate-700 p-2 text-sm">
+   <p>Encaminhar à Praça mantendo a autoria e as interações originais?</p>
+   <button type="button" disabled={busy} onClick={()=>void forward()} className="min-h-11 rounded-lg bg-orange-500 px-3 py-2 font-bold text-slate-950">{busy?'Encaminhando…':'Confirmar'}</button>
+   <button type="button" disabled={busy} onClick={()=>setOpen(false)} className="min-h-11 px-2">Cancelar</button>
+  </div>}
+  {notice&&<p role="status" className="mt-1 text-xs text-slate-400">{notice}</p>}
+ </div>;
 }
