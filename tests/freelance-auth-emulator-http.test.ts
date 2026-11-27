@@ -942,3 +942,38 @@ test('attendance HTTP: check-in, presence, server timestamps, early authorizatio
  await act(worker,id,'propose_extension',409,{proposalId:'late',extraMinutes:10,expectedSequence:9,confirmed:true});
  assert.equal((await extensions(owner)).records.length,2);
 });
+
+test('variable basis from persisted emulator-only hourly fixture: immutable source, amount and isolation',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {recordFreelanceVariablePaymentBasis}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
+ const owner=await account('variable-owner',['requester']),worker=await account('variable-worker',['freelancer']),other=await account('variable-other',['freelancer']);
+ const id='http-variable-'+suffix,ref=db.doc('freelanceOffersV1/'+id);
+ const at=(h:string)=>'2026-11-26T'+h+':00.000Z';
+ const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:12000});
+ const workTerms={mode:'hourly',location:'remote',estimatedMinutes:360,hourlyRateMinor:2000};
+ const common={paymentTerms,workTerms,status:'completed',selectedAt:at('07:10'),contractedAt:at('07:15'),startedAt:at('08:00'),completionRequestedAt:at('15:00'),completedAt:at('15:05')};
+ const offer={...common,id,ownerUid:owner.uid,selectedApplicantUid:worker.uid,title:'Fixture horária',description:'Emulador',requirements:'',paymentMinor:12000,createdAt:at('07:00')};
+ const application={...common,offerId:id,ownerUid:owner.uid,applicantUid:worker.uid,createdAt:at('07:05')};
+ await ref.set(offer);await ref.collection('applications').doc(worker.uid).set(application);
+ await ref.collection('attendance').doc('schedule').set({proposalId:'schedule'});
+ await ref.collection('attendance').doc('schedule-schedule').set({id:'schedule',schedule:{location:'remote',scheduledStartAt:at('08:00'),agreedMinutes:360},proposedBy:'requester',proposedAt:at('07:20'),status:'accepted',decidedBy:'worker',decidedAt:at('07:25')});
+ const events=[{id:'l-start',kind:'start',actor:'worker',at:at('08:00')},{id:'l-request_completion',kind:'checkout',actor:'worker',at:at('15:00')},{id:'l-confirm_completion',kind:'confirm_checkout',actor:'requester',at:at('15:05')}];
+ await ref.collection('attendance').doc('timeline').set({scheduleId:'schedule',events});
+ await ref.collection('attendance').doc('extensions').set({scheduleId:'schedule',records:[{id:'ext1',extraMinutes:120,proposedBy:'worker',proposedAt:at('12:00'),status:'accepted',decidedBy:'requester',decidedAt:at('12:05')}]});
+ await assert.rejects(recordFreelanceVariablePaymentBasis(other.uid,id),/FORBIDDEN/);
+ const first=await recordFreelanceVariablePaymentBasis(worker.uid,id);
+ assert.equal(first.replay,false);assert.equal(first.basis.commitment.estimatedMinor,12000);
+ assert.equal(first.basis.accounting.authorizedCapMinor,16000);
+ assert.equal(first.basis.finalAmountMinor,14000);assert.equal(first.basis.payable,false);assert.equal(first.basis.bankVerified,false);
+ assert.equal((await recordFreelanceVariablePaymentBasis(owner.uid,id)).replay,true);
+ assert.equal((await ref.collection('directPayment').doc('obligation').get()).exists,false);
+ assert.equal((await ref.collection('directPayment').doc('externalStatements').get()).exists,false);
+ await ref.collection('attendance').doc('extensions').delete();
+ await assert.rejects(recordFreelanceVariablePaymentBasis(worker.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
+ await ref.collection('financialBasis').doc('hourlyCompletion').delete();
+ const excess=await recordFreelanceVariablePaymentBasis(owner.uid,id);
+ assert.equal(excess.basis.disposition,'requires_review');assert.equal(excess.basis.finalAmountMinor,null);assert.equal(excess.basis.payable,false);
+ await ref.collection('directPayment').doc('obligation').set({fixture:true});
+ await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
+ await act(owner,id,'record_hourly_basis',400,{confirmed:true});
+});
