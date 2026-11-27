@@ -2,7 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 type Proposal={id:string;recognizedServiceMinor:number;proposedBy:'worker'|'requester';status:'pending'|'accepted'|'declined'|'withdrawn'};
-type Item={offerId:string;title:string;sourceDigest:string;requestedAt:string;capMinor:number;referenceMinor:number|null;recordedMs:number|null;excessMs:number|null;proposal:Proposal|null;bankVerified:false};
+type Note={id:string;role:'worker'|'requester';note:string;recordedAt:string};
+type Item={evidenceDigest:string;notes:Note[];proposalDigest:string;offerId:string;title:string;sourceDigest:string;requestedAt:string;capMinor:number;referenceMinor:number|null;recordedMs:number|null;excessMs:number|null;proposal:Proposal|null;bankVerified:false};
 type Page={items:Item[];nextCursor:string|null};
 const endpoint='/api/admin/freelance-financial-review';
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-cyan-300 disabled:opacity-50';
@@ -17,7 +18,7 @@ const errors:Record<string,string>={second_factor_required:'Entre com autentica�
 function validPage(v:unknown):v is Page{
  if(!v||typeof v!=='object')return false;
  const p=v as Page;
- return Array.isArray(p.items)&&p.items.length<=20&&(p.nextCursor===null||id(p.nextCursor))&&p.items.every(i=>i&&id(i.offerId)&&typeof i.title==='string'&&i.title.length<=120&&typeof i.sourceDigest==='string'&&/^[a-f0-9]{64}$/.test(i.sourceDigest)&&typeof i.requestedAt==='string'&&Number.isFinite(Date.parse(i.requestedAt))&&nonnegative(i.capMinor)&&i.capMinor<=999999999&&(i.referenceMinor===null||nonnegative(i.referenceMinor)&&i.referenceMinor<=i.capMinor)&&(i.recordedMs===null||nonnegative(i.recordedMs))&&(i.excessMs===null||nonnegative(i.excessMs))&&i.bankVerified===false&&(i.proposal===null||i.proposal&&id(i.proposal.id)&&nonnegative(i.proposal.recognizedServiceMinor)&&i.proposal.recognizedServiceMinor<=i.capMinor&&['worker','requester'].includes(i.proposal.proposedBy)&&Object.hasOwn(labels,i.proposal.status)));
+ return Array.isArray(p.items)&&p.items.length<=20&&(p.nextCursor===null||id(p.nextCursor))&&p.items.every(i=>i&&id(i.offerId)&&typeof i.title==='string'&&i.title.length<=120&&typeof i.sourceDigest==='string'&&/^[a-f0-9]{64}$/.test(i.sourceDigest)&&typeof i.requestedAt==='string'&&Number.isFinite(Date.parse(i.requestedAt))&&nonnegative(i.capMinor)&&i.capMinor<=999999999&&(i.referenceMinor===null||nonnegative(i.referenceMinor)&&i.referenceMinor<=i.capMinor)&&(i.recordedMs===null||nonnegative(i.recordedMs))&&(i.excessMs===null||nonnegative(i.excessMs))&&/^[a-f0-9]{64}$/.test(i.evidenceDigest)&&/^[a-f0-9]{64}$/.test(i.proposalDigest)&&Array.isArray(i.notes)&&i.notes.length<=4&&i.notes.every(n=>id(n.id)&&['worker','requester'].includes(n.role)&&typeof n.note==='string'&&n.note.length>=10&&n.note.length<=500&&typeof n.recordedAt==='string')&&i.bankVerified===false&&(i.proposal===null||i.proposal&&id(i.proposal.id)&&nonnegative(i.proposal.recognizedServiceMinor)&&i.proposal.recognizedServiceMinor<=i.capMinor&&['worker','requester'].includes(i.proposal.proposedBy)&&Object.hasOwn(labels,i.proposal.status)));
 }
 export default function AdminFreelanceCancellationReview({user}:{user:User}){
  const [page,setPage]=useState<Page|null>(null),[selected,setSelected]=useState<Item|null>(null),[amount,setAmount]=useState(''),[reason,setReason]=useState(''),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
@@ -33,7 +34,7 @@ export default function AdminFreelanceCancellationReview({user}:{user:User}){
   if(kind==='list'){reset();setPage(null);}
   try{
    const token=await user.getIdToken(true);if(!live())return;
-   const body=kind==='decision'?{action:'decide_hourly_cancellation',offerId:selected!.offerId,sourceDigest:selected!.sourceDigest,expectedRequestedAt:selected!.requestedAt,recognizedServiceMinor:minor,reason:reason.trim(),confirmed:true}:null;
+   const body=kind==='decision'?{action:'decide_hourly_cancellation',offerId:selected!.offerId,sourceDigest:selected!.sourceDigest,expectedRequestedAt:selected!.requestedAt,evidenceDigest:selected!.evidenceDigest,proposalDigest:selected!.proposalDigest,recognizedServiceMinor:minor,reason:reason.trim(),confirmed:true}:null;
    const q=body?'':'?view=hourly_cancellation'+(cursor?'&cursor='+encodeURIComponent(cursor):'');
    const r=await fetch(endpoint+q,{method:body?'POST':'GET',cache:'no-store',signal:ctl.signal,headers:{authorization:'Bearer '+token,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
    const v=await r.json();if(!live())return;
@@ -56,7 +57,7 @@ export default function AdminFreelanceCancellationReview({user}:{user:User}){
    <h4 className="text-base font-bold break-words">{selected.title}</h4><p className="break-all">Protocolo: {selected.offerId}</p>
    <p>Tempo registrado: {duration(selected.recordedMs)}</p><p>Excedente registrado: {duration(selected.excessMs)}</p><p>Referência: {money(selected.referenceMinor)} · Limite do serviço: {money(selected.capMinor)}</p>
    <p>Proposta corrente: {selected.proposal?money(selected.proposal.recognizedServiceMinor)+' · '+labels[selected.proposal.status]+' · '+(selected.proposal.proposedBy==='worker'?'Profissional':'Contratante'):'Nenhuma'}</p>
-   <p>Manifestações e comprovantes específicos ainda não disponíveis nesta etapa.</p>
+   <div className="space-y-2"><h5 className="font-bold">Manifestações privadas</h5>{selected.notes.length===0&&<p>Nenhuma manifestação registrada.</p>}{selected.notes.map(n=><div key={n.id} className="rounded border border-slate-700 p-2"><p>{n.role==='worker'?'Profissional':'Contratante'} · {new Date(n.recordedAt).toLocaleString('pt-BR')}</p><p className="whitespace-pre-wrap break-words">{n.note}</p></div>)}<p>Anexos ainda indisponíveis nesta etapa. Não representam confirmação bancária.</p></div>
    <label className="block">Valor reconhecido (R$)<input className={field} inputMode="decimal" value={amount} disabled={busy} onChange={e=>{setAmount(e.target.value);setConfirmed(false);}}/></label>
    <label className="block">Fundamentação do cancelamento<textarea className={field} required minLength={10} maxLength={1000} value={reason} disabled={busy} onChange={e=>{setReason(e.target.value);setConfirmed(false);}}/></label>
    <label className="flex gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/>Confirmo o valor e a decisão fundamentada. A restrição deste caso será removida, sem quitação.</label>
