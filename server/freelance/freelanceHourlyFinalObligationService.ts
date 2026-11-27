@@ -32,7 +32,11 @@ export async function issueFreelanceHourlyFinalObligation(uid:string,offerId:str
  });
 }
 export async function readFreelanceHourlyFinalContext(tx:Transaction,uid:string,offerId:string){
- const offer=(await tx.get(adminDb.doc('freelanceOffersV1/'+offerId))).data() as FreelanceOffer|undefined;
+ const ref=adminDb.doc('freelanceOffersV1/'+offerId);
+ const offer=(await tx.get(ref)).data() as FreelanceOffer|undefined;
+ // Do not expose a full-value settlement where advances exist. The next
+ // integration will replace this guard with a directional settlement.
+ if(offer&&(uid===offer.ownerUid||uid===offer.selectedApplicantUid)&&(await tx.get(ref.collection('directPayment').doc('hourlyAdvances'))).exists)return fail();
  if(offer?.status==='cancelled'){
   const c=await readHourlyCancellationAgreementContext(tx,uid,offerId),final=c.resolved?.final;
   if(!final)return fail();
