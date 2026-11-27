@@ -1768,6 +1768,12 @@ test('hourly advance persistence: authenticated contract, private service, bilat
   await history.update({commitmentDigest:originalDigest});
   assert.equal((await send(owner,input('paid2','paid',3,'p2',1000))).revision,4);
   const pre=await readHourlyReconciliation(owner.uid,id);assert.equal(pre.recognizedMinor,null);assert.equal(pre.eligible,false);
+  const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'hourly-advance-'+suffix+'@example.invalid'}});
+  for(const action of ['bind_pix','authorize_pix_share']){
+   const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance',{method:'POST',headers:{authorization:'Bearer '+worker.token,'content-type':'application/json'},body:JSON.stringify({offerId:id,action,confirmed:true,expectedRevision:1})});
+   const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));
+  }
   const future=new Date(Date.now()+86400000).toISOString();
   await act(owner,id,'propose_schedule',200,{proposalId:'schedule',scheduledStartAt:future,confirmed:true});
   await act(worker,id,'accept_schedule',200,{proposalId:'schedule',confirmed:true});
