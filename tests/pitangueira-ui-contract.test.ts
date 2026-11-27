@@ -51,9 +51,9 @@ test('Pitangueira remains personal and separated from community pages and econom
   assert.match(panel, /function CocarXpIcon\(\)/);
   assert.match(panel, /const showCanonicalXp = !communityId && xp !== undefined/);
   assert.match(panel, /showCanonicalXp && \(/);
-  assert.match(panel, /Cocar · XP/);
-  assert.match(panel, /aria-label="Cocar, XP da conta de recompensas"/);
-  assert.match(panel, /xp\.toLocaleString\('pt-BR'\)/);
+  assert.match(panel, /Cocares/);
+  assert.match(panel, /formatCocarCount\(xp\)/);
+  assert.match(panel, /formatCocarCompact\(xp\)/);
   assert.doesNotMatch(community, /SemeaduraJourneyPanel|community-journey/);
   assert.match(panel, /Esta jornada é visual\. As recompensas pertencem aos autores, não à comunidade\./);
   assert.match(panel, /Pitangas equivalentes/);
@@ -62,4 +62,16 @@ test('Pitangueira remains personal and separated from community pages and econom
   assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
   assert.doesNotMatch(rules, /match \/semeadura_post_stats\//);
   assert.doesNotMatch(rules, /match \/semeaduraProgress\//);
+});
+
+test('Cocar is the display unit and X the compact suffix, without changing persisted XP',async()=>{
+ const {formatCocarCount,formatCocarCompact}=await import('../shared/cocarDisplay');
+ assert.equal(formatCocarCount(0),'0 Cocares');assert.equal(formatCocarCount(1),'1 Cocar');assert.equal(formatCocarCount(12),'12 Cocares');
+ assert.equal(formatCocarCompact(1),'1X');assert.equal(formatCocarCompact(12),'12X');
+ assert.throws(()=>formatCocarCount(-1),/INVALID/);assert.throws(()=>formatCocarCompact(1.5),/INVALID/);
+ const account=read('src/components/tabs/PitangaAccount.tsx');
+ assert.match(account,/requestedXp: 1/);assert.match(account,/1.000 Pitangas = 1 Cocar/);
+ assert.match(account,/e.unit === 'xp'/);assert.match(account,/formatCocarCount\(account.xp\)/);
+ const evolution=read('src/components/KairubidoEvolutionPanel.tsx');
+ assert.match(evolution,/formatCocarCompact\(progress.xp\)/);assert.match(evolution,/formatCocarCount\(progress.next.remainingXp\)/);
 });
