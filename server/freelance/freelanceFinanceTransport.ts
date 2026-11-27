@@ -1,3 +1,5 @@
+import {readVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
+import {prepareCancellationRestriction,prepareExcessRestriction} from './freelanceEngagementRestrictionService.js';
 import {readHourlyExcessReview,changeHourlyExcessReview,changeHourlyExcessDispute} from './freelanceHourlyExcessReviewService.js';
 import {readHourlyCancellationAgreement,changeHourlyCancellationAgreement,changeHourlyCancellationDispute} from './freelanceHourlyCancellationAgreementService.js';
 import {readHourlyCancellation} from './freelanceHourlyCancellationService.js';
@@ -20,6 +22,20 @@ export function freelanceFinanceEnabled(){
 async function readCase(uid:string,offerId:string,receiptId?:string){
  return adminDb.runTransaction(async tx=>{
   const reviewSnapshot=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
+  const offerDoc=await tx.get(adminDb.doc('freelanceOffersV1/'+offerId));
+  if(offerDoc.get('status')==='completed'&&offerDoc.get('workTerms.mode')==='hourly'){
+   const s=await readVariablePaymentSources(tx,uid,offerId);
+   if(s.record.disposition==='no_payment_required'){
+    if(receiptId!==undefined)throw Error('FREELANCE_FORBIDDEN');
+    const direct=s.c.ref.collection('directPayment'),financial=s.c.ref.collection('financialBasis');
+    const incompatible=await tx.getAll(direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'),direct.doc('hourlyExcessAgreement'),direct.doc('hourlyExcessResolution'),direct.doc('hourlyExcessDispute'),direct.doc('hourlyCancellationAgreement'),direct.doc('hourlyCancellationResolution'),direct.doc('hourlyCancellationDispute'),financial.doc('hourlyCancellation'),adminDb.doc('freelanceHourlyExcessReviewsV1/'+offerId),adminDb.doc('freelanceHourlyCancellationReviewsV1/'+offerId));
+    if(!s.savedBasis.exists||!s.savedCommitment.exists||s.record.finalAmountMinor!==0||s.record.accounting.status!=='calculated'||reviewSnapshot.exists||incompatible.some(x=>x.exists))throw Error('FREELANCE_VARIABLE_PAYMENT_CONFLICT');
+    await assertFinancialCaseRestrictions(tx,s.commitment,false);
+    await prepareCancellationRestriction(tx,s.commitment,false,false);
+    await prepareExcessRestriction(tx,s.commitment,false,false);
+    return {offerId,role:uid===s.commitment.requesterUid?'requester':'freelancer',amountMode:'hourly_zero',sourceDigest:s.record.sourceDigest,amountMinor:0,currency:'BRL',timing:'on_completion',operationalStatus:'completed',due:false,financialState:'no_payment_required',hadDisagreement:false,bankVerified:false,restrictionActive:false,reviewStatus:null,reviewOutcome:null,requestedAt:null,statements:[],ownNotes:[],ownReceipts:[],canRequestReview:false,canSubmitEvidence:false};
+   }
+  }
   const {offer,obligation,events,projection,due,hourlyFinal}=await readFinancialContext(tx,uid,offerId,true);
   const review=checkedReview(reviewSnapshot.data(),obligation);
   const role=uid===obligation.requesterUid?'requester':'freelancer';
