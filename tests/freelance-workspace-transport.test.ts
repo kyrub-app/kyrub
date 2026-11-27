@@ -252,3 +252,26 @@ test('approved reputation criteria separate the parties and exclude explicit non
  assert.deepEqual(agg.criteria.courtesy,{count:1,mean:5});assert.deepEqual(agg.criteria.cooperation,{count:0,mean:null});
  assert.equal(projectReputationAggregate('professional',[]).mean,null);
 });
+
+test('reputation criterion guidance covers both roles and accessible stars start unanswered',async()=>{
+ const {reputationCriteria,reputationCriterionDescriptions}=await import('../shared/freelanceReputationCriteria.js');
+ for(const kind of ['professional','personal_requester','store_requester'] as const){
+  const descriptions=reputationCriterionDescriptions(kind);
+  assert.deepEqual(Object.keys(descriptions),Object.keys(reputationCriteria(kind)));
+  assert.ok(Object.values(descriptions).every(v=>typeof v==='string'&&v.length>10));
+ }
+ assert.equal(reputationCriterionDescriptions('professional').punctuality,'Cumprimento dos horários acordados.');
+ assert.equal(reputationCriterionDescriptions('professional').courtesy,'Educação, respeito e bom trato com as pessoas.');
+ assert.deepEqual(reputationCriterionDescriptions('personal_requester'),reputationCriterionDescriptions('store_requester'));
+ const {readFileSync}=await import('node:fs');
+ const ui=readFileSync('src/components/modals/FreelaReputationPanel.tsx','utf8');
+ assert.match(ui,/reputationCriterionDescriptions\(targetKind\)/);
+ assert.match(ui,/aria-describedby=/);
+ assert.match(ui,/\{descriptions\[k\]\}/);
+ assert.match(ui,/type="radio"/);
+ assert.match(ui,/checked=\{scores\[k\]===String\(n\)\}/);
+ assert.match(ui,/checked=\{scores\[k\]==='na'\}/);
+ assert.match(ui,/useState<Record<string,string>>\(\{\}\)/);
+ assert.match(ui,/!complete/);
+ assert.match(ui,/Média da avaliação/);
+});
