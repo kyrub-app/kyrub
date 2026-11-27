@@ -91,7 +91,7 @@ const bundle = await build({ stdin: { contents: `export * from './server/payment
         args.path.endsWith('mercadoPagoStoreOauthService.js') ? 'export const mercadoPagoStoreRequest=()=>{throw Error("MERCHANT_OAUTH_FORBIDDEN")};' :
         args.path.endsWith('commercialRecipientAuthorityService.js') ? 'export const resolveCommercialRecipientAuthority=()=>{throw Error("MERCHANT_ACCOUNT_FORBIDDEN")};' :
         args.path.endsWith('mercadoPagoPixProvider.js') ? 'export const verifyMercadoPagoWebhookSignature=()=>{throw Error("MERCHANT_WEBHOOK_FORBIDDEN")};' :
-        'export const FieldValue={serverTimestamp:()=>"SERVER_TIME"},FieldPath={documentId:()=>"id"};';
+        'export const FieldValue={serverTimestamp:()=>"SERVER_TIME"},FieldPath={documentId:()=>"id"}; export const getFirestore=()=>{throw Error("COCAR_PROJECTION_MUST_REMAIN_DISABLED_IN_PIX_MOCK")};';
       return { contents: prefix + source };
     });
   } }],
