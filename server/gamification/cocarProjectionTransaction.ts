@@ -92,3 +92,19 @@ export async function rebuildCocarProjectionFixture(db: Firestore, uid: string) 
   if (!result.projection) throw Error('COCAR_LEDGER_ORDER_OR_KEY_INVALID');
   return result.projection;
 }
+
+
+/** Isolated read-path experiment. Only a deliberately enrolled fixture UID
+ * can use the candidate, and the test harness must guarantee no unobserved
+ * writes for that epoch. Neither a flag nor a fixture epoch certifies real
+ * deployed writer coverage. Missing/invalid projections return null so the
+ * caller can reconstruct from the canonical ledger. No public endpoint.
+ */
+export async function readCocarProjectionFixtureInTransaction(tx: Transaction, db: Firestore, uid: string): Promise<number|null> {
+  if (process.env.KYRUB_COCAR_PROJECTION_READ_TEST_ONLY !== 'true' ||
+      process.env.KYRUB_COCAR_PROJECTION_READ_FIXTURE_UID !== uid) return null;
+  const epoch = candidateEpoch(db);
+  if (!epoch) return null;
+  const saved = (await tx.get(projectionRef(db,uid))).data();
+  return validCocarProjection(saved,uid,epoch) ? saved.total : null;
+}
