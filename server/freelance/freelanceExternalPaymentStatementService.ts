@@ -1,3 +1,4 @@
+import {readFreelanceHourlyFinalContext} from './freelanceHourlyFinalObligationService.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
@@ -33,6 +34,14 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
   const app=(await tx.get(ref.collection('applications').doc(offer.selectedApplicantUid))).data() as FreelanceApplication|undefined;
   if(!app||app.status!==offer.status||!['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(offer.status))
    throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+  if(offer.workTerms?.mode==='hourly'){
+   const h=await readFreelanceHourlyFinalContext(tx,uid,offerId);
+   const raw=h.history.data();
+   if(raw&&(Object.keys(raw).length!==5||raw.sourceDigest!==h.final.sourceDigest||raw.amountMinor!==h.final.amountMinor))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+   const events=readEvents(raw?{schemaVersion:raw.schemaVersion,offerId:raw.offerId,events:raw.events}:undefined,offerId);
+   if(events.some(e=>Date.parse(e.recordedAt)<Date.parse(h.final.completedAt)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+   return {offer:h.offer,obligation:h.obligation,events,projection:projectExternalPixStatements(h.obligation,events),statementRef:h.statementRef,due:true,hourlyFinal:h.final};
+  }
   const obligation=buildFreelancePaymentObligation(contractSnapshot(offer),contractSnapshot(app));
   if(obligation.terms.method!=='external_pix'||!matchesFreelancePaymentObligation(ob.data(),obligation))
    throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
@@ -66,7 +75,7 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
   const projection=projectExternalPixStatements(obligation,events);
   if(due&&obligation.dueTrigger==='bilateral_service_completion'&&events.some(e=>Date.parse(e.recordedAt)<Date.parse(offer.completedAt!)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
 
- return {offer,obligation,events,projection,statementRef,due};
+ return {offer,obligation,events,projection,statementRef,due,hourlyFinal:undefined};
 }
 export type FinancialReviewOutcome='payment_evidence_accepted'|'nonreceipt_evidence_accepted'|'inconclusive';
 export type FinancialReviewDecision={actorUid:string;outcome:FinancialReviewOutcome;reason:string;decidedAt:string;bankVerified:false;evidenceRevision:number};
@@ -129,11 +138,12 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
  assertLocal();
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
- if(Object.keys(b).length!==3||!validFreelanceId(b.eventId)||b.confirmed!==true||
+ if(![3,5].includes(Object.keys(b).length)||Object.keys(b).some(k=>!['eventId','statement','confirmed','expectedAmountMinor','sourceDigest'].includes(k))||!validFreelanceId(b.eventId)||b.confirmed!==true||
  (typeof b.statement!=='string'||!['paid','received','not_received'].includes(b.statement)))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const review=reviewRef(offerId),reviewSnapshot=await tx.get(review);
-  const {offer,obligation,events,statementRef}=await readFinancialContext(tx,uid,offerId);
+  const {offer,obligation,events,statementRef,hourlyFinal}=await readFinancialContext(tx,uid,offerId);
+  if(hourlyFinal?(Object.keys(b).length!==5||b.expectedAmountMinor!==hourlyFinal.amountMinor||b.sourceDigest!==hourlyFinal.sourceDigest):Object.keys(b).length!==3)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   if((b.statement==='paid'&&uid!==offer.ownerUid)||(b.statement!=='paid'&&uid!==offer.selectedApplicantUid))throw Error('FREELANCE_FORBIDDEN');
   const now=new Date().toISOString();
   if(obligation.dueTrigger==='bilateral_service_completion'&&
@@ -150,7 +160,7 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
    const writeRestrictions=administrativelyClosed?()=>{}:await prepareVoluntaryDisputeRestriction(tx,obligation,events,next.events);
    if(existing&&next.state!=='disputed'&&next.state!=='bilaterally_reported_received')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    if(existing&&next.state==='bilaterally_reported_received'&&Date.parse(now)<Date.parse(existing.requestedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
-   tx.set(statementRef,{schemaVersion:1,offerId,events:next.events});
+   tx.set(statementRef,{schemaVersion:1,offerId,events:next.events,...(hourlyFinal?{sourceDigest:hourlyFinal.sourceDigest,amountMinor:hourlyFinal.amountMinor}:{})});
    writeRestrictions();
    const previous=projectExternalPixStatements(obligation,events);
    if(next.state==='disputed')writeFreelanceFinancialNotices(tx,obligation,'dispute_opened',now);
