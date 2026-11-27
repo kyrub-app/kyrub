@@ -7,7 +7,8 @@ export interface FreelanceOfferInput {
 export interface FreelanceOffer extends FreelanceOfferInput {
   id: string;
   ownerUid: string;
-  status: 'open' | 'selected' | 'contracted' | 'in_progress' | 'completion_requested' | 'completed' | 'cancelled';
+  status: 'open' | 'selected' | 'contracted' | 'in_progress' | 'completion_requested' | 'completed' | 'cancelled' | 'under_review';
+  occurrenceId?: string;
   startedAt?: string;
   completionRequestedAt?: string;
   completedAt?: string;
@@ -21,7 +22,8 @@ export interface FreelanceApplication {
   offerId: string;
   applicantUid: string;
   ownerUid: string;
-  status: 'pending' | 'selected' | 'contracted' | 'withdrawn' | 'released' | 'in_progress' | 'completion_requested' | 'completed';
+  status: 'pending' | 'selected' | 'contracted' | 'withdrawn' | 'released' | 'in_progress' | 'completion_requested' | 'completed' | 'under_review';
+  occurrenceId?: string;
   startedAt?: string;
   completionRequestedAt?: string;
   completedAt?: string;
@@ -162,4 +164,51 @@ export function advanceFreelanceExecution(offer: FreelanceOffer, application: Fr
       fields.slice(step).some(field => offer[field] || application[field]) ||
       Date.parse(now) < Date.parse(offer[fields[step-1]]!)) throw new Error('FREELANCE_CONFLICT');
   return {offer:{...offer,status:rule.to,[rule.at]:now},application:{...application,status:rule.to,[rule.at]:now},changed:true};
+}
+
+export type FreelanceOccurrenceKind = 'cancellation_requested' | 'service_disputed' | 'safety_or_force_majeure';
+export type FreelanceOccurrencePriorStatus = 'contracted' | 'in_progress' | 'completion_requested';
+export interface FreelanceOccurrence {
+  id: string;
+  offerId: string;
+  ownerUid: string;
+  applicantUid: string;
+  openedBy: string;
+  openedAt: string;
+  kind: FreelanceOccurrenceKind;
+  priorStatus: FreelanceOccurrencePriorStatus;
+  status: 'awaiting_review';
+  response?: { actorUid: string; position: 'agree' | 'disagree'; at: string };
+}
+export function openFreelanceOccurrence(offer: FreelanceOffer, application: FreelanceApplication, actorUid: string,
+  kind: unknown, confirmed: unknown, now: string): FreelanceOccurrence {
+  validatePair(offer,application,now);
+  if (confirmed !== true || (actorUid !== offer.ownerUid && actorUid !== application.applicantUid) ||
+      !isSelectedPair(offer,application)) throw new Error('FREELANCE_FORBIDDEN');
+  if (kind !== 'cancellation_requested' && kind !== 'service_disputed' && kind !== 'safety_or_force_majeure') throw new Error('FREELANCE_INVALID');
+  if (offer.occurrenceId || application.occurrenceId ||
+      (offer.status !== 'contracted' && offer.status !== 'in_progress' && offer.status !== 'completion_requested') ||
+      application.status !== offer.status || offer.completedAt || application.completedAt) throw new Error('FREELANCE_CONFLICT');
+  const required = ['contractedAt', ...(offer.status === 'contracted' ? [] : ['startedAt']), ...(offer.status === 'completion_requested' ? ['completionRequestedAt'] : [])] as const;
+  let previous = Date.parse(offer.selectedAt!);
+  for (const field of required) {
+    const a = offer[field as 'contractedAt' | 'startedAt' | 'completionRequestedAt'];
+    const b = application[field as 'contractedAt' | 'startedAt' | 'completionRequestedAt'];
+    if (!a || a !== b || !Number.isFinite(Date.parse(a)) || Date.parse(a) < previous) throw new Error('FREELANCE_CONFLICT');
+    previous = Date.parse(a);
+  }
+  if (Date.parse(now) < previous) throw new Error('FREELANCE_CONFLICT');
+  return {id:'contract-review',offerId:offer.id,ownerUid:offer.ownerUid,applicantUid:application.applicantUid,openedBy:actorUid,openedAt:now,kind,priorStatus:offer.status,status:'awaiting_review'};
+}
+export function recordFreelanceOccurrenceResponse(occurrence: FreelanceOccurrence, actorUid: string, position: unknown, confirmed: unknown, now: string): FreelanceOccurrence {
+  if (confirmed !== true || actorUid === occurrence.openedBy ||
+      (actorUid !== occurrence.ownerUid && actorUid !== occurrence.applicantUid)) throw new Error('FREELANCE_FORBIDDEN');
+  if (position !== 'agree' && position !== 'disagree') throw new Error('FREELANCE_INVALID');
+  if (occurrence.status !== 'awaiting_review' || !Number.isFinite(Date.parse(now)) ||
+      !Number.isFinite(Date.parse(occurrence.openedAt)) || Date.parse(now) < Date.parse(occurrence.openedAt)) throw new Error('FREELANCE_CONFLICT');
+  if (occurrence.response) {
+    if (occurrence.response.actorUid === actorUid && occurrence.response.position === position) return occurrence;
+    throw new Error('FREELANCE_CONFLICT');
+  }
+  return {...occurrence,response:{actorUid,position,at:now}};
 }

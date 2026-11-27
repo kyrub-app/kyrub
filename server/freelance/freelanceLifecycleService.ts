@@ -1,6 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
+import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
 
 const offers = 'freelanceOffersV1';
 const eligibility = (uid: string) => adminDb.doc('identity_verifications/' + uid);
@@ -160,6 +160,55 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       tx.update(offerRef,{status:result.offer.status,[at]:result.offer[at]!});
       tx.update(applicationRef,{status:result.application.status,[at]:result.application[at]!});
     }
+    return result;
+  });
+}
+
+/** A participant can report an occurrence; neither can adjudicate or settle it. */
+export async function reportFreelanceOccurrence(actorUid:string, offerId:string, kind:unknown, confirmed:unknown):Promise<FreelanceOccurrence>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  const offerRef=adminDb.doc(offers+'/'+offerId);
+  const occurrenceRef=offerRef.collection('occurrences').doc('contract-review');
+  return adminDb.runTransaction(async tx=>{
+    const [o,review]=await tx.getAll(offerRef,occurrenceRef);
+    const offer=o.data() as FreelanceOffer|undefined;
+    if(!offer||offer.id!==offerId||!validFreelanceId(offer.selectedApplicantUid)||
+      (actorUid!==offer.ownerUid&&actorUid!==offer.selectedApplicantUid))throw new Error('FREELANCE_FORBIDDEN');
+    const applicationRef=offerRef.collection('applications').doc(offer.selectedApplicantUid);
+    const application=(await tx.get(applicationRef)).data() as FreelanceApplication|undefined;
+    if(!application||application.offerId!==offerId||application.ownerUid!==offer.ownerUid||
+      application.applicantUid!==offer.selectedApplicantUid)throw new Error('FREELANCE_CONFLICT');
+    if(review.exists){
+      const saved=review.data() as FreelanceOccurrence;
+      if(saved.id==='contract-review'&&saved.offerId===offerId&&saved.ownerUid===offer.ownerUid&&
+        saved.applicantUid===application.applicantUid&&saved.openedBy===actorUid&&saved.kind===kind&&saved.status==='awaiting_review'&&
+        offer.status==='under_review'&&application.status==='under_review'&&offer.occurrenceId===saved.id&&application.occurrenceId===saved.id)return saved;
+      throw new Error('FREELANCE_CONFLICT');
+    }
+    const result=openFreelanceOccurrence(offer,application,actorUid,kind,confirmed,new Date().toISOString());
+    tx.create(occurrenceRef,result);
+    tx.update(offerRef,{status:'under_review',occurrenceId:result.id});
+    tx.update(applicationRef,{status:'under_review',occurrenceId:result.id});
+    return result;
+  });
+}
+export async function respondToFreelanceOccurrence(actorUid:string,offerId:string,position:unknown,confirmed:unknown):Promise<FreelanceOccurrence>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  const offerRef=adminDb.doc(offers+'/'+offerId);
+  const occurrenceRef=offerRef.collection('occurrences').doc('contract-review');
+  return adminDb.runTransaction(async tx=>{
+    const [o,r]=await tx.getAll(offerRef,occurrenceRef);
+    const offer=o.data() as FreelanceOffer|undefined;
+    const occurrence=r.data() as FreelanceOccurrence|undefined;
+    if(!offer||offer.id!==offerId||!validFreelanceId(offer.selectedApplicantUid)||
+       (actorUid!==offer.ownerUid&&actorUid!==offer.selectedApplicantUid))throw new Error('FREELANCE_FORBIDDEN');
+    if(!occurrence||occurrence.id!=='contract-review'||occurrence.offerId!==offerId||occurrence.ownerUid!==offer.ownerUid||
+       occurrence.applicantUid!==offer.selectedApplicantUid||offer.status!=='under_review'||offer.occurrenceId!==occurrence.id)throw new Error('FREELANCE_CONFLICT');
+    const application=(await tx.get(offerRef.collection('applications').doc(offer.selectedApplicantUid))).data() as FreelanceApplication|undefined;
+    if(!application||application.offerId!==offerId||application.ownerUid!==offer.ownerUid||application.applicantUid!==offer.selectedApplicantUid||
+       application.status!=='under_review'||application.occurrenceId!==occurrence.id)throw new Error('FREELANCE_CONFLICT');
+    const result=recordFreelanceOccurrenceResponse(occurrence,actorUid,position,confirmed,new Date().toISOString());
+    if(result!==occurrence)tx.update(occurrenceRef,{response:result.response!});
     return result;
   });
 }
