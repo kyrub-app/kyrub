@@ -78,10 +78,22 @@ async function action(modal,name,expected=200){
 }
 async function detail(modal,tab){
  await button(modal,tab).click();
+ const page=modal.page();
+ const view=tab==='Solicitações'?'open':tab==='Publicados'?'owner':tab==='Histórico'?(await modal.getAttribute('aria-label')==='Solicitar Freelas'?'owner':'applications'):'applications';
+ const loaded=page.waitForResponse(r=>r.url().includes('/api/freelance/workspace?view='+view)&&r.request().method()==='GET',{timeout:20000});
  await button(modal,'Atualizar consulta').click();
- const article=modal.locator('article').filter({has:modal.getByRole('heading',{name:title,exact:true})}).first();
+ const response=await loaded;
+ const payload=await response.json();
+ assert.equal(response.status(),200,JSON.stringify(payload));
+ assert.ok(payload.items.some(x=>x.title===title),'Published offer missing from API response: '+JSON.stringify(payload));
+ // Inner locator must be relative to the article, not include the enclosing dialog.
+ const article=modal.locator('article').filter({has:page.getByRole('heading',{name:title,exact:true})}).first();
+ await article.waitFor({state:'visible',timeout:20000});
+ const details=page.waitForResponse(r=>r.url().includes('/api/freelance/workspace?view=detail&offerId=')&&r.request().method()==='GET',{timeout:20000});
  await button(article,'Ver detalhes').click();
- await modal.locator('article').filter({hasText:'Descrição de teste isolado'}).waitFor({state:'visible'});
+ const read=await details;
+ assert.equal(read.status(),200,await read.text());
+ await modal.locator('article').filter({hasText:'Descrição de teste isolado'}).waitFor({state:'visible',timeout:20000});
 }
 try{
  const owner=await account('owner','requester','Contratante teste'),worker=await account('worker','freelancer','Prestador teste');
