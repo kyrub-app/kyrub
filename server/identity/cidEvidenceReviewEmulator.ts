@@ -31,7 +31,8 @@ function item(doc:DocumentSnapshot,now:number):CidReviewQueueItem{
  const v=doc.data(),revision=v?.revision??0;
  if(!v||!uuid(doc.id)||v.id!==doc.id||!isTagId(v.tagId)||typeof v.occurrenceId!=='string'||!/^[A-Za-z0-9_-]{22,80}$/.test(v.occurrenceId)||!time(v.createdAt)||v.createdAt>now||v.simulation!==true||!['complaint','preservation'].includes(v.kind)||!['pending-review','dismissed','escalated'].includes(v.status)||!Number.isSafeInteger(revision)||revision<0)return deny();
  if(v.specialistFinding!==undefined&&(v.status!=='escalated'||typeof v.specialistFinding!=='string'||!Object.hasOwn(CID_SPECIALIST_FINDINGS,v.specialistFinding)))return deny();
- return {id:doc.id,kind:v.kind,tagId:v.tagId,occurrenceId:v.occurrenceId,createdAt:v.createdAt,status:v.status,revision,...(v.specialistFinding?{specialistFinding:v.specialistFinding}:{})};
+ if(v.legalFinding!==undefined&&(v.specialistFinding!=='legal-review-required'||typeof v.legalFinding!=='string'||!Object.hasOwn(CID_LEGAL_FINDINGS,v.legalFinding)))return deny();
+ return {id:doc.id,kind:v.kind,tagId:v.tagId,occurrenceId:v.occurrenceId,createdAt:v.createdAt,status:v.status,revision,...(v.specialistFinding?{specialistFinding:v.specialistFinding}:{}),...(v.legalFinding?{legalFinding:v.legalFinding}:{})};
 }
 export function createCidEvidenceReviewEmulator(mode:'fixture'|'control-plane'='fixture'){
  if(mode!=='fixture'&&mode!=='control-plane')return deny();
