@@ -1,3 +1,4 @@
+import {sameFreelanceStoreRepresentation,readFreelanceStoreRepresentation} from './freelanceStoreRepresentation.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from './freelanceLifecycle.js';
 
 /** Immutable operational basis, not a balance, funding authorization or settlement. */
@@ -5,6 +6,7 @@ export interface FreelanceRemunerationBasis {
   schemaVersion:1;
   offerId:string;
   requesterUid:string;
+  requesterStoreId?:string;
   beneficiaryUid:string;
   currency:'BRL';
   agreedMinor:number;
@@ -21,7 +23,7 @@ export function buildFreelanceRemunerationBasis(offer:FreelanceOffer,application
     offer.selectedApplicantUid!==application.applicantUid||offer.ownerUid!==application.ownerUid||
     application.offerId!==offer.id||offer.ownerUid===application.applicantUid||offer.status!==application.status||
     !Number.isSafeInteger(offer.paymentMinor)||offer.paymentMinor<=0||offer.paymentMinor>999999999||
-    offer.occurrenceId||application.occurrenceId)invalid();
+    offer.occurrenceId||application.occurrenceId||!sameFreelanceStoreRepresentation(offer.requesterStore,application.requesterStore))invalid();
   const fields=['selectedAt','contractedAt','startedAt','completionRequestedAt','completedAt'] as const;
   let prior=Date.parse(offer.createdAt);
   if(!Number.isFinite(prior))invalid();
@@ -35,7 +37,8 @@ export function buildFreelanceRemunerationBasis(offer:FreelanceOffer,application
     if(!Number.isFinite(Date.parse(at))||Date.parse(at)<prior)invalid();
     prior=Date.parse(at);
   }
-  const common={schemaVersion:1 as const,offerId:offer.id,requesterUid:offer.ownerUid,beneficiaryUid:application.applicantUid,
+  const store=readFreelanceStoreRepresentation(offer.requesterStore);
+  const common={schemaVersion:1 as const,...(store?{requesterStoreId:store.storeId}:{}),offerId:offer.id,requesterUid:offer.ownerUid,beneficiaryUid:application.applicantUid,
     currency:'BRL' as const,agreedMinor:offer.paymentMinor,responsibility:'not_determined' as const,settlement:'not_verified' as const};
   if(offer.status==='completed'&&!occurrence&&!offer.cancelledAt&&!application.cancelledAt){
     return {...common,confirmedServiceMinor:offer.paymentMinor,source:'bilateral_completion',sourceOccurrenceId:null,recordedAt:offer.completedAt!};
