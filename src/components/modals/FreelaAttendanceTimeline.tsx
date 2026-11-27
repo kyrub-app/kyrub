@@ -1,3 +1,4 @@
+import FreelaAttendanceExtensions from './FreelaAttendanceExtensions';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -56,5 +57,6 @@ export default function FreelaAttendanceTimeline({user,offerId}:{user:User;offer
   {p&&<><p>{labels[p.status]} · {view!.events.length} registros</p><p>Períodos encerrados: trabalho {minutes(p.workMs)} · espera {minutes(p.waitMs)} · intervalo {minutes(p.breakMs)}</p><p>Inicie e encerre o serviço pelos controles do contrato. Não representa pagamento confirmado.</p>{p.exceedsAgreedTime&&<p className="text-amber-300">Tempo registrado excede a estimativa. Sem cobrança adicional automática.</p>}</>}
   {options.map(kind=><button key={kind} type="button" className={btn} disabled={busy||!!pending} onClick={()=>{setPending(kind);eventId.current='';}}>{actions[kind]}</button>)}
   {pending&&<div><p>Confirma: {actions[pending]}?</p><button type="button" className={btn} disabled={busy} onClick={()=>void load(pending)}>Confirmar registro</button><button type="button" className={btn} disabled={busy} onClick={()=>setPending(null)}>Voltar</button></div>}
+  <FreelaAttendanceExtensions key={offerId} user={user} offerId={offerId}/>
  </div>;
 }
