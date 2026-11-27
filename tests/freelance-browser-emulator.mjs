@@ -20,6 +20,7 @@ const suffix=randomUUID().replaceAll('-','').slice(0,12);
 const title='Freela Chromium '+suffix;
 const browser=await chromium.launch({headless:true});
 const forbidden=[],uncaught=[];
+let employerPage;
 await mkdir('freelance-browser-evidence',{recursive:true});
 async function account(role,profile,name){
  const uid='browser-'+role+'-'+suffix;
@@ -78,9 +79,15 @@ async function action(modal,name,expected=200){
  return body;
 }
 async function detail(modal,tab){
- await button(modal,tab).click();
  const page=modal.page();
- const view=tab==='Solicitações'?'open':tab==='Publicados'?'owner':tab==='Histórico'?(await modal.getAttribute('aria-label')==='Solicitar Freelas'?'owner':'applications'):'applications';
+ // Explicit navigation back to Catu and re-entry tests persisted server state
+ // independently of a modal staying mounted across actions in another context.
+ const owner=page===employerPage;
+ if(await modal.isVisible())await button(modal,'Fechar').click();
+ await page.locator(owner?'#btn-solicitar-freela':'#btn-fazer-freela').waitFor({state:'visible',timeout:20000});
+ await open(page,owner?'owner':'worker');
+ await button(modal,tab).click();
+ const view=tab==='Solicitações'?'open':tab==='Publicados'?'owner':tab==='Histórico'?(owner?'owner':'applications'):'applications';
  const loaded=page.waitForResponse(r=>r.url().includes('/api/freelance/workspace?view='+view)&&r.request().method()==='GET',{timeout:20000});
  await button(modal,'Atualizar consulta').click();
  const response=await loaded;
@@ -100,6 +107,7 @@ async function detail(modal,tab){
 try{
  const owner=await account('owner','requester','Contratante teste'),worker=await account('worker','freelancer','Prestador teste');
  const ownerPage=await session(owner,1365),workerPage=await session(worker,390);
+ employerPage=ownerPage;
  const employer=await open(ownerPage,'owner'),employee=await open(workerPage,'worker');
  await employer.getByLabel('Título',{exact:true}).fill(title);
  await employer.getByLabel('Descrição',{exact:true}).fill('Descrição de teste isolado');

@@ -28,3 +28,20 @@ Teste com token do emulador validado pelo verificador original e injeção exclu
 - Sem PSP real, política financeira definitiva, comissão aprovada ou liquidação verificada. Financiamento simulado bloqueado fora do emulador.
 - Revisar posteriormente alternativas Mercado Pago sem Split 1:N, conforme direção do proprietário, sem ampliar escopo nesta parcela.
 - Nenhum merge, deployment, contratação ou alteração de Firebase produtivo autorizado por este documento.
+
+## TOTP — limite do emulador e procedimento de aceite futuro (27/11/2026)
+
+A documentação do Firebase Auth Emulator descreve MFA por SMS, não TOTP. O README oficial do SDK JavaScript esclarece que testes TOTP não são suportados pelo emulador e usam backend real. Referências consultadas:
+- https://firebase.google.com/docs/emulator-suite/connect_auth
+- https://github.com/firebase/firebase-js-sdk/blob/main/packages/auth/README.md
+- https://firebase.google.com/docs/auth/web/totp-mfa
+
+A #1330 já recuperou a fundação/adaptador TOTP, sem montar inscrição e recuperação ou concluir a integração transversal. Portanto esta validação pertence também à frente de segurança de ingresso, não se resolve por repetição do teste local de Freelas. Não substituir TOTP por SMS nem remover a exigência de MFA.
+
+Portão de aceite: em projeto de homologação dedicado, autorizado e sem dados produtivos, verificar disponibilidade e eventual custo do Identity Platform, inscrever uma conta fictícia autorizada no TOTP, concluir login com código verdadeiro, confirmar token verificado e sessão recente, validar papel administrativo e executar uma decisão auditada de teste. Confirmar rejeição de sessão antiga, fator ausente, papel revogado e participante próprio. Preservar apenas resultados redigidos, sem tokens, códigos TOTP, segredos ou dados pessoais. Não criar projeto, habilitar produto, contratar ou tocar produção para contornar esta limitação. Sem autorização e ambiente compatível, manter pendência explícita e operação administrativa bloqueada.
+
+Reexecução do HTTP na #1431 (commit 6a18e548e2f2911109a16dfc5869516016cb860d): run 45987756222 aprovado. Chromium 45987756296 e build 45987756205 ainda sem resultado final no momento da consulta.
+
+## Atualização da evidência Chromium — 27/11/2026
+
+Run 45987756296 (artefato 15192580853): consultas de Solicitações e Publicados confirmadas via HTTP e elementos visíveis. Publicação, candidatura e seleção executadas via controles reais; timeout ao procurar a aba Fazendo. Captura failure-1.png mostra Catu com sessão ainda conectada, sem modal aberto. Causa do fechamento não determinada; sem erros JS não tratados ou Firebase remoto registrados. Ajustado roteiro para fechamento explícito quando aberto e reentrada pelo card Catu a cada consulta, comprovando persistência entre sessões de interface, não permanência contínua do modal. A hipótese de fechamento inesperado continua registrada para investigação; não declarar jornada completa ou estabilidade visual até aprovação e inspeção da próxima execução.
