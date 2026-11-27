@@ -58,14 +58,19 @@ export const loadCourierEarningsProjection = async (
     adminDb
       .collectionGroup('economicObligations')
       .where('beneficiaryPrincipalId', '==', courierUserId)
-      .limit(250)
+      .limit(251)
       .get(),
     adminDb
       .collectionGroup('economicSettlements')
       .where('beneficiaryPrincipalId', '==', courierUserId)
-      .limit(250)
+      .limit(251)
       .get(),
   ]);
+
+  // Do not present a partial ledger as an authoritative total.
+  if (obligationsSnapshot.size > 250 || settlementsSnapshot.size > 250) {
+    throw new Error('COURIER_EARNINGS_HISTORY_LIMIT');
+  }
 
   const obligations = obligationsSnapshot.docs
     .map(document => document.data() as EconomicObligation)

@@ -44,6 +44,10 @@
       "destination": "/api/health?transport=public-community-page"
     },
     {
+      "source": "/api/delivery-opportunities/earnings",
+      "destination": "/api/health?transport=courier-earnings-read"
+    },
+    {
       "source": "/api/delivery-opportunities/public",
       "destination": "/api/health?transport=public-delivery-discovery"
     },

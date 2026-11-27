@@ -170,3 +170,44 @@ test('statement exposes lifecycle timestamps and only settled entries receive se
   assert.match(card, /Liquidação confirmada por evidência autoritativa/);
   assert.match(card, /entry\.settlementProvider/);
 });
+
+test('production routes only the authenticated read-only earnings endpoint and declares indexes', () => {
+  const vercel = JSON.parse(readFileSync('vercel.json', 'utf8'));
+  assert.ok(vercel.rewrites.some((r: {source:string; destination:string}) => r.source === '/api/delivery-opportunities/earnings' && r.destination === '/api/health?transport=courier-earnings-read'));
+  assert.ok(!vercel.rewrites.some((r: {source:string}) => r.source === '/api/delivery-opportunities/:path*'));
+  const health = readFileSync('api/health.ts','utf8');
+  assert.match(health, /transport === 'courier-earnings-read'/);
+  const transport = readFileSync('server/delivery/courierEarningsReadTransport.ts','utf8');
+  assert.match(transport, /verifyIdToken\(token, true\)/);
+  assert.match(transport, /deps.load\(uid\)/);
+  assert.doesNotMatch(transport, /request\.query|request\.body|request\.params/);
+  const indexes = JSON.parse(readFileSync('firestore.indexes.json','utf8'));
+  for (const group of ['economicObligations','economicSettlements']) {
+    assert.ok(indexes.fieldOverrides.some((v: any) => v.collectionGroup === group && v.fieldPath === 'beneficiaryPrincipalId' && v.indexes.some((i: any) => i.queryScope === 'COLLECTION_GROUP' && i.order === 'ASCENDING')));
+  }
+  assert.match(service, /obligationsSnapshot.size > 250/);
+  assert.match(card, /confirmed \? money\(Number\(value\)\) : '—'/);
+  assert.match(card, /snapshotUid === auth.currentUser\?\.uid/);
+  assert.match(card, /Resposta de ganhos não confirmada/);
+});
+
+test('earnings read transport rejects unauthenticated and write requests and uses only verified UID', async () => {
+  const { handleCourierEarningsRead } = await import('../server/delivery/courierEarningsReadTransport');
+  const calls: string[] = [];
+  let status = 0;
+  let body: unknown;
+  const response = { setHeader() {}, status(code: number) { status = code; return { json(value: unknown) { body = value; } }; } };
+  const fixture = { currency: 'BRL' as const, totals: {projectedMinor:0, eligibleMinor:0, settledMinor:0, reversedMinor:0}, integrityErrorCount:0, entries:[] };
+  const deps = { verify: async () => ({uid:'courier-fixture'}), load: async (uid: string) => {calls.push(uid); return fixture;} };
+  await handleCourierEarningsRead({method:'POST',headers:{authorization:'Bearer fixture'}},response,deps);
+  assert.equal(status,405);
+  await handleCourierEarningsRead({method:'GET',headers:{}},response,deps);
+  assert.equal(status,401);
+  assert.deepEqual(calls,[]);
+  await handleCourierEarningsRead({method:'GET',headers:{authorization:'Bearer fixture'}},response,deps);
+  assert.equal(status,200);
+  assert.deepEqual(body,fixture);
+  assert.deepEqual(calls,['courier-fixture']);
+  await handleCourierEarningsRead({method:'GET',headers:{authorization:'Bearer fixture'}},response,{...deps,load:async()=>{throw new Error('fixture unavailable');}});
+  assert.equal(status,503);
+});

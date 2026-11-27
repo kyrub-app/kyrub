@@ -430,6 +430,21 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'courier-earnings-read') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    if (process.env.VERCEL_ENV !== 'production') {
+      response.status(404).json({ error: 'Consulta de ganhos indisponível neste ambiente.' });
+      return;
+    }
+    try {
+      const { handleCourierEarningsRead } = await import('../server/delivery/courierEarningsReadTransport.js');
+      await handleCourierEarningsRead(request, response);
+    } catch {
+      response.status(503).json({ error: 'Não foi possível consultar seus ganhos de entrega.' });
+    }
+    return;
+  }
+
   if (transport === 'public-delivery-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
