@@ -2,7 +2,8 @@ import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 type Proposal={id:string;recognizedExcessMs:number;proposedBy:'worker'|'requester';status:'pending'|'accepted'|'declined'|'withdrawn'};
-type Item={offerId:string;title:string;sourceDigest:string;requestedAt:string;authorizedMinor:number;hourlyRateMinor:number;recordedMs:number;excessMs:number;proposalDigest:string;proposal:Proposal|null;bankVerified:false};
+type Note={id:string;role:'worker'|'requester';note:string;recordedAt:string};
+type Item={evidenceDigest:string;notes:Note[];offerId:string;title:string;sourceDigest:string;requestedAt:string;authorizedMinor:number;hourlyRateMinor:number;recordedMs:number;excessMs:number;proposalDigest:string;proposal:Proposal|null;bankVerified:false};
 type Page={items:Item[];nextCursor:string|null};
 const endpoint='/api/admin/freelance-financial-review';
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-cyan-300 disabled:opacity-50';
@@ -17,7 +18,7 @@ const errors:Record<string,string>={second_factor_required:'Entre com autentica�
 function validPage(v:unknown):v is Page{
  if(!v||typeof v!=='object')return false;
  const p=v as Page;
- return Array.isArray(p.items)&&p.items.length<=20&&(p.nextCursor===null||id(p.nextCursor))&&p.items.every(i=>i&&id(i.offerId)&&typeof i.title==='string'&&i.title.length<=120&&typeof i.sourceDigest==='string'&&/^[a-f0-9]{64}$/.test(i.sourceDigest)&&typeof i.requestedAt==='string'&&Number.isFinite(Date.parse(i.requestedAt))&&nonnegative(i.authorizedMinor)&&nonnegative(i.hourlyRateMinor)&&i.hourlyRateMinor>0&&nonnegative(i.recordedMs)&&nonnegative(i.excessMs)&&i.excessMs>0&&i.recordedMs>=i.excessMs&&/^[a-f0-9]{64}$/.test(i.proposalDigest)&&i.bankVerified===false&&(i.proposal===null||i.proposal&&id(i.proposal.id)&&nonnegative(i.proposal.recognizedExcessMs)&&i.proposal.recognizedExcessMs<=i.excessMs&&['worker','requester'].includes(i.proposal.proposedBy)&&Object.hasOwn(labels,i.proposal.status)));
+ return Array.isArray(p.items)&&p.items.length<=20&&(p.nextCursor===null||id(p.nextCursor))&&p.items.every(i=>i&&id(i.offerId)&&typeof i.title==='string'&&i.title.length<=120&&typeof i.sourceDigest==='string'&&/^[a-f0-9]{64}$/.test(i.sourceDigest)&&typeof i.requestedAt==='string'&&Number.isFinite(Date.parse(i.requestedAt))&&nonnegative(i.authorizedMinor)&&nonnegative(i.hourlyRateMinor)&&i.hourlyRateMinor>0&&nonnegative(i.recordedMs)&&nonnegative(i.excessMs)&&i.excessMs>0&&i.recordedMs>=i.excessMs&&/^[a-f0-9]{64}$/.test(i.proposalDigest)&&/^[a-f0-9]{64}$/.test(i.evidenceDigest)&&/^[a-f0-9]{64}$/.test(i.proposalDigest)&&Array.isArray(i.notes)&&i.notes.length<=4&&i.notes.every(n=>id(n.id)&&['worker','requester'].includes(n.role)&&typeof n.note==='string'&&n.note.length>=10&&n.note.length<=500&&typeof n.recordedAt==='string')&&i.bankVerified===false&&(i.proposal===null||i.proposal&&id(i.proposal.id)&&nonnegative(i.proposal.recognizedExcessMs)&&i.proposal.recognizedExcessMs<=i.excessMs&&['worker','requester'].includes(i.proposal.proposedBy)&&Object.hasOwn(labels,i.proposal.status)));
 }
 export default function AdminFreelanceExcessReview({user}:{user:User}){
  const [full,setFull]=useState(false);
@@ -34,7 +35,7 @@ export default function AdminFreelanceExcessReview({user}:{user:User}){
   if(kind==='list'){reset();setPage(null);}
   try{
    const token=await user.getIdToken(true);if(!live())return;
-   const body=kind==='decision'?{action:'decide_hourly_excess',offerId:selected!.offerId,sourceDigest:selected!.sourceDigest,expectedRequestedAt:selected!.requestedAt,proposalDigest:selected!.proposalDigest,recognizedExcessMs:minor,reason:reason.trim(),confirmed:true}:null;
+   const body=kind==='decision'?{action:'decide_hourly_excess',offerId:selected!.offerId,sourceDigest:selected!.sourceDigest,expectedRequestedAt:selected!.requestedAt,evidenceDigest:selected!.evidenceDigest,proposalDigest:selected!.proposalDigest,recognizedExcessMs:minor,reason:reason.trim(),confirmed:true}:null;
    const q=body?'':'?view=hourly_excess'+(cursor?'&cursor='+encodeURIComponent(cursor):'');
    const r=await fetch(endpoint+q,{method:body?'POST':'GET',cache:'no-store',signal:ctl.signal,headers:{authorization:'Bearer '+token,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
    const v=await r.json();if(!live())return;
@@ -57,7 +58,7 @@ export default function AdminFreelanceExcessReview({user}:{user:User}){
    <h4 className="text-base font-bold break-words">{selected.title}</h4><p className="break-all">Protocolo: {selected.offerId}</p>
    <p>Tempo registrado: {duration(selected.recordedMs)}</p><p>Excedente registrado: {duration(selected.excessMs)}</p><p>Parcela autorizada: {money(selected.authorizedMinor)} · Valor por hora: {money(selected.hourlyRateMinor)}</p>
    <p>Proposta corrente: {selected.proposal?duration(selected.proposal.recognizedExcessMs)+' · '+labels[selected.proposal.status]+' · '+(selected.proposal.proposedBy==='worker'?'Profissional':'Contratante'):'Nenhuma'}</p>
-   <p>Manifestações e comprovantes específicos ainda não disponíveis nesta etapa.</p>
+   <div className="space-y-2"><h5 className="font-bold">Manifestações privadas</h5>{selected.notes.length===0&&<p>Nenhuma manifestação registrada.</p>}{selected.notes.map(n=><div key={n.id} className="rounded border border-slate-700 p-2"><p>{n.role==='worker'?'Profissional':'Contratante'} · {new Date(n.recordedAt).toLocaleString('pt-BR')}</p><p className="whitespace-pre-wrap break-words">{n.note}</p></div>)}<p>Anexos ainda indisponíveis nesta etapa. Não representam confirmação bancária.</p></div>
    <label className="block">Segundos adicionais reconhecidos<input className={field} inputMode="numeric" value={amount} disabled={busy||full} onChange={e=>{setAmount(e.target.value);setConfirmed(false);}}/></label>
    <label className="flex gap-2"><input type="checkbox" checked={full} disabled={busy} onChange={e=>{setFull(e.target.checked);setConfirmed(false);}}/>Reconhecer todo o excedente registrado</label>
    {minor!==null&&minor<=selected.excessMs&&<p>Total reconhecido: {money(Number((BigInt(selected.hourlyRateMinor)*BigInt(selected.recordedMs-selected.excessMs+minor)+1800000n)/3600000n))}</p>}
