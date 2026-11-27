@@ -1,6 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb,getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
+import {assertFreelanceEngagementAllowed} from './freelanceEngagementRestrictionService.js';
 import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import { sameFreelancePaymentTerms,createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
@@ -28,6 +29,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
           !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,proposed.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
       return {offer:saved,created:false};
     }
+    await assertFreelanceEngagementAllowed(tx,actorUid);
     tx.create(ref, proposed);
     return {offer:proposed,created:true};
   });
@@ -48,6 +50,7 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string): 
           !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
       return {application:saved,created:false};
     }
+    await assertFreelanceEngagementAllowed(tx,actorUid,offer.ownerUid);
     tx.create(applicationRef,proposed);
     return {application:proposed,created:true};
   });
@@ -66,6 +69,7 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
     const result = selectFreelanceApplicant(offer,application,actorUid,new Date().toISOString());
+    if(result.changed)await assertFreelanceEngagementAllowed(tx,actorUid,applicantUid);
     if (result.changed) {
       tx.update(offerRef,{status:result.offer.status,selectedApplicantUid:result.offer.selectedApplicantUid!,selectedAt:result.offer.selectedAt!});
       tx.update(applicationRef,{status:result.application.status,selectedAt:result.application.selectedAt!});
@@ -88,6 +92,7 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
     const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
+    if(result.changed)await assertFreelanceEngagementAllowed(tx,offer.ownerUid,actorUid);
     if(result.offer.paymentTerms!==undefined){
       // No new financial obligations outside the disposable local candidate.
       if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
