@@ -2252,27 +2252,74 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
        const cocarFlag='KYRUB_FREELANCE_REPUTATION_COCAR_HEADER_TEST_ONLY',oldCocar=process.env[cocarFlag];
        const ledger=db.collection('users/'+worker.uid+'/xpLedger');
        const xp=ledger.doc('cocar-fixture-'+suffix);
+       const extraXp=Array.from({length:40},(_,i)=>ledger.doc('cocar-extra-'+String(i).padStart(2,'0')+'-'+suffix));
        try{
         process.env[cocarFlag]='true';
         const entry={id:xp.id,userId:worker.uid,economy:'kyrub_xp',deltaXp:12,sourceId:'fixture',correlationId:'fixture',idempotencyKey:'fixture-'+suffix,occurredAt:new Date().toISOString()};
         await xp.set(entry);
+        // More than one query page; the signed adjustment starts page two.
+        // A sum of separately floored page totals would be wrong.
+        for(const [i,ref] of extraXp.entries())await ref.set({...entry,id:ref.id,idempotencyKey:ref.id,deltaXp:i===32?-5:1});
+        const expectedCocares=46;
         const sample={...input,requestId:'cocar-'+suffix};
         await call(worker,'',200,sample);await call(worker,'',200,sample);
         const result=await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get();
         assert.equal(result.size,1);
         const source=result.docs[0],samplePost=db.doc('social_posts/'+source.id);
         try{
-         assert.equal(source.get('cocaresAtPublication'),12);
+         assert.equal(source.get('cocaresAtPublication'),expectedCocares);
          assert.equal((await samplePost.get()).get('cocaresAtPublication'),undefined);
          const url='?view=reputation_square_post&offerId='+source.id;
-         assert.equal((await call(payer,url,200)).cocaresAtPublication,12);
+         const published=await call(payer,url,200);
+         assert.equal(published.cocaresAtPublication,expectedCocares);
          await xp.update({deltaXp:13});
-         assert.equal((await call(payer,url,200)).cocaresAtPublication,12);
+         assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
+         // Reuse a key from the first page in the second: reject the entire
+         // snapshot, not just the duplicate row, and keep prior publication.
+         await xp.update({idempotencyKey:extraXp[0].id});
+         await call(worker,'',200,{...input,requestId:'cocar-invalid-'+suffix});
+         const duplicate=(await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get()).docs.find(d=>d.id!==source.id);
+         assert.ok(duplicate);
+         try{
+          assert.equal(duplicate.get('cocaresAtPublication'),null);
+          assert.equal((await call(payer,'?view=reputation_square_post&offerId='+duplicate.id,200)).cocaresAtPublication,null);
+          assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
+         }finally{await db.doc('social_posts/'+duplicate.id).delete();await duplicate.ref.delete();}
+         await xp.update({idempotencyKey:entry.idempotencyKey});
+         const squareForward='KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY',directForward='KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY';
+         const oldSquareForward=process.env[squareForward],oldDirectForward=process.env[directForward];
+         const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
+         const chat=db.collection('social_chats/'+connectionId+'/messages');
+         const notices=db.collection('users/'+worker.uid+'/notifications').where('eventType','==','reputation_forward_received');
+         try{
+          process.env[squareForward]='true';process.env[directForward]='true';
+          await connection.set({senderId:payer.uid,receiverId:worker.uid,participantIds:[payer.uid,worker.uid],status:'accepted'});
+          await call(payer,'',200,{action:'forward_reputation_connected',offerId:source.id,connectionId,recipientId:worker.uid,confirmed:true});
+          const messages=await chat.get();assert.equal(messages.size,1);
+          const card='?view=reputation_connected_card&offerId='+connectionId+'&cursor='+messages.docs[0].id;
+          const received=await call(worker,card,200);
+          assert.deepEqual(received.experience,published.experience);
+          assert.deepEqual(received.reputations,published.reputations);
+          assert.equal(received.publication.cocaresAtPublication,expectedCocares);
+          assert.equal(received.publication.createdAtIso,source.get('createdAtIso'));
+          assert.deepEqual(await call(payer,card,200),received);
+          await call(null,card,401);
+          await profile.update({isProfileVisible:false});
+          assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});
+          await profile.update({isProfileVisible:true});
+         }finally{
+          await connection.delete();
+          for(const d of (await chat.get()).docs)await d.ref.delete();
+          for(const d of (await notices.get()).docs)await d.ref.delete();
+          for(const d of (await source.ref.collection('directForwards').get()).docs)await d.ref.delete();
+          if(oldSquareForward===undefined)delete process.env[squareForward];else process.env[squareForward]=oldSquareForward;
+          if(oldDirectForward===undefined)delete process.env[directForward];else process.env[directForward]=oldDirectForward;
+         }
          await profile.update({isProfileVisible:false});
          assert.deepEqual(await call(payer,url,200),{experience:null,reputations:null});
          await profile.update({isProfileVisible:true});
         }finally{await samplePost.delete();await source.ref.delete();}
-       }finally{await xp.delete();if(oldCocar===undefined)delete process.env[cocarFlag];else process.env[cocarFlag]=oldCocar;}
+       }finally{await xp.delete();for(const ref of extraXp)await ref.delete();if(oldCocar===undefined)delete process.env[cocarFlag];else process.env[cocarFlag]=oldCocar;}
       }finally{if(oldPublish===undefined)delete process.env[publishFlag];else process.env[publishFlag]=oldPublish;}
       await profile.update({isProfileVisible:false});
       assert.deepEqual(await call(worker,preview,200),{experience:null,reputations:null});
