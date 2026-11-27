@@ -1,5 +1,5 @@
 import {adminAuth,adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
-import {readPersonalPixDestination,changePersonalPixDestination} from './personalPixDestinationService.js';
+import {readPersonalPixDestination,changePersonalPixDestination,listPersonalCidPixCandidates,importPersonalCidPixDestination} from './personalPixDestinationService.js';
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
 export function personalPixTransportEnabled(){
@@ -22,9 +22,13 @@ export async function handlePersonalPix(req:Request,res:Response){
  let identity:Awaited<ReturnType<typeof adminAuth.verifyIdToken>>;
  try{identity=await adminAuth.verifyIdToken(token,true);if(!/^[A-Za-z0-9_-]{1,128}$/.test(identity.uid))throw Error('AUTH_REQUIRED');}catch{res.status(401).json({code:'AUTH_REQUIRED'});return;}
  if(identity.email_verified!==true){res.status(403).json({code:'EMAIL_VERIFICATION_REQUIRED'});return;}
- if(Object.keys(req.query??{}).length){res.status(400).json({code:'PERSONAL_PIX_INVALID'});return;}
+ const query=req.query??{};
+ const listCid=req.method==='GET'&&Object.keys(query).length===1&&query.view==='cid_candidates';
+ if(Object.keys(query).length&&!listCid){res.status(400).json({code:'PERSONAL_PIX_INVALID'});return;}
  try{
-  if(req.method==='GET'){res.status(200).json(await readPersonalPixDestination(identity.uid));return;}
+  if(req.method==='GET'){
+   res.status(200).json(listCid?await listPersonalCidPixCandidates(identity.uid):await readPersonalPixDestination(identity.uid));return;
+  }
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>2048){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
@@ -39,10 +43,10 @@ export async function handlePersonalPix(req:Request,res:Response){
     res.status(403).json({code:'IDENTITY_VERIFICATION_REQUIRED'});return;
    }
   }
-  res.status(200).json(await changePersonalPixDestination(identity.uid,req.body));
+  res.status(200).json(b?.action==='import_cid'?await importPersonalCidPixDestination(identity.uid,req.body):await changePersonalPixDestination(identity.uid,req.body));
  }catch(e){
   const code=e instanceof Error?e.message:'';
-  const status=code==='PERSONAL_PIX_INVALID'?400:code==='PERSONAL_PIX_CONFLICT'?409:503;
+  const status=code==='PERSONAL_PIX_INVALID'?400:code==='PERSONAL_CID_UNAVAILABLE'||code==='IDENTITY_VERIFICATION_REQUIRED'?403:['PERSONAL_PIX_CONFLICT','PERSONAL_CID_CHANGED','PERSONAL_CID_LIST_LIMIT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'PERSONAL_FINANCE_UNAVAILABLE':code});
  }
 }

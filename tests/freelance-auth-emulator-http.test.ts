@@ -223,3 +223,57 @@ test('personal Pix authenticated HTTP: own masked destination, eligibility, revi
  finally{process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION=flag;}
  console.log('PASS personal Pix HTTP: authenticated UID, masked declaration, eligibility, stale revision, revocation, disabled gate; real MFA and bank ownership not tested');
 });
+
+test('CID Pix import HTTP: private list, explicit confirmation, account isolation, stale origin and replacement',async(t)=>{
+ const worker=await account('cid-worker',['freelancer']),other=await account('cid-other',['freelancer']),unapproved=await account('cid-unapproved',[]);
+ const url='http://127.0.0.1:'+address.port+'/api/personal-finance/pix';
+ const request=async(actor:Actor|null,status:number,body?:Record<string,unknown>,query='')=>{
+  const res=await fetch(url+query,{method:body?'POST':'GET',headers:{...(actor?{authorization:'Bearer '+actor.token}:{}),...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));assert.match(res.headers.get('cache-control')??'',/no-store/);return data;
+ };
+ const tagId=randomUUID().replaceAll('-',''),ownerId='tagpk_'+'x'.repeat(43);
+ const tag=db.doc('kyrub_official_tags/'+tagId);
+ const pix={keyType:'email',key:'fixture-cid@example.invalid',recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true};
+ const record={distribution:'promotional',model:'adesivo',manufacturingState:'released',ownerAuthMode:'passkey',ownerId,firstOwnerId:ownerId,linkedAccountId:worker.uid,linkedAccountAt:new Date().toISOString(),enabled:true,blocked:false,presentation:{name:'Teste',occupation:'',about:'',pix}};
+ await Promise.all([tag.set(record),...([worker,other,unapproved].map(a=>db.doc('users/'+a.uid).set({uid:a.uid})))]);
+ try{
+  const query='?view=cid_candidates';
+  await request(null,401,undefined,query);
+  await request(worker,400,undefined,query+'&uid='+other.uid);
+  assert.deepEqual(await request(other,200,undefined,query),{candidates:[]});
+  const list=await request(worker,200,undefined,query);
+  assert.equal(list.candidates.length,1);
+  const choice=list.candidates[0];assert.equal(choice.cidId,tagId);assert.equal(choice.maskedKey,'••••alid');assert.equal(choice.ownershipVerified,false);
+  assert.ok(!JSON.stringify(list).includes(pix.key));
+  const input={action:'import_cid',cidId:tagId,sourceVersion:choice.sourceVersion,expectedRevision:0,confirmed:true,replaceExisting:false};
+  await request(other,403,input);
+  await request(unapproved,403,input);
+  await request(worker,400,{...input,confirmed:false});
+  await request(worker,400,{...input,key:pix.key});
+  await request(worker,400,input,query);
+  const original=auth.verifyIdToken.bind(auth);
+  t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+   const decoded=await original(token,checkRevoked);
+   return token===worker.token?{...decoded,auth_time:Math.floor(Date.now()/1000)-301}:decoded;
+  });
+  try{assert.equal((await request(worker,403,input)).code,'REAUTHENTICATION_REQUIRED');}finally{t.mock.restoreAll();}
+  await tag.update({blocked:true,enabled:false});
+  assert.equal((await request(worker,403,input)).code,'PERSONAL_CID_UNAVAILABLE');
+  await tag.update({blocked:false,enabled:true});
+  assert.equal((await request(worker,409,input)).code,'PERSONAL_CID_CHANGED');
+  const fresh=(await request(worker,200,undefined,query)).candidates[0];
+  const declaration={...input,sourceVersion:fresh.sourceVersion};
+  const imported=await request(worker,200,declaration);
+  assert.equal(imported.revision,1);assert.equal(imported.status,'declared');assert.equal(imported.ownershipVerified,false);
+  assert.ok(!JSON.stringify(imported).includes(pix.key));
+  await request(worker,409,declaration);
+  await request(worker,409,{...declaration,expectedRevision:1});
+  const replacement=await request(worker,200,{...declaration,expectedRevision:1,replaceExisting:true});
+  assert.equal(replacement.revision,2);
+  await tag.update({'presentation.pix':null});
+  assert.deepEqual(await request(worker,200,undefined,query),{candidates:[]});
+  assert.equal((await request(worker,200)).revision,2);
+  assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),pix.key);
+  console.log('PASS CID Pix HTTP: own masked list, foreign account rejected, recent session, stale source, explicit replacement, independent destination');
+ }finally{await tag.delete();}
+});
