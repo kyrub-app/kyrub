@@ -1,3 +1,4 @@
+import AdminFreelanceCancellationReview from './AdminFreelanceCancellationReview';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -101,5 +102,6 @@ export default function AdminFreelanceFinancialReviewWorkspace({user}:{user:User
    <button type="submit" className={button} disabled={busy||!confirmed||!outcome||reason.trim().length<10||!selected.receipts.every(r=>viewed.includes(r.id))}>Registrar decisão financeira</button>{' '}
    <button type="button" className={button} disabled={busy} onClick={reset}>Voltar</button>
   </form>}
+  <AdminFreelanceCancellationReview key={user.uid} user={user}/>
  </section>;
 }
