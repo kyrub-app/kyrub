@@ -5,6 +5,8 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ fixed_cancellation_disputed:['Divergência na apuração de cancelamento','Novas contratações temporariamente restritas. Busque acordo no financeiro do contrato.'],
+ fixed_cancellation_review_requested:['Análise de cancelamento solicitada','Consulte a situação financeira do contrato. A restrição permanece até resolução.'],
  pix_sharing_revoked:['Compartilhamento Pix revogado','A autorização de consulta da chave neste contrato foi retirada. Consulte o financeiro antes de qualquer novo pagamento; não repita transferências.'],
  hourly_excess_admin_resolved:['Análise de excedente concluída','Consulte o tempo reconhecido e a decisão. Nenhum pagamento foi confirmado.'],
  hourly_excess_disputed:['Divergência de excedente','Novas contratações temporariamente restritas. Busque acordo sobre o tempo registrado.'],
@@ -42,7 +44,7 @@ export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,
  !['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!validFreelanceId(obligation.offerId)||!validFreelanceId(obligation.requesterUid)||!validFreelanceId(obligation.beneficiaryUid)||obligation.requesterUid===obligation.beneficiaryUid)throw Error('FREELANCE_INVALID');
  const replacement=kind==='pix_rebind_proposed'||kind==='pix_rebind_accepted';
- const accounting=kind==='pix_sharing_revoked'||kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_');
+ const accounting=kind==='pix_sharing_revoked'||kind.startsWith('fixed_cancellation_')||kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_');
  if(replacement?(typeof revision!=='number'||!Number.isSafeInteger(revision)||revision<1):accounting?!validFreelanceId(revision):revision!==undefined)throw Error('FREELANCE_INVALID');
  const sourceId=createHash('sha256').update(JSON.stringify(replacement||accounting?[obligation.offerId,kind,revision]:[obligation.offerId,kind])).digest('hex');
  const ids=recipient==='both'?[obligation.requesterUid,obligation.beneficiaryUid]:[recipient==='requester'?obligation.requesterUid:obligation.beneficiaryUid];

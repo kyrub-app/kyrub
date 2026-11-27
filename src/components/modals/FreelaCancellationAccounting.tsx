@@ -2,9 +2,9 @@ import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 type Amounts={currency:'BRL';agreedMinor:number;recognizedServiceMinor:number;reportedReceivedMinor:number;proposedAdditionalMinor:number;proposedRefundMinor:number;bankVerified:false;settlement:'not_verified';responsibility:'not_determined'};
-type Proposal={id:string;status:'pending'|'accepted'|'closed'|'stale';proposedByMe:boolean;proposedAt:string;amounts:Amounts|null};
-type View={offerId:string;currency:'BRL';agreedMinor:number;priorPaymentState:string;eligible:boolean;bankVerified:false;settlement:'not_verified';proposal:Proposal|null};
-type Action={action:'propose_cancellation_accounting'|'accept_cancellation_accounting'|'close_cancellation_accounting';proposalId:string;recognizedServiceMinor?:number;reportedReceivedMinor?:number;confirmed:true};
+type Proposal={id:string;status:'pending'|'accepted'|'closed'|'stale';proposedByMe:boolean;proposedAt:string;closure:'withdrawn'|'declined'|null;amounts:Amounts|null};
+type View={offerId:string;currency:'BRL';agreedMinor:number;priorPaymentState:string;eligible:boolean;snapshot:string;restrictionActive:boolean;dispute:null|{status:'open'|'review_requested'|'resolved_voluntarily';requestedAt:string|null};bankVerified:false;settlement:'not_verified';proposal:Proposal|null};
+type Action={action:'propose_cancellation_accounting'|'accept_cancellation_accounting'|'close_cancellation_accounting'|'dispute_fixed_cancellation'|'request_fixed_cancellation_review';proposalId?:string;snapshot?:string;recognizedServiceMinor?:number;reportedReceivedMinor?:number;confirmed:true};
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-teal-300 disabled:opacity-50';
 const field='w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 text-sm text-white';
 const money=(n:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(n/100);
@@ -15,9 +15,9 @@ function cents(s:string):number|null{
 }
 function valid(v:unknown,id:string):v is View{
  if(!v||typeof v!=='object')return false;const d=v as View;
- if(d.offerId!==id||d.currency!=='BRL'||d.bankVerified!==false||d.settlement!=='not_verified'||!Number.isSafeInteger(d.agreedMinor)||d.agreedMinor<1||d.agreedMinor>999999999||typeof d.eligible!=='boolean'||!['awaiting_payment','awaiting_receipt','nonreceipt_reported','disputed','receipt_reported','bilaterally_reported_received'].includes(d.priorPaymentState))return false;
+ if(d.offerId!==id||d.currency!=='BRL'||d.bankVerified!==false||d.settlement!=='not_verified'||!Number.isSafeInteger(d.agreedMinor)||d.agreedMinor<1||d.agreedMinor>999999999||typeof d.eligible!=='boolean'||typeof d.restrictionActive!=='boolean'||! /^[a-f0-9]{64}$/.test(d.snapshot)||!(d.dispute===null||d.dispute&&['open','review_requested','resolved_voluntarily'].includes(d.dispute.status))||!['awaiting_payment','awaiting_receipt','nonreceipt_reported','disputed','receipt_reported','bilaterally_reported_received'].includes(d.priorPaymentState))return false;
  if(d.proposal===null)return true;
- const p=d.proposal;if(!p||typeof p.id!=='string'||!p.id||typeof p.proposedByMe!=='boolean'||!Number.isFinite(Date.parse(p.proposedAt))||!['pending','accepted','closed','stale'].includes(p.status))return false;
+ const p=d.proposal;if(!p||typeof p.id!=='string'||!p.id||typeof p.proposedByMe!=='boolean'||!Number.isFinite(Date.parse(p.proposedAt))||!['pending','accepted','closed','stale'].includes(p.status)||![null,'withdrawn','declined'].includes(p.closure))return false;
  if(!d.eligible||p.status==='closed'||p.status==='stale')return p.amounts===null;
  const a=p.amounts;
  return !!a&&a.currency==='BRL'&&a.agreedMinor===d.agreedMinor&&a.bankVerified===false&&a.settlement==='not_verified'&&a.responsibility==='not_determined'&&[a.recognizedServiceMinor,a.reportedReceivedMinor,a.proposedAdditionalMinor,a.proposedRefundMinor].every(n=>Number.isSafeInteger(n)&&n>=0&&n<=d.agreedMinor)&&a.proposedAdditionalMinor===Math.max(0,a.recognizedServiceMinor-a.reportedReceivedMinor)&&a.proposedRefundMinor===Math.max(0,a.reportedReceivedMinor-a.recognizedServiceMinor);
@@ -48,7 +48,7 @@ export default function FreelaCancellationAccounting({user,offerId}:{user:User;o
   finally{if(active()){lock.current=false;setBusy(false);}}
  };
  const a=cents(earned),b=cents(received),p=data?.proposal;
- const canPropose=!!data?.eligible&&(!p||p.status==='closed'||p.status==='stale');
+ const canPropose=!!data?.eligible&&data.dispute?.status!=='resolved_voluntarily'&&(!p||p.status==='closed'||p.status==='stale');
  const validInput=!!data&&a!==null&&b!==null&&a<=data.agreedMinor&&b<=data.agreedMinor&&(data.priorPaymentState!=='bilaterally_reported_received'||b===data.agreedMinor)&&(data.priorPaymentState!=='nonreceipt_reported'||b===0);
  const ask=(label:string,body:Action)=>setPending({label,body});
  if(auth.currentUser?.uid!==user.uid)return null;
@@ -58,6 +58,11 @@ export default function FreelaCancellationAccounting({user,offerId}:{user:User;o
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar apuração</button>
   {busy&&<p role="status">Consultando apuração…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status">{message}</p>}
   {data&&<><p>Valor original: {money(data.agreedMinor)}</p>
+   {data.restrictionActive&&<p className="text-amber-300">Novas contratações restritas para ambas as partes. A regularização voluntária permanece disponível.</p>}
+   {data.dispute?.status==='review_requested'&&<p>Análise administrativa solicitada. Decisão ainda em homologação.</p>}
+   {data.dispute?.status==='resolved_voluntarily'&&<p>Divergência de apuração encerrada por acordo. Outras restrições podem permanecer.</p>}
+   {data.eligible&&!data.dispute&&p?.status==='closed'&&p.closure==='declined'&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('Declarar divergência financeira',{action:'dispute_fixed_cancellation',snapshot:data.snapshot,confirmed:true})}>Declarar divergência financeira</button>}
+   {data.eligible&&data.dispute?.status==='open'&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('Solicitar análise administrativa',{action:'request_fixed_cancellation_review',snapshot:data.snapshot,confirmed:true})}>Solicitar análise administrativa</button>}
    {!data.eligible&&<p className="text-amber-300">Regularize primeiro as manifestações ou divergências do pagamento original.</p>}
    {p&&<><p>{p.status==='accepted'?'Proposta aceita pelas partes':p.status==='pending'?'Proposta aguardando aceite':p.status==='closed'?'Proposta encerrada sem aceite':'Proposta desatualizada pelo histórico financeiro'}</p>
     {p.amounts&&<div className="space-y-1"><p>Remuneração reconhecida: {money(p.amounts.recognizedServiceMinor)}</p><p>Valor declarado como recebido: {money(p.amounts.reportedReceivedMinor)}</p><p>Complemento proposto: {money(p.amounts.proposedAdditionalMinor)}</p><p>Devolução proposta: {money(p.amounts.proposedRefundMinor)}</p></div>}
@@ -72,6 +77,6 @@ export default function FreelaCancellationAccounting({user,offerId}:{user:User;o
     <button type="button" className={btn} disabled={busy||!!pending||!validInput} onClick={()=>{if(validInput&&a!==null&&b!==null)ask('Enviar proposta de apuração',{action:'propose_cancellation_accounting',proposalId:crypto.randomUUID(),recognizedServiceMinor:a,reportedReceivedMinor:b,confirmed:true});}}>Propor apuração</button>
    </div>}
   </>}
-  {pending&&<div className="rounded-xl border border-teal-700 p-3 space-y-2"><p>Confirma: {pending.label}?</p><p>O registro não efetua pagamento nem devolução.</p><button type="button" className={btn} disabled={busy} onClick={()=>void run(pending.body)}>Confirmar apuração</button>{' '}<button type="button" className={btn} disabled={busy} onClick={()=>setPending(null)}>Voltar</button></div>}
+  {pending&&<div className="rounded-xl border border-teal-700 p-3 space-y-2"><p>Confirma: {pending.label}?</p><p>O registro não efetua pagamento nem devolução.</p>{pending.body.action==='dispute_fixed_cancellation'&&<p>Esta declaração restringe novas contratações de ambas as partes, sem atribuir culpa.</p>}<button type="button" className={btn} disabled={busy} onClick={()=>void run(pending.body)}>Confirmar apuração</button>{' '}<button type="button" className={btn} disabled={busy} onClick={()=>setPending(null)}>Voltar</button></div>}
  </section>;
 }
