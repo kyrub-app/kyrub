@@ -553,3 +553,17 @@ test('private PNG receipt storage: one per party, server-only access, no raw met
  await assert.rejects(submit(worker,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
  assert.deepEqual((await adminDb.doc(path).get()).data(),stored);
 });
+
+test('reputation coverage, index, receipt and private scores remain server-only',async()=>{
+ const paths=['freelanceReputationCoverageV1/test-coverage','freelanceReputationIndexesV1/test-index','freelanceReputationIndexReceiptsV1/test-receipt','freelanceOffersV1/test-contract/reputationPrivateV1/worker','freelanceReputationContestsV1/test-contest'];
+ for(const path of paths)await adminDb.doc(path).set({fixture:true});
+ for(const context of [env.unauthenticatedContext(),env.authenticatedContext(owner),env.authenticatedContext(worker),env.authenticatedContext('unrelated'),env.authenticatedContext('admin-fixture',{admin:true,role:'admin'})]){
+  const client=context.firestore();
+  for(const path of paths){
+   const r=doc(client,path);
+   await assertFails(getDoc(r));
+   await assertFails(updateDoc(r,{fixture:false}));
+   await assertFails(setDoc(r,{fixture:false}));
+  }
+ }
+});
