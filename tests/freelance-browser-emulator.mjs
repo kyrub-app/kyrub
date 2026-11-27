@@ -175,6 +175,36 @@ try{
  const basis=await db.doc('freelanceOffersV1/'+offerId).collection('financialBasis').get();
  assert.equal(basis.size,1);assert.equal(basis.docs[0].get('confirmedServiceMinor'),15000);
  assert.equal(basis.docs[0].get('settlement'),'not_verified');
+ // Navigate through the actual Central Pessoal. Fresh sign-in guarantees the
+ // five-minute authentication window without bypassing the server.
+ const financialPage=await session(worker,390);
+ await financialPage.locator('#header-user-profile-trigger').click();
+ await financialPage.getByRole('button',{name:/Movimentações/}).first().click();
+ const pix=financialPage.locator('#personal-pix-settings');
+ await waitText(pix,'Nenhuma chave cadastrada');
+ const key='fixture-'+suffix+'@example.invalid';
+ await pix.getByLabel('Tipo de chave').selectOption('email');
+ await pix.getByLabel('Chave Pix de teste').fill(key);
+ await pix.getByLabel('Confirmo que esta é uma chave fictícia para homologação.').check();
+ const declaration=financialPage.waitForResponse(r=>r.url().endsWith('/api/personal-finance/pix')&&r.request().method()==='POST');
+ await button(pix,'Declarar chave').click();
+ const declared=await declaration;assert.equal(declared.status(),200);
+ await waitText(pix,'Chave de teste declarada. Titularidade não verificada.');
+ assert.equal(await pix.getByLabel('Chave Pix de teste').inputValue(),'');
+ assert.ok(!(await pix.innerText()).includes(key));
+ await financialPage.screenshot({path:'freelance-browser-evidence/personal-pix-masked.png',fullPage:true});
+ const second=await session(worker,1365);
+ await second.locator('#header-user-profile-trigger').click();
+ await second.getByRole('button',{name:/Movimentações/}).first().click();
+ const secondPix=second.locator('#personal-pix-settings');
+ await waitText(secondPix,'Chave declarada: E-mail');
+ await button(secondPix,'Revogar chave').click();
+ await secondPix.getByLabel('Confirmo a revogação da chave cadastrada.').check();
+ await button(secondPix,'Confirmar revogação').click();
+ await waitText(secondPix,'Revogação confirmada pelo servidor.');
+ await button(pix,'Atualizar cadastro').click();await waitText(pix,'Chave revogada');
+ assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),undefined);
+ console.log('PASS personal Pix UI: Central Pessoal, masked declaration and revocation across two contexts');
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){

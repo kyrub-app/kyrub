@@ -1,5 +1,6 @@
 import React from 'react';
 import { Wallet } from 'lucide-react';
+import {PersonalPixSettings,personalFinanceCandidateEnabled} from './PersonalPixSettings';
 
 interface WalletModalProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface WalletModalProps {
 /** Read-only financial surface. Never infer an available cash balance from legacy local history. */
 export const WalletMovementsPanel: React.FC<{ walletHistory: any[] }> = ({ walletHistory }) => (
   <div className="space-y-4" id="wallet-movements-panel">
+    {personalFinanceCandidateEnabled() && <PersonalPixSettings /> }
     <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
       <span className="block text-xs font-bold uppercase text-amber-300">Movimentações reais em preparação</span>
       <p className="mt-2 text-sm leading-relaxed text-slate-300">

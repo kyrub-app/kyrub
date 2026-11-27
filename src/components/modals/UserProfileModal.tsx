@@ -208,7 +208,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   }, [isOpen, openSavedInitially]);
 
   const financeCards = [
-    { id: 'movements', label: 'Movimentações', description: 'Saldo e operações quando disponíveis', icon: ArrowLeftRight },
+    { id: 'movements', label: 'Movimentações', description: 'Configurações e registros financeiros', icon: ArrowLeftRight },
     { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
     { id: 'xp', label: 'Conquistas', description: 'XP, Pitangas e recompensas', icon: KyrubCocarIcon },
     { id: 'devices', label: 'Dispositivos', description: 'Smartphone, NFC e LoRa', icon: RadioTower },
