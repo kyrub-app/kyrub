@@ -25,3 +25,14 @@ test('production cannot enable local workspace',()=>{
  try{process.env.VERCEL_ENV='production';process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION='true';assert.equal(freelanceWorkspaceEnabled(),false);}
  finally{if(old===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=old;if(flag===undefined)delete process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION;else process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION=flag;}
 });
+
+test('candidate interface has no local persistence, uses server receipt and preserves isolated boundary',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const ui=readFileSync('src/components/modals/CanonicalFreelaWorkspace.tsx','utf8');
+ assert.match(ui,/VITE_KYRUB_FREELANCE_LOCAL_HOMOLOGATION/);
+ assert.match(ui,/data\?\.confirmed!==true/);
+ assert.match(ui,/auth.currentUser\?\.uid===user.uid/);
+ assert.doesNotMatch(ui,/localStorage|Math.random|setDoc\(|deleteDoc\(/);
+ const modal=readFileSync('src/components/modals/FreelaManagerModal.tsx','utf8');
+ assert.match(modal,/candidate \? \(props.isOpen/);
+});

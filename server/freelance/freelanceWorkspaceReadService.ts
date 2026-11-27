@@ -1,5 +1,5 @@
 import {adminDb} from '../firebaseAdmin.js';
-import {validFreelanceId,normalizeFreelanceOffer,type FreelanceOffer,type FreelanceApplication} from '../../shared/freelanceLifecycle.js';
+import {validFreelanceId,normalizeFreelanceOffer,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
 
 const offers=()=>adminDb.collection('freelanceOffersV1');
 function project(id:string,raw:unknown,uid:string){
@@ -44,10 +44,17 @@ export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:un
   const mine=owner?null:await tx.get(ref.collection('applications').doc(uid));
   if(!owner&&!mine?.exists&&o.status!=='open')throw Error('FREELANCE_FORBIDDEN');
   const item=project(offerId,o,uid);
-  if(!owner)return {item,applications:mine?.exists?[projectApplication(mine.data(),o,uid)]:[]};
+  let occurrence: {id:string;kind:string;openedByMe:boolean;response:string|null}|null=null;
+  if(o.status==='under_review'&&(owner||o.selectedApplicantUid===uid)){
+   if(!validFreelanceId(o.occurrenceId))throw Error('FREELANCE_CONFLICT');
+   const r=(await tx.get(ref.collection('occurrences').doc(o.occurrenceId))).data() as FreelanceOccurrence|undefined;
+   if(!r||r.id!==o.occurrenceId||r.offerId!==o.id||r.ownerUid!==o.ownerUid||r.applicantUid!==o.selectedApplicantUid||r.status!=='awaiting_review')throw Error('FREELANCE_CONFLICT');
+   occurrence={id:r.id,kind:r.kind,openedByMe:r.openedBy===uid,response:r.response?.position??null};
+  }
+  if(!owner)return {item,occurrence,applications:mine?.exists?[projectApplication(mine.data(),o,uid)]:[]};
   const applications=await tx.get(ref.collection('applications').limit(51));
   if(applications.size>50)throw Error('FREELANCE_PAGE_LIMIT');
-  return {item,applications:applications.docs.map(d=>{
+  return {item,occurrence,applications:applications.docs.map(d=>{
    if(d.id!==d.get('applicantUid'))throw Error('FREELANCE_CONFLICT');
    return projectApplication(d.data(),o,uid);
   })};
