@@ -2089,6 +2089,29 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   assert.deepEqual((await call(worker,'?view=reputation_verified_professional',200)).projection,baseline.projection);
   assert.equal((await call(payer,'?view=reputation_verified_personal',200)).projection,null);
   await assert.rejects(finishReputationMaintenance(maintenance.epoch),/CONFLICT/);
+  const publicFlag='KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY',priorPublic=process.env[publicFlag];
+  const profile=db.doc('users/'+worker.uid),query='?view=reputation_public_experience&targetUid='+worker.uid;
+  try{
+   delete process.env[publicFlag];await call(payer,query,403);
+   process.env[publicFlag]='true';
+   await call(null,query,401);
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+   await profile.set({isProfileVisible:true,email:'private-test@example.invalid',name:'Perfil fictício'});
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+   assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'personal_requester')).certified,true);
+   assert.deepEqual(await call(payer,query,200),{experience:{completedServices:3,completedHires:0}});
+   await call(payer,query+'&offerId='+ids[0],400);
+   await call(payer,'?view=reputation_public_experience&targetUid=invalid%2Fid',400);
+   await profile.update({isProfileVisible:false});
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+   await profile.update({isProfileVisible:true});
+   const maintenance2=await beginReputationMaintenance();
+   try{assert.deepEqual(await call(payer,query,200),{experience:null});}finally{await finishReputationMaintenance(maintenance2.epoch);}
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+  }finally{
+   await profile.delete();
+   if(priorPublic===undefined)delete process.env[publicFlag];else process.env[publicFlag]=priorPublic;
+  }
  }finally{
   for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
  }
