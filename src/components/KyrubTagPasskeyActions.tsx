@@ -5,15 +5,25 @@ import {Fingerprint,Pencil} from 'lucide-react';
 import {runKyrubTagPasskey,supportsKyrubTagPasskey,type TagPasskeyAction} from '../utils/kyrubTagPasskeyClient';
 import {buildPublicDestinationUrl,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
 import {KyrubCidShare} from './KyrubCidShare';
+import {KyrubCidPixFields,initialCidPixDraft,validatedCidPixDraft} from './KyrubCidPix';
 import type {PromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 
 const button='min-h-11 rounded-xl border border-[#34443B] p-3 text-sm font-semibold disabled:opacity-50';
 const orange=button+' bg-[#F47825] text-[#121A17] w-full';
-export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links=[],sosAction}:{tagId:string;mode:'register'|'active'|'blocked';origin?:string;getDraft?:()=>PromotionalTagPresentation;initial?:PromotionalTagPresentation;links?:{url:string}[];sosAction?:React.ReactNode}){
+export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links=[],sosAction,cidPixAvailable=false}:{tagId:string;mode:'register'|'active'|'blocked';origin?:string;getDraft?:()=>PromotionalTagPresentation;initial?:PromotionalTagPresentation;links?:{url:string}[];sosAction?:React.ReactNode;cidPixAvailable?:boolean}){
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[recovery,setRecovery]=useState(''),[editing,setEditing]=useState(false);
  const [identified,setIdentified]=useState(false);
  const [recovering,setRecovering]=useState(false),[secret,setSecret]=useState('');
  const [draft,setDraft]=useState(initial??{name:'',occupation:'',about:''});
+ const [pixDraft,setPixDraft]=useState(()=>initialCidPixDraft(initial?.pix));
+ const [pixTouched,setPixTouched]=useState(false);
+ function pixFields(presentation:PromotionalTagPresentation|undefined):PromotionalTagPresentation|undefined{
+  if(!presentation||!cidPixAvailable||!pixTouched)return presentation;
+  return {...presentation,pix:validatedCidPixDraft(pixDraft)};
+ }
+ function publish(purpose:'register'|'edit',presentation:PromotionalTagPresentation|undefined){
+  try{void execute(purpose,pixFields(presentation));}catch{setNotice('Confira os campos Pix e confirme a autorização de divulgação.');}
+ }
  const [destinations,setDestinations]=useState(()=>Object.fromEntries(links.flatMap(l=>{const p=parsePublicDestinationUrl(l.url);return p&&p.kind!=='card'?[[p.kind,p.identifier]]:[];})) as Partial<Record<'profile'|'store'|'community',string>>);
  const [account,setAccount]=useState<User|null>(auth.currentUser);
  const [linked,setLinked]=useState(false);
@@ -54,18 +64,20 @@ export function KyrubTagPasskeyActions({tagId,mode,origin,getDraft,initial,links
  return <section className="space-y-3 rounded-xl border border-[#34443B] p-3" aria-label="Gerenciamento por chave de acesso">
   {mode==='register'?<>
    <p className="text-sm text-slate-300">Confirme pelo desbloqueio do seu dispositivo. O cartão será público nesta unidade, sem e-mail obrigatório. Nenhuma biometria será enviada ao Kyrub.</p>
-   <button type="button" className={orange+' flex items-center justify-center gap-2'} disabled={busy} onClick={()=>void execute('register',getDraft?.())}><Fingerprint className="h-5 w-5"/>{busy?'Confirmando…':'Salvar e publicar com chave de acesso'}</button>
+   {cidPixAvailable&&<KyrubCidPixFields value={pixDraft} onChange={v=>{setPixDraft(v);setPixTouched(true);}} disabled={busy}/>}
+   <button type="button" className={orange+' flex items-center justify-center gap-2'} disabled={busy} onClick={()=>publish('register',getDraft?.())}><Fingerprint className="h-5 w-5"/>{busy?'Confirmando…':'Salvar e publicar com chave de acesso'}</button>
   </>:<>
    {mode==='active'&&<div className="grid grid-cols-2 gap-2">{identified?<button type="button" className={button+' flex items-center justify-center gap-2'} disabled={busy} onClick={()=>setEditing(v=>!v)}><Pencil aria-hidden="true" className="h-5 w-5"/>Editar</button>:<KyrubCidShare tagId={tagId} className={button}/>} {sosAction}</div>}
    {mode==='active'&&!identified&&<button type="button" className={button+' w-full'} disabled={busy} onClick={()=>void execute('identify-owner')}>Acessar meu CID</button>}
-   {mode==='active'&&identified&&<button type="button" className="text-xs underline" onClick={()=>{setIdentified(false);setEditing(false);setNotice('');}}>Voltar à visão pública</button>}
+   {mode==='active'&&identified&&<button type="button" className="text-xs underline" onClick={()=>{setIdentified(false);setEditing(false);setNotice('');setPixDraft(initialCidPixDraft(initial?.pix));setPixTouched(false);}}>Voltar à visão pública</button>}
    {(mode==='blocked'||identified)&&<>
-   {mode==='active'&&editing&&<form className="space-y-3" onSubmit={e=>{e.preventDefault();const urls:string[]=[];for(const kind of ['profile','store','community'] as const){const value=(destinations[kind]??'').trim().replace(/^@/,'').toLowerCase();if(!value)continue;const url=buildPublicDestinationUrl(kind,value);if(!url){setNotice('Confira os identificadores.');return;}urls.push(url);}void execute('edit',{...draft,destinations:urls});}}>
+   {mode==='active'&&editing&&<form className="space-y-3" onSubmit={e=>{e.preventDefault();const urls:string[]=[];for(const kind of ['profile','store','community'] as const){const value=(destinations[kind]??'').trim().replace(/^@/,'').toLowerCase();if(!value)continue;const url=buildPublicDestinationUrl(kind,value);if(!url){setNotice('Confira os identificadores.');return;}urls.push(url);}publish('edit',{...draft,destinations:urls});}}>
     <label className="block text-sm">Nome<input required maxLength={80} value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} className="mt-1 w-full rounded-lg bg-[#1D2924] p-3"/></label>
     <label className="block text-sm">Atividade<input maxLength={90} value={draft.occupation} onChange={e=>setDraft(d=>({...d,occupation:e.target.value}))} className="mt-1 w-full rounded-lg bg-[#1D2924] p-3"/></label>
     <label className="block text-sm">Informações adicionais<textarea maxLength={320} value={draft.about} onChange={e=>setDraft(d=>({...d,about:e.target.value}))} className="mt-1 w-full rounded-lg bg-[#1D2924] p-3"/></label>
     <p className="text-xs text-slate-300">Informe o identificador (trecho final do endereço) de cada destino.</p>
     {(['profile','store','community'] as const).map(kind=><label key={kind} className="block text-sm">{kind==='profile'?'Meu perfil':kind==='store'?'Loja':'Comunidade'}<input maxLength={120} placeholder={kind==='profile'?'kyrub.com/seu-perfil':kind==='store'?'kyrub.com/@sua-loja':'kyrub.com/comunidade/sua-comunidade'} value={destinations[kind]??''} onChange={e=>setDestinations(d=>({...d,[kind]:e.target.value}))} className="mt-1 w-full rounded-lg bg-[#1D2924] p-3"/></label>)}
+    {cidPixAvailable&&<KyrubCidPixFields value={pixDraft} onChange={v=>{setPixDraft(v);setPixTouched(true);}} disabled={busy}/>}
     <button type="submit" className={orange} disabled={busy}>Confirmar alterações com chave de acesso</button>
    </form>}
    <button type="button" disabled={busy} className={button+' w-full'} onClick={()=>{if(window.confirm(mode==='blocked'?'Republicar seu cartão?':'Bloquear a publicação deste cartão?'))void execute(mode==='blocked'?'unblock':'block');}}>{mode==='blocked'?'Desbloquear minha tag':'Bloquear tag perdida'}</button>

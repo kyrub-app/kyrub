@@ -82,10 +82,17 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await page.getByLabel('Título ou atividade (opcional)').fill('Autônoma');
   await page.getByLabel('Informações adicionais (opcional)').fill('Cartão de teste');
   await page.getByRole('button',{name:'Salvar',exact:true}).click();
+  const pixKey='123e4567-e12b-12d1-a456-426655440000';
+  await page.getByLabel('Disponibilizar recebimentos via Pix').check();
+  await page.getByLabel('Chave Pix',{exact:true}).fill(pixKey);
+  await page.getByLabel('Nome do recebedor').fill('Pessoa Teste');
+  await page.getByLabel('Cidade do recebedor').fill('BRASILIA');
+  assert.equal(await page.evaluate(key=>Object.values(sessionStorage).some(v=>v.includes(key)),pixKey),false);
+  await page.getByLabel(/Autorizo a publicação desta chave/).check();
   await page.getByRole('button',{name:'Salvar e publicar com chave de acesso'}).click();
   await page.getByText('Guarde seu código de recuperação',{exact:true}).waitFor({timeout:30000});
   const secret=await page.locator('code').innerText();assert.match(secret,/^[A-Za-z0-9_-]{43}$/);
-  const original=(await ref.get()).data();assert.equal(original.ownerAuthMode,'passkey');assert.equal(original.presentation.name,'Pessoa de homologação');
+  const original=(await ref.get()).data();assert.equal(original.ownerAuthMode,'passkey');assert.equal(original.presentation.name,'Pessoa de homologação');assert.equal(original.presentation.pix.key,pixKey);
   await page.getByRole('button',{name:'Já guardei · Continuar'}).click();
   await page.getByRole('heading',{name:'Pessoa de homologação',exact:true}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Compartilhar',exact:true}).count(),1);
@@ -93,6 +100,9 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   const visitor=await device();
   await visitor.page.getByRole('button',{name:'Compartilhar',exact:true}).waitFor();
   assert.equal(await visitor.page.getByRole('button',{name:'Editar',exact:true}).count(),0);
+  await visitor.page.getByRole('button',{name:'Exibir QR Code',exact:true}).click();
+  await visitor.page.getByRole('img',{name:'QR Code Pix para pagamento'}).waitFor();
+  assert.equal(await visitor.page.getByRole('button',{name:'Copiar chave Pix'}).count(),1);
   await visitor.page.getByRole('button',{name:'SOS',exact:true}).click();
   await visitor.page.getByText('Emergência no Brasil',{exact:true}).waitFor();
   await visitor.ctx.close();
@@ -108,6 +118,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await page.getByRole('button',{name:'Bloquear tag perdida'}).click();
   await page.getByText('Este cartão está bloqueado. As informações do titular não estão públicas.',{exact:true}).waitFor();
   assert.equal(await page.getByText('Cartão atualizado',{exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Copiar chave Pix'}).count(),0);
   await owner.ctx.close();
   const replacement=await device(),fresh=replacement.page;
   await fresh.getByRole('button',{name:'Perdi minha chave de acesso'}).click();
@@ -118,7 +129,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
   await fresh.getByRole('button',{name:'Já guardei · Continuar'}).click();
   await fresh.getByRole('button',{name:'Desbloquear minha tag'}).click();
   await fresh.getByRole('heading',{name:'Cartão atualizado',exact:true}).waitFor();
-  const final=(await ref.get()).data();assert.equal(final.ownerId,original.ownerId);assert.equal(final.firstOwnerId,original.firstOwnerId);assert.equal(final.blocked,false);
+  const final=(await ref.get()).data();assert.equal(final.ownerId,original.ownerId);assert.equal(final.firstOwnerId,original.firstOwnerId);assert.equal(final.blocked,false);assert.equal(final.presentation.pix.key,pixKey);
   await replacement.ctx.close();
   assert.deepEqual(errors,[]);
   console.info('PASSKEY_BROWSER: real React card, WebAuthn CDP registration, edit, block, recovery on separate context, unblock, normal homepage link. External requests blocked:',external.length);
