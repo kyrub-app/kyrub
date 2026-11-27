@@ -2,6 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb,getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
 import {assertFreelanceEngagementAllowed} from './freelanceEngagementRestrictionService.js';
+import {assertDirectPixStart} from './freelancePixDestinationService.js';
 import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import { sameFreelancePaymentTerms,createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
@@ -189,10 +190,10 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       const [owner,worker]=await tx.getAll(eligibility(offer.ownerUid),eligibility(offer.selectedApplicantUid));
       assertApproved(owner.data(),'requester');
       assertApproved(worker.data(),'freelancer');
-      // Direct terms are not a payment authorization. Preserve the legacy gate;
-      // the new lifecycle remains blocked until its obligation model is integrated.
-      if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined)throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
-      await assertFreelanceFundingForStart(tx,offer,application);
+      if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined){
+        if(actorUid!==offer.selectedApplicantUid)throw Error('FREELANCE_FORBIDDEN');
+        await assertDirectPixStart(tx,offer,application);
+      }else await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
     if(action==='confirm_completion'){

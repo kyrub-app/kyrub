@@ -16,7 +16,7 @@ export function freelanceFinanceEnabled(){
 async function readCase(uid:string,offerId:string,receiptId?:string){
  return adminDb.runTransaction(async tx=>{
   const reviewSnapshot=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
-  const {offer,obligation,events,projection}=await readFinancialContext(tx,uid,offerId);
+  const {offer,obligation,events,projection,due}=await readFinancialContext(tx,uid,offerId,true);
   const review=checkedReview(reviewSnapshot.data(),obligation);
   const role=uid===obligation.requesterUid?'requester':'freelancer';
   const restricted=projection.state==='disputed'&&review?.status!=='resolved_administratively';
@@ -29,7 +29,7 @@ async function readCase(uid:string,offerId:string,receiptId?:string){
    return readFinancialReceiptBytes(tx,obligation,review!.requestedAt,receiptId);
   }
   return {offerId,role,amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
-   operationalStatus:offer.status,financialState:projection.state,hadDisagreement:projection.hadDisagreement,bankVerified:false,
+   operationalStatus:offer.status,due,financialState:due?projection.state:'not_due',hadDisagreement:projection.hadDisagreement,bankVerified:false,
    restrictionActive:restricted,reviewStatus:review?.status??null,
    reviewOutcome:review?.decision?.outcome??null,requestedAt:review?.requestedAt??null,
    statements:events.map(e=>({role:e.actorUid===uid?role:role==='requester'?'freelancer':'requester',statement:e.statement,recordedAt:e.recordedAt})),

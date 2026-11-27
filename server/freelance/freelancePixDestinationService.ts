@@ -1,6 +1,7 @@
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication} from '../../shared/freelanceLifecycle.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
+import {assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 import {readFinancialContext,checkedReview} from './freelanceExternalPaymentStatementService.js';
 import {readPersonalPixForContract,readPersonalPixSecretForContract} from '../payments/personalPixDestinationService.js';
 import type {PersonalPixKeyType} from '../../shared/personalPixDestination.js';
@@ -138,4 +139,40 @@ export async function revealFreelancePixDestination(uid:string,id:string,input:u
   }else tx.create(c.direct.doc('pixDisclosure'),{schemaVersion:1,offerId:id,requesterUid:uid,destinationRevision:revision,firstAccessAt});
   return {key:destination.key,keyType:destination.keyType,revision,amountMinor:c.obligation.terms.amountMinor,currency:'BRL' as const,ownershipVerified:false as const,bankVerified:false as const};
  });
+}
+
+/** Local-only operational gate. Participant declarations never become bank
+ * verification. A paid advance uses its historical authorized destination;
+ * revoking a key after receipt must not prevent performance of paid work.
+ * A completion contract needs an active authorized revision before starting.
+ * Only this contract's restriction is relevant; do not block existing work
+ * because another engagement is disputed.
+ */
+export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offer:FreelanceOffer,application:FreelanceApplication){
+ assertLocal();
+ if(process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||
+ !['127.0.0.1:9099','localhost:9099'].includes(process.env.FIREBASE_AUTH_EMULATOR_HOST??'')||
+ offer.paymentTerms?.method!=='external_pix'||application.paymentTerms?.method!=='external_pix')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+ if(!['contracted','in_progress'].includes(offer.status)||!validFreelanceId(offer.selectedApplicantUid))throw Error('FREELANCE_CONFLICT');
+ const id=offer.id,worker=offer.selectedApplicantUid;
+ const direct=adminDb.doc('freelanceOffersV1/'+id).collection('directPayment');
+ const {obligation,projection}=await readFinancialContext(tx,worker,id,true);
+ // An already committed start may be replayed after a destination changes.
+ // The lifecycle still checks matching pair, timestamps and actor.
+ if(offer.status==='in_progress')return;
+ const [bindingDoc,sharingDoc,reviewDoc]=await tx.getAll(direct.doc('receivingDestination'),direct.doc('pixSharing'),adminDb.doc('freelanceFinancialReviewsV1/'+id));
+ const binding=bindingDoc.data();
+ if(!bindingDoc.exists)throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
+ if(!matches(binding,id,worker,obligation.contractedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ if(!sharingDoc.exists)throw Error('FREELANCE_PIX_SHARING_REQUIRED');
+ if(!matchesSharing(sharingDoc.data(),obligation,binding))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ const review=checkedReview(reviewDoc.data(),obligation);
+ if(obligation.terms.timing==='advance'){
+  if(projection.state!=='bilaterally_reported_received'||review?.status==='pending')throw Error('FREELANCE_ADVANCE_RECEIPT_REQUIRED');
+ }else{
+  if(review||projection.state!=='awaiting_payment')throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+  const destination=await readPersonalPixForContract(tx,worker);
+  if(binding.destinationRevision!==destination.revision||binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ }
+ await assertFinancialCaseRestrictions(tx,obligation,false);
 }
