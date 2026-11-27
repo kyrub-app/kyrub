@@ -212,12 +212,13 @@ test('public profile experience uses canonical address and isolated authenticate
  assert.match(ui,/r.ratingCount<=max/);
 });
 
-test('reputation sharing prepares a voluntary profile link without publication or rewards',()=>{
- const modal=read('src/components/modals/UserProfileModal.tsx'),panel=read('src/components/modals/PersonalReputationPanel.tsx');
- assert.match(modal,/visibleIdentifier=\{profileVisibilityReady&&isProfileVisible&&!visibilityBusy&&personalIdentifier\?\.status==='ready'/);
- assert.match(panel,/buildPublicDestinationUrl\('profile',visibleIdentifier\)/);
- assert.match(panel,/navigator.clipboard.writeText\(draft\)/);
- assert.match(panel,/Conheça minha Experiência e Reputações no Kyrub: /);
- assert.match(panel,/auth.currentUser!==user/);
- assert.doesNotMatch(panel,/setDoc\(|addDoc\(|localStorage|rewardXp|method:'POST'/);
+test('reputation sharing uses a server-derived card preview instead of a profile link',()=>{
+ const modal=read('src/components/modals/UserProfileModal.tsx'),panel=read('src/components/modals/PersonalReputationPanel.tsx'),preview=read('src/components/ReputationSquarePreview.tsx');
+ assert.match(modal,/visibleIdentifier=\{profileVisibilityReady&&isProfileVisible&&!visibilityBusy/);
+ assert.match(panel,/<ReputationSquarePreview/);
+ assert.match(preview,/reputation_square_preview&identifier=/);
+ assert.match(preview,/validPublicSummaryResponse/);
+ assert.match(preview,/Serviços concluídos/);assert.match(preview,/Contratações concluídas/);
+ assert.match(preview,/Semear/);assert.match(preview,/Comentar/);assert.match(preview,/Encaminhar/);
+ assert.doesNotMatch(panel+preview,/navigator.clipboard|buildPublicDestinationUrl|setDoc\(|addDoc\(|localStorage|rewardXp|method:'POST'/);
 });
