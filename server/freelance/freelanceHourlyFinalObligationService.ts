@@ -5,7 +5,7 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {readVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
 
 const fail=():never=>{throw Error('FREELANCE_VARIABLE_PAYMENT_CONFLICT');};
-function buildFinal(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record']){
+export function buildFinal(record:Awaited<ReturnType<typeof readVariablePaymentSources>>['record']){
  const c=record.commitment,amount=record.finalAmountMinor;
  if(record.disposition!=='positive_amount_calculated'||amount===null||!Number.isSafeInteger(amount)||amount<=0||amount>record.accounting.authorizedCapMinor)return fail();
  return {schemaVersion:1 as const,kind:'hourly_final_obligation' as const,offerId:c.offerId,
