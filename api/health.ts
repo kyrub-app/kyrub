@@ -430,6 +430,12 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'kyrub-delivery-acceptance') {
+    const {handleDeliveryAcceptance}=await import('../server/delivery/deliveryAcceptanceTransport.js');
+    await handleDeliveryAcceptance(request,response,queryValue(request.query?.deliveryId));
+    return;
+  }
+
   if (transport === 'public-delivery-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
