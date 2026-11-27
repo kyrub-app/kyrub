@@ -3,6 +3,7 @@ import {validFreelanceId,type FreelanceOffer,type FreelanceApplication} from '..
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import {appendExternalPixStatement,projectExternalPixStatements,type ExternalPixEvent,type ExternalPixStatement} from '../../shared/freelanceExternalPaymentStatements.js';
+import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {prepareVoluntaryDisputeRestriction,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 
 function assertLocal(){
@@ -95,6 +96,7 @@ export async function requestFreelanceFinancialReview(uid:string,offerId:string,
   const record:FinancialReview={schemaVersion:1,offerId,requesterUid:obligation.requesterUid,beneficiaryUid:obligation.beneficiaryUid,
    requestedBy:uid,requestedAt,status:'pending'};
   tx.create(ref,record);
+  writeFreelanceFinancialNotices(tx,obligation,'review_requested',requestedAt);
   return {created:true,status:'pending' as const};
  });
 }
@@ -130,6 +132,13 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
    if(existing&&next.state==='bilaterally_reported_received'&&Date.parse(now)<Date.parse(existing.requestedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    tx.set(statementRef,{schemaVersion:1,offerId,events:next.events});
    writeRestrictions();
+   const previous=projectExternalPixStatements(obligation,events);
+   if(next.state==='disputed')writeFreelanceFinancialNotices(tx,obligation,'dispute_opened',now);
+   else if(previous.state==='disputed'&&next.state==='bilaterally_reported_received'&&!administrativelyClosed)writeFreelanceFinancialNotices(tx,obligation,'voluntary_release',now);
+   else if(next.state==='bilaterally_reported_received')writeFreelanceFinancialNotices(tx,obligation,'receipt_confirmed',now);
+   else if(next.state==='awaiting_receipt')writeFreelanceFinancialNotices(tx,obligation,'payment_reported',now,'freelancer');
+   else if(next.state==='nonreceipt_reported')writeFreelanceFinancialNotices(tx,obligation,'nonreceipt_reported',now,'requester');
+   else if(next.state==='receipt_reported')writeFreelanceFinancialNotices(tx,obligation,'receipt_reported',now,'requester');
    if(existing?.status==='pending'&&next.state==='bilaterally_reported_received')tx.update(review,{status:'resolved_voluntarily',resolvedAt:now});
   }
   return {changed:next.changed,state:next.state,hadDisagreement:next.hadDisagreement,bankVerified:false as const,settlementEvidence:next.settlementEvidence};
