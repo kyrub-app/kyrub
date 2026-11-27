@@ -51,3 +51,16 @@ test('R$20/hour is guidance only; fixed completion retains agreed amount and hou
  assert.throws(()=>assertFreelanceWorkExecutionReady(hourly),/NOT_ENABLED/);
  assert.doesNotThrow(()=>assertFreelanceWorkExecutionReady(readFreelanceWorkTerms(terms,9000)));
 });
+
+test('counterproposal changes only price and estimated duration, preserves payment timing and location',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {readFreelanceCounterproposal,negotiatedFreelanceTerms}=await import('../shared/freelanceCounterproposal.js');
+ const original={paymentMinor:12000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:12000}),workTerms:{mode:'fixed' as const,location:'remote' as const,estimatedMinutes:360}};
+ const proposal={amountMinor:9000,estimatedMinutes:180};
+ const agreed=negotiatedFreelanceTerms(original,proposal);
+ assert.equal(agreed.paymentMinor,9000);assert.equal(agreed.paymentTerms?.timing,'advance');assert.equal(agreed.paymentTerms?.amountMinor,9000);
+ assert.deepEqual(agreed.workTerms,{mode:'fixed',location:'remote',estimatedMinutes:180});
+ assert.equal(original.paymentMinor,12000);
+ for(const invalid of [{...proposal,amountMinor:0},{...proposal,estimatedMinutes:0},{...proposal,location:'on_site'},{amountMinor:12000,estimatedMinutes:360}])assert.throws(()=>readFreelanceCounterproposal(invalid,original),/INVALID/);
+ assert.throws(()=>readFreelanceCounterproposal(proposal,{paymentMinor:12000}),/INVALID/);
+});

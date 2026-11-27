@@ -1,3 +1,4 @@
+import {readFreelanceCounterproposal,sameFreelanceCounterproposal,negotiatedFreelanceTerms} from '../../shared/freelanceCounterproposal.js';
 import {sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from '../../shared/freelanceWorkTerms.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb,getFirebaseAdminProjectId } from '../firebaseAdmin.js';
@@ -50,7 +51,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
     return {offer:proposed,created:true};
   });
 }
-export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
+export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;counterproposal?:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId)) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
@@ -60,11 +61,12 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string, a
     const offer = offerSnap.data() as FreelanceOffer | undefined;
     if (!offerSnap.exists || !offer || offer.id !== offerId) throw new Error('FREELANCE_FORBIDDEN');
     assertAcceptedPaymentTerms(offer,acceptance);
-    const proposed = createFreelanceApplication(offer,actorUid,new Date().toISOString());
+    const proposal=readFreelanceCounterproposal(acceptance?.counterproposal,offer);
+    const proposed = {...createFreelanceApplication(offer,actorUid,new Date().toISOString()),...(proposal?{counterproposal:proposal}:{})};
     if (applicationSnap.exists) {
       const saved = applicationSnap.data() as FreelanceApplication;
       if (saved.offerId !== offerId || saved.applicantUid !== actorUid || saved.ownerUid !== offer.ownerUid || saved.status !== 'pending' ||
-          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,offer.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,offer.paymentMinor)||!sameFreelanceCounterproposal(saved.counterproposal,proposal,offer)) throw new Error('FREELANCE_CONFLICT');
       return {application:saved,created:false};
     }
     await assertFreelanceEngagementAllowed(tx,actorUid,offer.ownerUid);
@@ -74,7 +76,7 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string, a
 }
 
 /** Both actors are revalidated in the same transaction as the selection. */
-export async function selectFreelanceApplication(actorUid: string, offerId: string, applicantUid: string): Promise<FreelanceSelectionResult> {
+export async function selectFreelanceApplication(actorUid: string, offerId: string, applicantUid: string,expectedCounterproposal?:unknown): Promise<FreelanceSelectionResult> {
   if (![actorUid,offerId,applicantUid].every(validFreelanceId) || actorUid === applicantUid) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(applicantUid);
@@ -85,10 +87,14 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
     if (!offer || !application || offer.id !== offerId || offer.ownerUid !== actorUid || application.applicantUid !== applicantUid) throw new Error('FREELANCE_FORBIDDEN');
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
+    const proposal=readFreelanceCounterproposal(application.counterproposal,offer);
+    if(!sameFreelanceCounterproposal(proposal,expectedCounterproposal,offer))throw Error('FREELANCE_CONFLICT');
     const result = selectFreelanceApplicant(offer,application,actorUid,new Date().toISOString());
+    if(!result.changed&&!sameFreelanceCounterproposal(offer.selectedCounterproposal,proposal,offer))throw Error('FREELANCE_CONFLICT');
+    if(proposal)result.offer={...result.offer,selectedCounterproposal:proposal};
     if(result.changed)await assertFreelanceEngagementAllowed(tx,actorUid,applicantUid);
     if (result.changed) {
-      tx.update(offerRef,{status:result.offer.status,selectedApplicantUid:result.offer.selectedApplicantUid!,selectedAt:result.offer.selectedAt!});
+      tx.update(offerRef,{status:result.offer.status,selectedApplicantUid:result.offer.selectedApplicantUid!,selectedAt:result.offer.selectedAt!,...(proposal?{selectedCounterproposal:proposal}:{})});
       tx.update(applicationRef,{status:result.application.status,selectedAt:result.application.selectedAt!});
     }
     return result;
@@ -108,8 +114,17 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     const ownerIdentity = await tx.get(eligibility(offer.ownerUid));
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
-    assertAcceptedPaymentTerms(offer,acceptance);
+    const original=offer.originalOfferTerms??offer;
+    const proposal=readFreelanceCounterproposal(application.counterproposal,original);
+    if(!sameFreelanceCounterproposal(offer.selectedCounterproposal,proposal,original)||(!proposal&&offer.originalOfferTerms))throw Error('FREELANCE_CONFLICT');
+    const agreed=negotiatedFreelanceTerms(original,proposal);
+    if(offer.status==='contracted'&&(!sameFreelancePaymentTerms(offer.paymentTerms,agreed.paymentTerms,agreed.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,agreed.workTerms,agreed.paymentMinor)||offer.paymentMinor!==agreed.paymentMinor))throw Error('FREELANCE_CONFLICT');
+    assertAcceptedPaymentTerms({...offer,...agreed},acceptance);
     const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
+    if(proposal&&result.changed){
+      result.offer={...result.offer,...agreed,originalOfferTerms:negotiatedFreelanceTerms(offer,undefined)};
+      result.application={...result.application,paymentTerms:agreed.paymentTerms!,workTerms:agreed.workTerms!};
+    }
     if(result.changed)await assertFreelanceEngagementAllowed(tx,offer.ownerUid,actorUid);
     if(result.offer.paymentTerms!==undefined){
       // No new financial obligations outside the disposable local candidate.
@@ -126,8 +141,8 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
       }else if(!matchesFreelancePaymentObligation(existing.data(),obligation))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
     }
     if (result.changed) {
-      tx.update(offerRef,{status:result.offer.status,contractedAt:result.offer.contractedAt!});
-      tx.update(applicationRef,{status:result.application.status,contractedAt:result.application.contractedAt!});
+      tx.update(offerRef,{status:result.offer.status,contractedAt:result.offer.contractedAt!,...(proposal?{paymentMinor:result.offer.paymentMinor,paymentTerms:result.offer.paymentTerms!,workTerms:result.offer.workTerms!,originalOfferTerms:result.offer.originalOfferTerms!}:{})});
+      tx.update(applicationRef,{status:result.application.status,contractedAt:result.application.contractedAt!,...(proposal?{paymentTerms:result.application.paymentTerms!,workTerms:result.application.workTerms!}:{})});
     }
     return result;
   });
@@ -145,7 +160,7 @@ export async function releaseFreelanceReservation(actorUid:string, offerId:strin
     if(!offer || !application || offer.id!==offerId || application.applicantUid!==applicantUid) throw new Error('FREELANCE_FORBIDDEN');
     const result=releaseFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
     if(result.changed){
-      tx.update(offerRef,{status:'open',selectedApplicantUid:FieldValue.delete(),selectedAt:FieldValue.delete()});
+      tx.update(offerRef,{status:'open',selectedApplicantUid:FieldValue.delete(),selectedAt:FieldValue.delete(),selectedCounterproposal:FieldValue.delete()});
       tx.update(applicationRef,{status:'released',releasedAt:result.application.releasedAt!,releasedBy:actorUid});
     }
     return result;
