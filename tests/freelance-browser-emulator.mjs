@@ -326,6 +326,44 @@ try{
  await button(payerPanel,'Consultar situação financeira').click();await waitText(payerPanel,'Recebimento confirmado pelas partes');
  for(const a of [fp,fw])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
  console.log('PASS direct financial UI: two authenticated contexts, reverse-order dispute, private note/PNG, voluntary release');
+ const adminActor=await account('financial-admin','requester','Administrador fictício');
+ await db.doc('kyrub_admin/control_plane/admins/'+adminActor.uid).set({uid:adminActor.uid,email:adminActor.uid+'@example.invalid',role:'super_admin',status:'active'});
+ const adminPage=await session(adminActor,1365);
+ await adminPage.goto(origin+'/admin',{waitUntil:'domcontentloaded'});
+ const section=adminPage.locator('#admin-freelance-financial-review');
+ await section.locator('summary').click({timeout:30000});
+ const adminPanel=section.locator('#admin-freelance-financial-review-workspace');
+ await button(adminPanel,'Consultar divergências').click();
+ await waitText(adminPanel,'Entre com autenticação multifator');
+ // UI-only fixture: real endpoint denied without genuine MFA above. Do not
+ // forge claims or alter server authorization to demonstrate rendering.
+ const {sanitizeReceiptPng}=await import('../server/freelance/freelanceReceiptPng.ts');
+ const png=sanitizeReceiptPng(receiptFixture()),now=new Date().toISOString();
+ const item={offerId:directId,title:directTitle,amountMinor:15000,currency:'BRL',timing:'advance',requestedAt:now,requestedByRole:'freelancer',requesterUid:fp.uid,beneficiaryUid:fw.uid,restrictionActive:true,bankVerified:false,settlementEvidence:'participant_statements_only',statements:[{role:'requester',statement:'paid',recordedAt:now},{role:'freelancer',statement:'not_received',recordedAt:now}],evidenceRevision:2,evidenceNotes:[{role:'freelancer',note:'Nota privada fictícia.',recordedAt:now}],receipts:[{id:'fixture-png',role:'requester',recordedAt:now,size:png.bytes.length,mimeType:'image/png'}]};
+ let posts=0;
+ await adminPage.route('**/api/admin/freelance-financial-review**',async route=>{
+  const req=route.request(),u=new URL(req.url());
+  if(req.method()==='POST'){
+   const b=req.postDataJSON();assert.equal(b.offerId,directId);assert.equal(b.expectedEvidenceRevision,2);assert.equal(b.expectedRequestedAt,now);assert.equal(b.confirmed,true);assert.equal(b.outcome,'inconclusive');
+   posts++;await route.fulfill({status:posts===1?409:200,json:posts===1?{code:'FREELANCE_FINANCIAL_REVIEW_CONFLICT'}:{status:'resolved_administratively',outcome:'inconclusive',replay:false,bankVerified:false}});return;
+  }
+  await route.fulfill({status:200,json:u.searchParams.get('view')==='receipt'?{id:'fixture-png',mimeType:'image/png',pngBase64:png.bytes.toString('base64'),bankVerified:false}:{items:[item],nextCursor:null}});
+ });
+ async function prepareDecision(){
+  await button(adminPanel,'Consultar divergências').click();await button(adminPanel,'Analisar divergência').click();
+  await waitText(adminPanel,'Nota privada fictícia.');
+  await adminPanel.getByLabel('Resultado da análise').selectOption('inconclusive');await adminPanel.getByLabel('Fundamentação').fill('Evidência fictícia insuficiente para concluir.');
+  await adminPanel.getByLabel('Confirmo a decisão fundamentada e a liberação das restrições deste protocolo.').check();
+  assert.equal(await button(adminPanel,'Registrar decisão financeira').isDisabled(),true);
+  await button(adminPanel,'Visualizar comprovante de contratante').click();await waitText(adminPanel,'Visualizado');
+  await adminPanel.getByLabel('Confirmo a decisão fundamentada e a liberação das restrições deste protocolo.').check();
+  await button(adminPanel,'Registrar decisão financeira').click();
+ }
+ await prepareDecision();await waitText(adminPanel,'Consulte novamente antes de decidir');
+ await prepareDecision();await waitText(adminPanel,'Decisão administrativa registrada.');
+ assert.equal(posts,2);
+ await adminPage.screenshot({path:'freelance-browser-evidence/admin-financial-review.png',fullPage:true});
+ console.log('PASS admin financial UI: actual MFA denial; isolated intercepted fixture for receipt preview, stale revision and confirmation; no real decision from UI');
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){
