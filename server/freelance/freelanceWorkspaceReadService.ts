@@ -7,7 +7,7 @@ const offers=()=>adminDb.collection('freelanceOffersV1');
 function project(id:string,raw:unknown,uid:string){
  const o=raw as FreelanceOffer;
  if(!o||o.id!==id||!validFreelanceId(o.ownerUid)||!['open','selected','contracted','in_progress','completion_requested','completed','cancelled','under_review'].includes(o.status))throw Error('FREELANCE_CONFLICT');
- const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:o.paymentMinor});
+ const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:o.paymentMinor,...(o.paymentTerms!==undefined?{paymentTerms:o.paymentTerms}:{})});
  return {id,...terms,status:o.status,isOwner:o.ownerUid===uid,isSelected:o.selectedApplicantUid===uid,createdAt:o.createdAt};
 }
 function projectApplication(raw:unknown,offer:FreelanceOffer,uid:string){

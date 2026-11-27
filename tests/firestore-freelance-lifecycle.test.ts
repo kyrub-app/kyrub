@@ -245,3 +245,37 @@ test('CID personal Pix import: authoritative linkage, masked choices, source ver
   await assert.rejects(importPersonalCidPixDestination(uid,{...fresh,expectedRevision:2,replaceExisting:true,sourceVersion:updated.sourceVersion}),/PERSONAL_CID_UNAVAILABLE/);
  }finally{await Promise.all([tag.delete(),corporate.delete()]);}
 });
+
+test('direct freelance terms: exact immutable offer and application snapshot; no funding bypass',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {normalizeFreelanceOffer}=await import('../shared/freelanceLifecycle.js');
+ const {readFreelanceWorkspace}=await import('../server/freelance/freelanceWorkspaceReadService.js');
+ const {executeFreelanceWorkspaceAction}=await import('../server/freelance/freelanceWorkspaceTransport.js');
+ const id='fixture-direct-terms',paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:input.paymentMinor});
+ const direct={...input,paymentTerms};
+ assert.equal(paymentTerms.timing,'on_completion');assert.equal(paymentTerms.platformCommissionMinor,0);
+ for(const patch of [{platformCommissionMinor:1},{amountMinor:1},{providerFeeResponsibility:'kyrub'},{settlement:'verified'},{timing:'partial'}])assert.throws(()=>normalizeFreelanceOffer({...direct,paymentTerms:{...paymentTerms,...patch}}),/FREELANCE_INVALID/);
+ await assert.rejects(executeFreelanceWorkspaceAction(owner,{action:'publish',offerId:id,terms:direct}),/FREELANCE_DIRECT_PAYMENT_NOT_ENABLED/);
+ assert.equal((await ref(id).get()).exists,false);
+ await s.publishFreelanceOffer(owner,id,direct);
+ const terms=(await ref(id).get()).get('paymentTerms');
+ assert.deepEqual(terms,paymentTerms);
+ const visible=await readFreelanceWorkspace(worker,'detail',id);
+ assert.deepEqual((visible as {item?:{paymentTerms?:unknown}}).item?.paymentTerms,paymentTerms);
+ await assert.rejects(s.publishFreelanceOffer(owner,id,input),/FREELANCE_CONFLICT/);
+ await assert.rejects(s.publishFreelanceOffer(owner,id,{...direct,paymentTerms:{...paymentTerms,timing:'advance'}}),/FREELANCE_CONFLICT/);
+ const application=(await s.applyToFreelanceOffer(worker,id)).application;
+ assert.deepEqual(application.paymentTerms,paymentTerms);
+ const app=ref(id).collection('applications').doc(worker);
+ await app.update({'paymentTerms.method':'mercado_pago'});
+ await assert.rejects(s.applyToFreelanceOffer(worker,id),/FREELANCE_CONFLICT/);
+ await assert.rejects(s.selectFreelanceApplication(owner,id,worker),/FREELANCE_CONFLICT/);
+ await app.update({paymentTerms});
+ await s.selectFreelanceApplication(owner,id,worker);
+ await s.confirmFreelanceContract(worker,id,true);
+ assert.deepEqual((await ref(id).get()).get('paymentTerms'),paymentTerms);
+ assert.deepEqual((await app.get()).get('paymentTerms'),paymentTerms);
+ await assert.rejects(s.recordFreelanceExecution(worker,id,'start',true),/FREELANCE_DIRECT_PAYMENT_NOT_ENABLED/);
+ assert.equal((await ref(id).get()).get('status'),'contracted');
+ assert.equal((await ref(id).collection('financialBasis').get()).size,0);
+});
