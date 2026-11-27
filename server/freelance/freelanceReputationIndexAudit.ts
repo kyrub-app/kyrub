@@ -192,3 +192,21 @@ async function readCertifiedInTransaction(tx:Transaction,uid:string,subject:Repu
 export async function readOwnReputationForWorkspace(uid:string,kind:unknown){
  return certifiedReputationReadEnabled()?readCertifiedFreelanceReputationIndex(uid,kind):auditOwnFreelanceReputationIndex(uid,kind);
 }
+
+/** Minimal discovery projection, not an authorization to publish private
+ * ratings. Visibility and certified totals are checked in one snapshot.
+ * Hidden, absent and uncertified subjects deliberately look identical. */
+export async function readVisibleFreelanceExperience(viewerUid:string,targetUid:unknown){
+ assertFreelanceReputationLocal();
+ if(!certifiedReputationReadEnabled()||process.env.KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
+ if(!validFreelanceId(viewerUid)||!validFreelanceId(targetUid))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const profile=(await tx.get(adminDb.doc('users/'+targetUid))).data();
+  const hidden={experience:null};
+  if(profile?.isProfileVisible!==true)return hidden;
+  const professional=await readCertifiedInTransaction(tx,targetUid,{kind:'professional',id:targetUid});
+  const requester=await readCertifiedInTransaction(tx,targetUid,{kind:'personal_requester',id:targetUid});
+  if(professional.state!=='verified_snapshot'||requester.state!=='verified_snapshot'||!professional.projection||!requester.projection)return hidden;
+  return {experience:{completedServices:professional.projection.completedContracts,completedHires:requester.projection.completedContracts}};
+ },{readOnly:true});
+}
