@@ -1,15 +1,17 @@
 import {useRef,useState} from 'react';
 import {CID_REVIEW_DISPOSITIONS,type CidEvidenceReviewAdapter,type CidReviewQueueItem,type CidReviewDetail,type CidReviewDisposition} from '../../shared/cidEvidenceReview';
+import {CID_SPECIALIST_FINDINGS,type CidSpecialistFinding} from '../../shared/cidEvidenceSpecialist';
 import {CID_COMPLAINT_CATEGORIES} from '../../shared/cidOccurrenceComplaint';
 const field='min-h-11 rounded-xl border border-[#34443B] p-3 text-sm disabled:opacity-50';
 const statuses={'pending-review':'Pendente de análise',dismissed:'Arquivada',escalated:'Encaminhada para análise especializada'} as const;
 export function KyrubCidEvidenceReviewHomologation({adapter}:{adapter:CidEvidenceReviewAdapter}){
  const [items,setItems]=useState<CidReviewQueueItem[]>([]),[loaded,setLoaded]=useState(false),[more,setMore]=useState(false),[detail,setDetail]=useState<CidReviewDetail|null>(null);
  const [decision,setDecision]=useState<CidReviewDisposition|''>(''),[reason,setReason]=useState(''),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
+ const [finding,setFinding]=useState<CidSpecialistFinding|''>('');
  const lock=useRef(false);
  async function run(action:()=>Promise<void>){
   if(lock.current)return;lock.current=true;setBusy(true);setStatus('');
-  try{await action();}catch{setDetail(null);setItems([]);setLoaded(false);setDecision('');setReason('');setStatus('Operação não confirmada. Confira a sessão e atualize a fila.');}
+  try{await action();}catch{setDetail(null);setItems([]);setLoaded(false);setDecision('');setFinding('');setReason('');setStatus('Operação não confirmada. Confira a sessão e atualize a fila.');}
   finally{lock.current=false;setBusy(false);}
  }
  async function refresh(){const result=await adapter.list();setItems(result.items);setMore(result.hasMore);setLoaded(true);}
@@ -31,6 +33,13 @@ export function KyrubCidEvidenceReviewHomologation({adapter}:{adapter:CidEvidenc
     <label className="block text-sm">Justificativa da decisão<textarea aria-label="Justificativa da decisão" className={field+' block w-full bg-[#1D2924]'} maxLength={500} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)}/></label>
     <p className="text-xs">Encaminhar não aprova retenção nem divulgação. Arquivar não comprova improcedência e não exclui registros.</p>
     <button type="submit" className={field} disabled={busy||!decision||!reason.trim()}>Registrar decisão de triagem</button>
+   </form>}
+   {detail.item.specialistFinding&&<p className="text-sm">Parecer especializado: {CID_SPECIALIST_FINDINGS[detail.item.specialistFinding]}</p>}
+   {detail.item.status==='escalated'&&!detail.item.specialistFinding&&adapter.specialist&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();if(!finding||!reason.trim())return;void run(async()=>{const result=await adapter.specialist!.review({id:detail.item.id,expectedRevision:detail.item.revision,finding,reason:reason.trim()});if(result.authorizesRetention!==false||result.authorizesDisclosure!==false)throw Error('CID_REVIEW_UNCONFIRMED');setDetail(null);setFinding('');setReason('');await refresh();setStatus('Parecer especializado registrado.');});}}>
+    <label className="block text-sm">Parecer especializado<select aria-label="Parecer especializado" className={field+' block w-full bg-[#1D2924]'} value={finding} disabled={busy} onChange={e=>setFinding(e.target.value as CidSpecialistFinding|'')}><option value="">Selecione</option>{Object.entries(CID_SPECIALIST_FINDINGS).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+    <label className="block text-sm">Justificativa do parecer<textarea aria-label="Justificativa do parecer" className={field+' block w-full bg-[#1D2924]'} maxLength={500} disabled={busy} value={reason} onChange={e=>setReason(e.target.value)}/></label>
+    <p className="text-xs">O parecer não autoriza preservação, retenção ou divulgação de dados.</p>
+    <button type="submit" className={field} disabled={busy||!finding||!reason.trim()}>Registrar parecer especializado</button>
    </form>}
    <button type="button" className={field} disabled={busy} onClick={()=>{setDetail(null);setReason('');setDecision('');}}>Fechar solicitação</button>
   </article>}
