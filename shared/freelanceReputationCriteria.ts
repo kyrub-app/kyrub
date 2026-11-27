@@ -8,6 +8,24 @@ export const REQUESTER_REPUTATION_CRITERIA={
  payment_punctuality:'Pontualidade no pagamento',courtesy:'Cordialidade',agreement:'Cumprimento do combinado',
  communication:'Comunicação',organization:'Organização',working_conditions:'Condições de trabalho',resources:'Recursos de trabalho',
 } as const;
+export const PROFESSIONAL_REPUTATION_DESCRIPTIONS:Readonly<Record<keyof typeof PROFESSIONAL_REPUTATION_CRITERIA,string>>={
+ punctuality:'Cumprimento dos horários acordados.',
+ courtesy:'Educação, respeito e bom trato com as pessoas.',
+ commitment:'Responsabilidade com o serviço assumido.',
+ quality:'Qualidade na execução do serviço.',
+ communication:'Clareza, atenção e capacidade de diálogo.',
+ cooperation:'Capacidade de trabalhar em equipe.',
+ organization:'Cuidado com materiais, equipamentos e ambiente de trabalho.',
+};
+export const REQUESTER_REPUTATION_DESCRIPTIONS:Readonly<Record<keyof typeof REQUESTER_REPUTATION_CRITERIA,string>>={
+ payment_punctuality:'Cumprimento dos compromissos financeiros nos prazos acordados.',
+ courtesy:'Tratamento respeitoso e educado.',
+ agreement:'Respeito às condições contratadas.',
+ communication:'Clareza nas orientações e expectativas.',
+ organization:'Planejamento e distribuição das atividades.',
+ working_conditions:'Ambiente adequado, limpo e seguro.',
+ resources:'Disponibilidade e conservação dos equipamentos necessários.',
+};
 export type ReputationKind=ReputationSubject['kind'];
 export type CriterionScore=1|2|3|4|5|null;
 export type ReputationScores=Readonly<Record<string,CriterionScore>>;
@@ -15,6 +33,11 @@ const invalid=():never=>{throw Error('FREELANCE_REPUTATION_CRITERIA_INVALID');};
 export function reputationCriteria(kind:ReputationKind){
  if(kind==='professional')return PROFESSIONAL_REPUTATION_CRITERIA;
  if(kind==='personal_requester'||kind==='store_requester')return REQUESTER_REPUTATION_CRITERIA;
+ return invalid();
+}
+export function reputationCriterionDescriptions(kind:ReputationKind):Readonly<Record<string,string>>{
+ if(kind==='professional')return PROFESSIONAL_REPUTATION_DESCRIPTIONS;
+ if(kind==='personal_requester'||kind==='store_requester')return REQUESTER_REPUTATION_DESCRIPTIONS;
  return invalid();
 }
 /** Exact server-owned schema. null explicitly means not applicable, not zero.
