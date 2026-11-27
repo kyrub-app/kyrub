@@ -28,10 +28,10 @@ function eligible(status:string,projection:ReturnType<typeof projectFreelanceAtt
 export async function readFreelanceExtensions(uid:string,offerId:string){
  return adminDb.runTransaction(async tx=>{
   const c=await readAttendanceContext(tx,uid,offerId),t=await readAttendanceTimeline(tx,c);
-  if(!t)return {actor:c.actor,eligible:false,records:[],authorizedMinutes:null,mode:c.terms?.mode??null};
+  if(!t)return {actor:c.actor,eligible:false,records:[],sequence:0,authorizedMinutes:null,mode:c.terms?.mode??null};
   const e=await readExtensionRecords(tx,c.ref,t.scheduleId,t.schedule,t.events);
   const now=new Date().toISOString(),projection=projectFreelanceAttendance(t.schedule,t.events,now);
-  return {actor:c.actor,eligible:eligible(c.offer.status,projection,e.authorizedMinutes)&&e.authorizedMinutes<FREELANCE_MAX_ESTIMATED_MINUTES,records:e.records,authorizedMinutes:e.authorizedMinutes,mode:c.terms?.mode??null};
+  return {actor:c.actor,eligible:eligible(c.offer.status,projection,e.authorizedMinutes)&&e.authorizedMinutes<FREELANCE_MAX_ESTIMATED_MINUTES,records:e.records,sequence:t.events.length,authorizedMinutes:e.authorizedMinutes,mode:c.terms?.mode??null};
  },{readOnly:true});
 }
 export async function changeFreelanceExtension(uid:string,offerId:string,action:'propose'|'accept'|'decline'|'withdraw',input:{proposalId:unknown;extraMinutes?:unknown;expectedSequence:unknown;confirmed:unknown}){
