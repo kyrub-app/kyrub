@@ -46,6 +46,12 @@ const openNotificationTarget = (
   notification: UserNotification,
   user: User
 ): boolean => {
+  if (auth.currentUser?.uid !== user.uid || notification.recipientUserId !== user.uid) return false;
+  if (notification.target.kind === 'note_invitation') {
+    if (!notification.target.noteInvitationId) return false;
+    window.dispatchEvent(new Event('kyrub:open-shared-notes'));
+    return true;
+  }
   if (notification.target.kind === 'community_post') {
     const communityId = notification.target.communityId;
     const postId = notification.target.postId;
@@ -100,6 +106,7 @@ const showBrowserNotification = (
     tag: notification.id,
   });
   browserNotification.onclick = () => {
+    if (auth.currentUser?.uid !== user.uid) { browserNotification.close(); return; }
     window.focus();
     void markUserNotificationRead(notification.id).catch(error =>
       console.warn('Não foi possível marcar a notificação do navegador como lida.', error)
@@ -198,6 +205,7 @@ export function UserNotificationCenterBridge() {
     if (!silent) setLoading(true);
     try {
       const inbox = await loadUserNotificationInbox(60);
+      if (auth.currentUser?.uid !== user.uid) return;
       const nextIds = new Set(inbox.notifications.map(item => item.id));
       const baseline = notificationBaselineRef.current;
       const currentPreferences = preferencesRef.current;
@@ -220,7 +228,7 @@ export function UserNotificationCenterBridge() {
       setUnreadCount(inbox.unreadCount);
       setErrorMessage('');
     } catch (error) {
-      if (!silent) {
+      if (auth.currentUser?.uid === user.uid) {
         setErrorMessage(
           error instanceof Error
             ? error.message
@@ -228,7 +236,7 @@ export function UserNotificationCenterBridge() {
         );
       }
     } finally {
-      if (!silent) setLoading(false);
+      if (!silent && auth.currentUser?.uid === user.uid) setLoading(false);
     }
   }, [user]);
 

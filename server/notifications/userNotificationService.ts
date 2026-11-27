@@ -26,6 +26,7 @@ const finiteIso = (value: unknown): string => {
 };
 
 const CATEGORIES = new Set<UserNotificationCategory>([
+  'note_invitation',
   'store_chat',
   'order',
   'loyalty',
@@ -35,6 +36,7 @@ const CATEGORIES = new Set<UserNotificationCategory>([
   'system',
 ]);
 const TARGET_KINDS = new Set<UserNotificationTargetKind>([
+  'note_invitation',
   'store_chat',
   'storefront',
   'order',
@@ -66,6 +68,7 @@ const parseNotification = (
     typeof target.storeId !== 'string' ||
     typeof target.customerId !== 'string' ||
     typeof target.orderId !== 'string' ||
+    (target.kind === 'note_invitation' && !/^[a-zA-Z0-9_-]{1,160}$/.test(clean(target.noteInvitationId))) ||
     (target.kind === 'community_group_invite' &&
       (!clean(target.communityId) || !clean(target.groupId))) ||
     (target.kind === 'community_post' &&

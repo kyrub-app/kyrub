@@ -37,6 +37,8 @@ const categoriesFromBody = (
       ? true : boolean(data.community_group_invite),
     user_forward: data.user_forward === undefined
       ? true : boolean(data.user_forward),
+    note_invitation: data.note_invitation === undefined
+      ? true : boolean(data.note_invitation),
   };
 };
 
