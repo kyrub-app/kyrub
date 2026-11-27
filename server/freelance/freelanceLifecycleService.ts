@@ -1,5 +1,6 @@
+import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
+import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
 
 const offers = 'freelanceOffersV1';
 const eligibility = (uid: string) => adminDb.doc('identity_verifications/' + uid);
@@ -85,6 +86,79 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     if (result.changed) {
       tx.update(offerRef,{status:result.offer.status,contractedAt:result.offer.contractedAt!});
       tx.update(applicationRef,{status:result.application.status,contractedAt:result.application.contractedAt!});
+    }
+    return result;
+  });
+}
+
+/** Release a reservation before contracting; no cancellation of an executed contract here. */
+export async function releaseFreelanceReservation(actorUid:string, offerId:string, applicantUid:string, confirmed:unknown):Promise<FreelanceSelectionResult> {
+  if (![actorUid,offerId,applicantUid].every(validFreelanceId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
+  const offerRef=adminDb.doc(offers+'/'+offerId);
+  const applicationRef=offerRef.collection('applications').doc(applicantUid);
+  return adminDb.runTransaction(async tx=>{
+    const [o,a]=await tx.getAll(offerRef,applicationRef);
+    const offer=o.data() as FreelanceOffer|undefined;
+    const application=a.data() as FreelanceApplication|undefined;
+    if(!offer || !application || offer.id!==offerId || application.applicantUid!==applicantUid) throw new Error('FREELANCE_FORBIDDEN');
+    const result=releaseFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
+    if(result.changed){
+      tx.update(offerRef,{status:'open',selectedApplicantUid:FieldValue.delete(),selectedAt:FieldValue.delete()});
+      tx.update(applicationRef,{status:'released',releasedAt:result.application.releasedAt!,releasedBy:actorUid});
+    }
+    return result;
+  });
+}
+export async function withdrawPendingFreelanceApplication(actorUid:string,offerId:string,confirmed:unknown):Promise<FreelanceSelectionResult>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  const offerRef=adminDb.doc(offers+'/'+offerId);
+  const applicationRef=offerRef.collection('applications').doc(actorUid);
+  return adminDb.runTransaction(async tx=>{
+    const [o,a]=await tx.getAll(offerRef,applicationRef);
+    const offer=o.data() as FreelanceOffer|undefined;
+    const application=a.data() as FreelanceApplication|undefined;
+    if(!offer||!application||offer.id!==offerId||application.applicantUid!==actorUid)throw new Error('FREELANCE_FORBIDDEN');
+    const result=withdrawFreelanceApplication(offer,application,actorUid,confirmed,new Date().toISOString());
+    if(result.changed)tx.update(applicationRef,{status:'withdrawn',withdrawnAt:result.application.withdrawnAt!});
+    return result;
+  });
+}
+export async function cancelUncontractedFreelanceOffer(actorUid:string,offerId:string,confirmed:unknown):Promise<FreelanceOffer>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  const ref=adminDb.doc(offers+'/'+offerId);
+  return adminDb.runTransaction(async tx=>{
+    const snap=await tx.get(ref);
+    const offer=snap.data() as FreelanceOffer|undefined;
+    if(!offer||offer.id!==offerId)throw new Error('FREELANCE_FORBIDDEN');
+    const result=cancelOpenFreelanceOffer(offer,actorUid,confirmed,new Date().toISOString());
+    if(result!==offer)tx.update(ref,{status:'cancelled',cancelledAt:result.cancelledAt!});
+    return result;
+  });
+}
+/** Operational completion is not payment evidence. All reads precede state changes. */
+export async function recordFreelanceExecution(actorUid:string,offerId:string,action:FreelanceExecutionAction,confirmed:unknown):Promise<FreelanceSelectionResult>{
+  if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  const offerRef=adminDb.doc(offers+'/'+offerId);
+  return adminDb.runTransaction(async tx=>{
+    const offer=(await tx.get(offerRef)).data() as FreelanceOffer|undefined;
+    if(!offer||offer.id!==offerId||!validFreelanceId(offer.ownerUid)||!validFreelanceId(offer.selectedApplicantUid)||
+       (actorUid!==offer.ownerUid&&actorUid!==offer.selectedApplicantUid))throw new Error('FREELANCE_FORBIDDEN');
+    const applicationRef=offerRef.collection('applications').doc(offer.selectedApplicantUid);
+    const snap=await tx.get(applicationRef);
+    const application=snap.data() as FreelanceApplication|undefined;
+    if(!application||application.applicantUid!==offer.selectedApplicantUid)throw new Error('FREELANCE_FORBIDDEN');
+    // Starting new work requires both profiles. Completion of already executed work
+    // remains recordable by the participants even if documentary approval changes.
+    if(action==='start'){
+      const [owner,worker]=await tx.getAll(eligibility(offer.ownerUid),eligibility(offer.selectedApplicantUid));
+      assertApproved(owner.data(),'requester');
+      assertApproved(worker.data(),'freelancer');
+    }
+    const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
+    if(result.changed){
+      const at=action==='start'?'startedAt':action==='request_completion'?'completionRequestedAt':'completedAt';
+      tx.update(offerRef,{status:result.offer.status,[at]:result.offer[at]!});
+      tx.update(applicationRef,{status:result.application.status,[at]:result.application[at]!});
     }
     return result;
   });
