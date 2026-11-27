@@ -10,7 +10,7 @@ function assertLocal(){
  process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||! /^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
  getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_FORBIDDEN');
 }
-async function context(tx:Transaction,uid:string,offerId:string){
+export async function readAttendanceContext(tx:Transaction,uid:string,offerId:string){
  assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(offerId))throw Error('FREELANCE_INVALID');
  const ref=adminDb.doc('freelanceOffersV1/'+offerId);
  const offer=(await tx.get(ref)).data() as FreelanceOffer|undefined;
@@ -34,15 +34,15 @@ async function context(tx:Transaction,uid:string,offerId:string){
 }
 export async function readFreelanceAttendanceSchedule(uid:string,offerId:string){
  return adminDb.runTransaction(async tx=>{
-  const c=await context(tx,uid,offerId);
-  return {actor:c.actor,eligible:c.offer.status==='contracted'&&!!c.terms,schedule:c.current,executionIntegrated:false};
+  const c=await readAttendanceContext(tx,uid,offerId);
+  return {actor:c.actor,eligible:c.offer.status==='contracted'&&!!c.terms,schedule:c.current,executionIntegrated:true};
  },{readOnly:true});
 }
 export async function changeFreelanceAttendanceSchedule(uid:string,offerId:string,action:'propose'|'accept'|'decline'|'withdraw',input:{proposalId:unknown;scheduledStartAt?:unknown;confirmed:unknown}){
  if(input.confirmed!==true||!validFreelanceId(input.proposalId))throw Error('FREELANCE_INVALID');
  const proposalId=input.proposalId;
  return adminDb.runTransaction(async tx=>{
-  const c=await context(tx,uid,offerId);
+  const c=await readAttendanceContext(tx,uid,offerId);
   if(!c.terms||c.offer.status!=='contracted'||c.offer.startedAt)return fail();
   const record=c.ref.collection('attendance').doc('schedule-'+proposalId),now=new Date().toISOString();
   if(action==='propose'){
