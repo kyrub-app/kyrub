@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CircleDollarSign, RefreshCw } from 'lucide-react';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
 
 type EarningsState =
@@ -79,10 +79,9 @@ const EARNING_LABEL: Record<EarningType, string> = {
   paid_waiting: 'Espera remunerada',
 };
 
-const load = async (): Promise<EarningsSnapshot> => {
-  const user = auth.currentUser;
-  if (!user) return EMPTY;
+const load = async (user: User): Promise<EarningsSnapshot> => {
   const token = await user.getIdToken();
+  if (auth.currentUser?.uid !== user.uid) throw new Error('Sessão alterada.');
   const response = await fetch('/api/delivery-opportunities/earnings', {
     headers: { authorization: `Bearer ${token}` },
     cache: 'no-store',
@@ -93,53 +92,50 @@ const load = async (): Promise<EarningsSnapshot> => {
   if (!response.ok) {
     throw new Error(payload.error || 'Não foi possível consultar seus ganhos de entrega.');
   }
-  return {
-    currency: 'BRL',
-    totals: {
-      projectedMinor: Number(payload.totals?.projectedMinor ?? 0),
-      eligibleMinor: Number(payload.totals?.eligibleMinor ?? 0),
-      settledMinor: Number(payload.totals?.settledMinor ?? 0),
-      reversedMinor: Number(payload.totals?.reversedMinor ?? 0),
-    },
-    integrityErrorCount: Number(payload.integrityErrorCount ?? 0),
-    entries: Array.isArray(payload.entries) ? payload.entries : [],
-  };
+  const totals = payload?.totals;
+  if (payload?.currency !== 'BRL' || !totals ||
+      ![totals.projectedMinor, totals.eligibleMinor, totals.settledMinor, totals.reversedMinor, payload.integrityErrorCount]
+        .every(value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) ||
+      !Array.isArray(payload.entries)) {
+    throw new Error('Resposta de ganhos não confirmada.');
+  }
+  return payload as EarningsSnapshot;
 };
 
 export function CourierEarningsProjectionCard() {
-  const [snapshot, setSnapshot] = useState<EarningsSnapshot>(EMPTY);
+  const [snapshot, setSnapshot] = useState<EarningsSnapshot | null>(null);
+  const [snapshotUid, setSnapshotUid] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-
-  const refresh = (): void => {
-    if (!auth.currentUser) {
-      setSnapshot(EMPTY);
+  const generation = useRef(0);
+  const refresh = useCallback((): void => {
+    const user = auth.currentUser;
+    const ticket = ++generation.current;
+    setSnapshot(null);
+    setSnapshotUid('');
+    setError('');
+    if (!user) {
       setLoading(false);
+      setError('Entre novamente para consultar seus ganhos.');
       return;
     }
     setLoading(true);
-    setError('');
-    void load()
-      .then(setSnapshot)
-      .catch(value => {
-        setError(value instanceof Error ? value.message : 'Ganhos indisponíveis.');
+    const active = () => generation.current === ticket && auth.currentUser?.uid === user.uid;
+    void load(user)
+      .then(value => {
+        if (active()) { setSnapshot(value); setSnapshotUid(user.uid); }
       })
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      if (!user) {
-        setSnapshot(EMPTY);
-        setLoading(false);
-        return;
-      }
-      refresh();
-    });
-    return unsubscribe;
+      .catch(value => {
+        if (active()) setError(value instanceof Error ? value.message : 'Ganhos indisponíveis.');
+      })
+      .finally(() => { if (active()) setLoading(false); });
   }, []);
-
-  const totals = snapshot.totals;
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, refresh);
+    return () => { generation.current += 1; unsubscribe(); };
+  }, [refresh]);
+  const confirmed = snapshot && snapshotUid === auth.currentUser?.uid && !loading && !error ? snapshot : null;
+  const totals = (confirmed ?? EMPTY).totals;
   const hasAny = Object.values(totals).some(value => value !== 0);
 
   return (
@@ -176,12 +172,12 @@ export function CourierEarningsProjectionCard() {
         ].map(([label, value]) => (
           <div key={String(label)} className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
             <p className="text-[8px] font-black uppercase tracking-wider text-slate-500">{label}</p>
-            <p className="mt-1 text-sm font-black text-white">{money(Number(value))}</p>
+            <p className="mt-1 text-sm font-black text-white">{confirmed ? money(Number(value)) : '—'}</p>
           </div>
         ))}
       </div>
 
-      {snapshot.entries.length > 0 && (
+      {confirmed && confirmed.entries.length > 0 && (
         <div className="mt-4 space-y-2" id="courier-earnings-statement">
           <div className="flex items-center justify-between gap-3">
             <h4 className="text-[9px] font-black uppercase tracking-wider text-slate-300">
@@ -189,7 +185,7 @@ export function CourierEarningsProjectionCard() {
             </h4>
             <span className="text-[8px] text-slate-500">até 50 lançamentos</span>
           </div>
-          {snapshot.entries.map(entry => {
+          {confirmed.entries.map(entry => {
             const evidenceTime =
               entry.state === 'settled'
                 ? entry.settledAt
@@ -246,14 +242,14 @@ export function CourierEarningsProjectionCard() {
         </div>
       )}
 
-      {!loading && !error && !hasAny && (
+      {confirmed && !hasAny && (
         <p className="mt-3 text-[9px] text-slate-500">
           Nenhuma obrigação econômica de entrega foi projetada para você ainda.
         </p>
       )}
-      {snapshot.integrityErrorCount > 0 && (
+      {confirmed && confirmed.integrityErrorCount > 0 && (
         <p className="mt-3 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[9px] text-amber-200">
-          {snapshot.integrityErrorCount} lançamento(s) ficaram fora dos totais por inconsistência de integridade.
+          {confirmed.integrityErrorCount} lançamento(s) ficaram fora dos totais por inconsistência de integridade.
         </p>
       )}
       {error && (
