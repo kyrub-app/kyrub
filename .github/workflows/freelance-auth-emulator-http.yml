@@ -3,6 +3,8 @@ on:
   pull_request:
     paths:
       - 'server/freelance/**'
+      - 'server/payments/personalPix*.ts'
+      - 'shared/personalPixDestination.ts'
       - 'server/admin/freelanceReview*.ts'
       - 'shared/freelance*.ts'
       - 'server/identity/kyrubMfaAuthorization.ts'
@@ -28,6 +30,7 @@ jobs:
       FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
       FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
       KYRUB_FREELANCE_LOCAL_HOMOLOGATION: 'true'
+      KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -1,6 +1,7 @@
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import {handleFreelanceWorkspace} from "./server/freelance/freelanceWorkspaceTransport.js";
+import {handlePersonalPix} from "./server/payments/personalPixTransport.js";
 import path from "path";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
@@ -284,6 +285,10 @@ app.use(
   integrationRateLimiter,
   createUserCommunicationPreferenceRouter()
 );
+
+app.all("/api/personal-finance/pix", integrationRateLimiter, (request,response) => {
+  void handlePersonalPix(request,response);
+});
 
 app.all("/api/freelance/workspace", integrationRateLimiter, (request,response) => {
   void handleFreelanceWorkspace(request,response);
