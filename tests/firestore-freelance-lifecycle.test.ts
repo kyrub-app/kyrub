@@ -279,3 +279,40 @@ test('direct freelance terms: exact immutable offer and application snapshot; no
  assert.equal((await ref(id).get()).get('status'),'contracted');
  assert.equal((await ref(id).collection('financialBasis').get()).size,0);
 });
+
+test('direct payment obligation is created atomically with bilateral contract, not settlement',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ for(const timing of ['advance','on_completion'] as const){
+  const id='fixture-obligation-'+timing,offer=ref(id),obligation=offer.collection('directPayment').doc('obligation');
+  const terms=createDirectPaymentTerms({method:'external_pix',timing,amountMinor:input.paymentMinor});
+  await s.publishFreelanceOffer(owner,id,{...input,paymentTerms:terms});
+  await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(owner,id,worker);
+  assert.equal((await obligation.get()).exists,false);
+  await assert.rejects(s.confirmFreelanceContract(owner,id,true),/FREELANCE_FORBIDDEN/);
+  await assert.rejects(s.confirmFreelanceContract(worker,id,false),/FREELANCE_INVALID/);
+  assert.equal((await obligation.get()).exists,false);
+  const results=await Promise.all([s.confirmFreelanceContract(worker,id,true),s.confirmFreelanceContract(worker,id,true)]);
+  assert.deepEqual(results.map(x=>x.changed).sort(),[false,true]);
+  const snapshot=(await obligation.get()).data()!;
+  assert.deepEqual(snapshot,{schemaVersion:1,offerId:id,requesterUid:owner,beneficiaryUid:worker,
+   terms,contractedAt:(await offer.get()).get('contractedAt'),dueTrigger:timing==='advance'?'contract_confirmation':'bilateral_service_completion',custody:'none'});
+  assert.equal((await offer.collection('directPayment').get()).size,1);
+  assert.equal((await offer.collection('financialBasis').get()).size,0);
+  assert.equal((await offer.collection('funding').get()).size,0);
+  await assert.rejects(funding.confirmSimulatedFreelanceFunding(id,'fixture-direct-funding-'+timing,input.paymentMinor,owner,worker),/FREELANCE_FUNDING_CONFLICT/);
+  await assert.rejects(s.recordFreelanceExecution(worker,id,'start',true),/FREELANCE_DIRECT_PAYMENT_NOT_ENABLED/);
+  for(const uid of [owner,worker,other]){
+   const db=env.authenticatedContext(uid).firestore();
+   await assertFails(getDoc(doc(db,obligation.path)));
+   await assertFails(setDoc(doc(db,obligation.path),{settlement:'verified'}));
+  }
+  await obligation.update({'terms.amountMinor':1});
+  await assert.rejects(s.confirmFreelanceContract(worker,id,true),/FREELANCE_PAYMENT_OBLIGATION_CONFLICT/);
+  await obligation.set(snapshot);
+  assert.equal((await s.confirmFreelanceContract(worker,id,true)).changed,false);
+ }
+ const legacy='fixture-obligation-legacy';
+ await s.publishFreelanceOffer(owner,legacy,input);await s.applyToFreelanceOffer(worker,legacy);
+ await s.selectFreelanceApplication(owner,legacy,worker);await s.confirmFreelanceContract(worker,legacy,true);
+ assert.equal((await ref(legacy).collection('directPayment').doc('obligation').get()).exists,false);
+});
