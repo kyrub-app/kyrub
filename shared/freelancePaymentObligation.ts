@@ -1,3 +1,4 @@
+import {sameFreelanceStoreRepresentation,readFreelanceStoreRepresentation} from './freelanceStoreRepresentation.js';
 import {negotiatedFreelanceTerms,sameFreelanceCounterproposal} from './freelanceCounterproposal.js';
 import {sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from './freelanceWorkTerms.js';
 import {validFreelanceId,readFreelancePaymentTerms,sameFreelancePaymentTerms,type FreelanceOffer,type FreelanceApplication} from './freelanceLifecycle.js';
@@ -6,6 +7,7 @@ import type {DirectPaymentTerms} from './directPaymentTerms.js';
 /** Immutable contract basis, not a wallet balance, settlement or escrow. */
 export type FreelancePaymentObligation={
  schemaVersion:1;offerId:string;requesterUid:string;beneficiaryUid:string;
+ requesterStoreId?:string;
  terms:DirectPaymentTerms;contractedAt:string;
  dueTrigger:'contract_confirmation'|'bilateral_service_completion';
  custody:'none';
@@ -20,7 +22,7 @@ export function buildFreelancePaymentObligation(offer:FreelanceOffer,app:Freelan
  !Number.isSafeInteger(offer.paymentMinor)||offer.paymentMinor<=0||offer.paymentMinor>999999999||
  offer.occurrenceId||app.occurrenceId||offer.startedAt||app.startedAt||offer.completedAt||app.completedAt||
  offer.completionRequestedAt||app.completionRequestedAt||offer.cancelledAt||app.cancelledAt||
- !sameFreelancePaymentTerms(offer.paymentTerms,app.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,app.workTerms,offer.paymentMinor))return conflict();
+ !sameFreelancePaymentTerms(offer.paymentTerms,app.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,app.workTerms,offer.paymentMinor)||!sameFreelanceStoreRepresentation(offer.requesterStore,app.requesterStore))return conflict();
  assertFreelanceWorkExecutionReady(offer.workTerms);
  if(offer.originalOfferTerms||offer.selectedCounterproposal||app.counterproposal){
   if(!offer.originalOfferTerms||!offer.selectedCounterproposal||!app.counterproposal||!sameFreelanceCounterproposal(offer.selectedCounterproposal,app.counterproposal,offer.originalOfferTerms))return conflict();
@@ -29,7 +31,8 @@ export function buildFreelancePaymentObligation(offer:FreelanceOffer,app:Freelan
  }
  const terms=readFreelancePaymentTerms(offer.paymentTerms,offer.paymentMinor);
  if(!terms)return conflict();
- return {schemaVersion:1,offerId:offer.id,requesterUid:offer.ownerUid,beneficiaryUid:app.applicantUid,
+ const store=readFreelanceStoreRepresentation(offer.requesterStore);
+ return {schemaVersion:1,...(store?{requesterStoreId:store.storeId}:{}),offerId:offer.id,requesterUid:offer.ownerUid,beneficiaryUid:app.applicantUid,
  terms,contractedAt:offer.contractedAt,dueTrigger:terms.timing==='advance'?'contract_confirmation':'bilateral_service_completion',custody:'none'};
 }
 export function matchesFreelancePaymentObligation(saved:unknown,expected:FreelancePaymentObligation):boolean{
