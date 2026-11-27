@@ -208,22 +208,25 @@ export async function readVisibleFreelanceExperience(viewerUid:string,targetUid:
   return readExperienceCounts(tx,targetUid);
  },{readOnly:true});
 }
-async function readExperienceCounts(tx:Transaction,targetUid:string){
-  const hidden={experience:null};
+async function readExperienceCounts(tx:Transaction,targetUid:string,includeReputation=false){
+  const hidden=includeReputation?{experience:null,reputations:null}:{experience:null};
   const professional=await readCertifiedInTransaction(tx,targetUid,{kind:'professional',id:targetUid});
   const requester=await readCertifiedInTransaction(tx,targetUid,{kind:'personal_requester',id:targetUid});
   if(professional.state!=='verified_snapshot'||requester.state!=='verified_snapshot'||!professional.projection||!requester.projection)return hidden;
-  return {experience:{completedServices:professional.projection.completedContracts,completedHires:requester.projection.completedContracts}};
+  const experience={completedServices:professional.projection.completedContracts,completedHires:requester.projection.completedContracts};
+  const minimal=(p:typeof professional.projection)=>({ratingCount:p.aggregate.ratingCount,mean:p.aggregate.mean});
+  return includeReputation?{experience,reputations:{professional:minimal(professional.projection),personalRequester:minimal(requester.projection)}}:{experience};
 }
 
 /** Resolve both immutable address indices and live visibility together with
  * the minimal certified counts. No UID is returned to the public page. */
-export async function readAddressFreelanceExperience(viewerUid:string,identifier:unknown){
+export async function readAddressFreelanceExperience(viewerUid:string,identifier:unknown,includeReputation=false){
  assertFreelanceReputationLocal();
  if(!certifiedReputationReadEnabled()||process.env.KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
+ if(includeReputation&&process.env.KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY!=='true')throw Error('FREELANCE_FORBIDDEN');
  if(!validFreelanceId(viewerUid)||typeof identifier!=='string'||!isSocialAddress('profile',identifier))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
-  const hidden={experience:null};
+  const hidden=includeReputation?{experience:null,reputations:null}:{experience:null};
   const mapping=(await tx.get(adminDb.doc('public_social_addresses/profile:'+identifier))).data();
   if(!mapping||!isDocumentId(mapping.targetId)||!matchesSocialAddressRecord(mapping,'profile',identifier,mapping.targetId))return hidden;
   const uid=mapping.targetId;
@@ -233,6 +236,6 @@ export async function readAddressFreelanceExperience(viewerUid:string,identifier
   if(source?.isProfileVisible!==true)return hidden;
   const profile=(await tx.get(ref.collection('public_profile').doc('main'))).data();
   if(!projectSocialAddress({kind:'profile',identifier,targetId:uid},source,profile))return hidden;
-  return readExperienceCounts(tx,uid);
+  return readExperienceCounts(tx,uid,includeReputation);
  },{readOnly:true});
 }

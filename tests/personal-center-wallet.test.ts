@@ -205,5 +205,9 @@ test('public profile experience uses canonical address and isolated authenticate
  assert.match(ui,/reputation_public_address_experience&identifier=/);
  assert.match(ui,/cache:'no-store'/);assert.match(ui,/VITE_KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY/);
  assert.match(ui,/auth.currentUser!==user/);assert.match(ui,/validPublicExperienceResponse/);
- assert.doesNotMatch(ui,/targetUid|localStorage|ratingCount|method:'POST'/);
+ assert.doesNotMatch(ui,/targetUid|localStorage|method:'POST'|criteria|authorUid/);
+ assert.match(ui,/reputation_public_address_summary&identifier=/);
+ assert.match(ui,/VITE_KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY/);
+ assert.match(ui,/validPublicSummaryResponse/);
+ assert.match(ui,/r.ratingCount<=max/);
 });

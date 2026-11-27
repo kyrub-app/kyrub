@@ -2110,6 +2110,22 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
     await reverse.set(record);
     assert.deepEqual(await call(payer,byAddress,200),{experience:{completedServices:3,completedHires:0}});
     await call(null,byAddress,401);await call(payer,byAddress+'&targetUid='+worker.uid,400);
+    const reputationFlag='KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY',oldReputationFlag=process.env[reputationFlag];
+    const summary='?view=reputation_public_address_summary&identifier='+identifier;
+    try{
+     delete process.env[reputationFlag];await call(payer,summary,403);
+     process.env[reputationFlag]='true';
+     await call(null,summary,401);
+     assert.deepEqual(await call(payer,summary,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+     assert.deepEqual(await call(payer,byAddress,200),{experience:{completedServices:3,completedHires:0}});
+     await call(payer,summary+'&targetUid='+worker.uid,400);
+     await profile.update({isProfileVisible:false});
+     assert.deepEqual(await call(payer,summary,200),{experience:null,reputations:null});
+     await profile.update({isProfileVisible:true});
+     await reverse.update({identifier:'wrong-address'});
+     assert.deepEqual(await call(payer,summary,200),{experience:null,reputations:null});
+     await reverse.set(record);
+    }finally{if(oldReputationFlag===undefined)delete process.env[reputationFlag];else process.env[reputationFlag]=oldReputationFlag;}
     await profile.update({isProfileVisible:false});
     assert.deepEqual(await call(payer,byAddress,200),{experience:null});
     await profile.update({isProfileVisible:true});
