@@ -403,3 +403,44 @@ test('bilateral financial restriction blocks new engagement in either role; each
   await s.publishFreelanceOffer(uid,'fixture-restored-'+uid,input);
  }
 });
+
+test('external statements persist with bilateral restrictions atomically, including concurrent declarations and voluntary release',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-statement-payer',beneficiary='fixture-statement-worker',outsider='fixture-statement-outsider';
+ for(const uid of [payer,beneficiary,outsider])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const create=async(id:string,timing:'advance'|'on_completion')=>{
+  await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing,amountMinor:input.paymentMinor})});
+  await s.applyToFreelanceOffer(beneficiary,id);await s.selectFreelanceApplication(payer,id,beneficiary);await s.confirmFreelanceContract(beneficiary,id,true);
+ };
+ const id='fixture-real-statements',hist=ref(id).collection('directPayment').doc('externalStatements');
+ await create(id,'advance');await create('fixture-statements-not-due','on_completion');
+ const paid={eventId:'payer-paid',statement:'paid',confirmed:true},notReceived={eventId:'worker-not-received',statement:'not_received',confirmed:true};
+ await assert.rejects(record(payer,'fixture-statements-not-due',paid),/FREELANCE_PAYMENT_NOT_DUE/);
+ await assert.rejects(record(outsider,id,paid),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(record(beneficiary,id,paid),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(record(payer,id,{...paid,amountMinor:1}),/FREELANCE_INVALID/);
+ assert.equal((await hist.get()).exists,false);
+ const results=await Promise.all([record(payer,id,paid),record(beneficiary,id,notReceived)]);
+ assert.ok(results.some(r=>r.state==='disputed'));assert.ok(results.every(r=>r.bankVerified===false));
+ const initial=(await hist.get()).get('events');assert.equal(initial.length,2);
+ for(const uid of [payer,beneficiary]){
+  assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[id]);
+  await assert.rejects(s.publishFreelanceOffer(uid,'fixture-statement-blocked-'+uid,input),/FREELANCE_FINANCIAL_RESTRICTION/);
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,hist.path)));await assertFails(setDoc(doc(db,hist.path),{events:[]}));
+ }
+ const replay=await record(payer,id,paid);assert.equal(replay.changed,false);assert.equal(replay.state,'disputed');
+ await assert.rejects(record(payer,id,{...paid,eventId:'payer-second-paid'}),/FREELANCE_PAYMENT_STATEMENT_CONFLICT/);
+ assert.deepEqual((await hist.get()).get('events'),initial);
+ const received={eventId:'worker-received',statement:'received',confirmed:true};
+ const resolved=await record(beneficiary,id,received);assert.equal(resolved.state,'bilaterally_reported_received');
+ assert.equal(resolved.hadDisagreement,true);assert.equal(resolved.bankVerified,false);
+ const final=(await hist.get()).get('events');assert.equal(final.length,3);assert.deepEqual(final.slice(0,2),initial);
+ assert.equal((await record(beneficiary,id,received)).changed,false);
+ for(const uid of [payer,beneficiary]){
+  assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+  await s.publishFreelanceOffer(uid,'fixture-statement-restored-'+uid,input);
+ }
+ assert.equal((await ref(id).get()).get('status'),'contracted');
+});
