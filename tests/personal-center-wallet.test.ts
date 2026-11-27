@@ -190,3 +190,10 @@ test('management Reputações remains separate from operational team view and re
  assert.match(ui,/<FreelaReputationPanel/);assert.match(ui,/view.owner\?/);
  assert.doesNotMatch(ui,/deleteDoc|updateDoc|localStorage/);
 });
+
+test('management reputation uses bounded forward pages with the current report scope',()=>{
+ const ui=read('src/components/store/StoreReputationManagementWorkspace.tsx');
+ assert.match(ui,/Próxima página/);assert.match(ui,/Voltar à primeira página/);
+ assert.match(ui,/fetch\(url\(pageCursor\)/);
+ assert.match(ui,/encodeURIComponent\(cursor\)/);
+});
