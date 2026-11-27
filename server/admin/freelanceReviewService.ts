@@ -1,3 +1,4 @@
+import {prepareFreelanceAttendanceReview} from '../freelance/freelanceAttendanceService.js';
 import {createHash} from 'node:crypto';
 import {FieldPath,FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
@@ -49,6 +50,8 @@ export async function decideFreelanceReview(authorization:string,input:unknown){
     }
     if(audit.exists)throw Error('FREELANCE_CONFLICT');
     const decision=result.occurrence.decision!;
+    const writeAttendance=offer.workTerms&&decision.outcome==='resume'?await prepareFreelanceAttendanceReview(tx,offer.ownerUid,offer.id,occurrence.id,'resume_review',decision.decidedAt):()=>{};
+    writeAttendance();
     const patch={status:result.offer.status,occurrenceId:FieldValue.delete(),...(decision.outcome==='cancel'?{cancelledAt:decision.decidedAt}:{})};
     tx.update(offerRef,patch);
     tx.update(applicationRef,patch);
