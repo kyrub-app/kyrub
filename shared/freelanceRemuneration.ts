@@ -1,3 +1,4 @@
+import {readFreelanceWorkTerms,sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from './freelanceWorkTerms.js';
 import {sameFreelanceStoreRepresentation,readFreelanceStoreRepresentation} from './freelanceStoreRepresentation.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from './freelanceLifecycle.js';
 
@@ -24,6 +25,8 @@ export function buildFreelanceRemunerationBasis(offer:FreelanceOffer,application
     application.offerId!==offer.id||offer.ownerUid===application.applicantUid||offer.status!==application.status||
     !Number.isSafeInteger(offer.paymentMinor)||offer.paymentMinor<=0||offer.paymentMinor>999999999||
     offer.occurrenceId||application.occurrenceId||!sameFreelanceStoreRepresentation(offer.requesterStore,application.requesterStore))invalid();
+  if(!sameFreelanceWorkTerms(offer.workTerms,application.workTerms,offer.paymentMinor))invalid();
+  assertFreelanceWorkExecutionReady(readFreelanceWorkTerms(offer.workTerms,offer.paymentMinor));
   const fields=['selectedAt','contractedAt','startedAt','completionRequestedAt','completedAt'] as const;
   let prior=Date.parse(offer.createdAt);
   if(!Number.isFinite(prior))invalid();
