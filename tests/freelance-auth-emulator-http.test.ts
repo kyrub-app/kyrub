@@ -2072,6 +2072,23 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
   assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,true);
   assert.deepEqual((await call(worker,'?view=reputation_verified_professional',200)).projection,baseline.projection);
+  const {beginReputationMaintenance,finishReputationMaintenance}=await import('../server/freelance/freelanceReputationCoverage.js');
+  assert.equal((await certifyOwnFreelanceReputationIndex(payer.uid,'personal_requester')).certified,true);
+  const maintenance=await beginReputationMaintenance();
+  try{
+   assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
+   assert.equal((await call(payer,'?view=reputation_verified_personal',200)).projection,null);
+   assert.equal((await auditOwnFreelanceReputationIndex(worker.uid,'professional')).projection,null);
+   await assert.rejects(certifyOwnFreelanceReputationIndex(worker.uid,'professional'),/CONFLICT/);
+   await assert.rejects(beginReputationMaintenance(),/CONFLICT/);
+   await assert.rejects(finishReputationMaintenance('invalid'),/INVALID/);
+  }finally{await finishReputationMaintenance(maintenance.epoch);}
+  assert.equal((await call(worker,'?view=reputation_verified_professional',200)).projection,null);
+  assert.equal((await call(payer,'?view=reputation_verified_personal',200)).projection,null);
+  assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'professional')).certified,true);
+  assert.deepEqual((await call(worker,'?view=reputation_verified_professional',200)).projection,baseline.projection);
+  assert.equal((await call(payer,'?view=reputation_verified_personal',200)).projection,null);
+  await assert.rejects(finishReputationMaintenance(maintenance.epoch),/CONFLICT/);
  }finally{
   for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
  }
