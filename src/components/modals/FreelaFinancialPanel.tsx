@@ -67,7 +67,7 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
   }catch{if(active())setError('Não foi possível ler o arquivo.');}
   finally{if(active()){lock.current=false;setBusy(false);}}
  };
- const paused=['under_review','cancelled'].includes(data?.operationalStatus??operationalStatus??'');
+ const paused=['under_review','cancelled'].includes(data?.operationalStatus??operationalStatus??'')&&!(data?.amountMode==='hourly_final'&&data.operationalStatus==='cancelled'&&data.due);
  const paid=data?.statements.some(s=>s.statement==='paid'),received=data?.statements.some(s=>s.statement==='received'),denied=data?.statements.some(s=>s.statement==='not_received');
  if(auth.currentUser?.uid!==user.uid)return null;
  return <section aria-label="Financeiro do Freela" className="rounded-xl border border-slate-700 p-3 space-y-3 text-sm">
