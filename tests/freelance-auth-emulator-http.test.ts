@@ -671,8 +671,8 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
  const payer=await account('cancel-pix-payer',['requester']),worker=await account('cancel-pix-worker',['freelancer']),admin=await account('cancel-pix-admin',[]),other=await account('cancel-pix-other',['requester']);
  await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
- const id='cancel-pix-'+suffix,completionId='cancel-completion-'+suffix,staleId='cancel-stale-'+suffix;
- for(const [offerId,timing] of [[id,'advance'],[completionId,'on_completion'],[staleId,'advance']] as const){
+ const id='cancel-pix-'+suffix,completionId='cancel-completion-'+suffix,staleId='cancel-stale-'+suffix,adminId='cancel-admin-'+suffix;
+ for(const [offerId,timing] of [[id,'advance'],[completionId,'on_completion'],[staleId,'advance'],[adminId,'on_completion']] as const){
   const terms=createDirectPaymentTerms({method:'external_pix',timing,amountMinor:15000});
   await act(payer,offerId,'publish',200,{terms:{title:'Cancelamento fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms}});
   await act(worker,offerId,'apply',200,{expectedPaymentTerms:terms});await act(payer,offerId,'select',200,{applicantUid:worker.uid});
@@ -687,10 +687,11 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(worker,200,id,'bind_pix',{expectedRevision:1});await finance(worker,200,id,'authorize_pix_share',{expectedRevision:1});
  await finance(payer,200,id,'statement',{eventId:'paid',statement:'paid'});
  await finance(worker,200,id,'statement',{eventId:'denied',statement:'not_received'});
- const first='cancel-advance-occurrence',second='cancel-completion-occurrence',third='cancel-stale-occurrence';
+ const first='cancel-advance-occurrence',second='cancel-completion-occurrence',third='cancel-stale-occurrence',fourth='cancel-admin-occurrence';
  await act(worker,id,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:first});
  await act(worker,completionId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:second});
  await act(worker,staleId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:third});
+ await act(worker,adminId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:fourth});
  assert.equal((await finance(payer,200,id)).operationalStatus,'under_review');
  assert.equal((await finance(worker,200,id)).restrictionActive,true);
  await finance(other,403,id);await finance(payer,409,id,'reveal_pix',{expectedRevision:1});
@@ -703,7 +704,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
   const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
  });
  try{
-  for(const [offerId,occurrenceId] of [[id,first],[completionId,second],[staleId,third]]){
+  for(const [offerId,occurrenceId] of [[id,first],[completionId,second],[staleId,third],[adminId,fourth]]){
    await decideFreelanceReview('Bearer '+admin.token,{offerId,occurrenceId,outcome:'cancel',reason:'Cancelamento fictício fundamentado',confirmed:true});
    const ref=db.doc('freelanceOffersV1/'+offerId);
    assert.equal((await ref.get()).get('status'),'cancelled');
@@ -783,6 +784,31 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal(additional.dispute.status,'resolved_voluntarily');assert.equal(additional.restrictionActive,false);
  assert.equal(additional.proposal.amounts.proposedAdditionalMinor,4000);assert.equal(additional.proposal.amounts.proposedRefundMinor,0);
  assert.equal((await finance(payer,200,completionId)).due,false);
+ // Independent fixed-price administrative case, synthetic MFA only in emulator.
+ await propose(worker,200,adminId,'first-admin-proposal',6000,0);
+ await finance(payer,200,adminId,'close_cancellation_accounting',{proposalId:'first-admin-proposal'});
+ const open=await accounting(worker,200,adminId);
+ await finance(worker,200,adminId,'dispute_fixed_cancellation',{snapshot:open.snapshot});
+ await finance(payer,200,adminId,'request_fixed_cancellation_review',{snapshot:open.snapshot});
+ const pendingReview=await accounting(worker,200,adminId);
+ const note={kind:'fixed_cancellation',sourceDigest:pendingReview.evidenceSource,evidenceId:'fixed-note',note:'Manifestação fictícia de cancelamento por preço fechado.'};
+ const adminApi=async(a:Actor,status:number,input?:Record<string,unknown>)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=fixed_cancellation'),{method:input?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ await adminApi(admin,403);
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
+ try{
+  const item=(await adminApi(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(item);
+  const decision={action:'decide_fixed_cancellation',offerId:adminId,sourceDigest:item.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedServiceMinor:5000,reportedReceivedMinor:0,reason:'Decisão fictícia fundamentada do cancelamento fixo',confirmed:true};
+  await finance(worker,200,adminId,'submit_hourly_review_note',note);
+  await adminApi(admin,409,decision);
+  const latest=(await adminApi(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.equal(latest.notes.length,1);
+  const next={...decision,evidenceDigest:latest.evidenceDigest};
+  await adminApi(other,403,next);await adminApi(admin,409,{...next,recognizedServiceMinor:15001});
+  assert.equal((await adminApi(admin,200,next)).replay,false);assert.equal((await adminApi(admin,200,next)).replay,true);
+  const settled=await accounting(worker,200,adminId);assert.equal(settled.dispute.status,'resolved_administratively');assert.equal(settled.dispute.decision.amounts.proposedAdditionalMinor,5000);assert.equal(settled.restrictionActive,false);
+  await propose(payer,409,adminId,'late-proposal',1000,0);
+  await finance(worker,409,adminId,'submit_hourly_review_note',{...note,evidenceId:'late-note'});
+  assert.equal((await finance(payer,200,adminId)).due,false);
+ }finally{t.mock.restoreAll();}
  // Historical declarations can invalidate a proposal without erasing it.
  await propose(worker,200,staleId,'stale-proposal',3000,0);
  await finance(payer,200,staleId,'statement',{eventId:'late-paid',statement:'paid'});
