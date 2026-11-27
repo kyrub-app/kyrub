@@ -10,7 +10,7 @@ import {isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyC
 import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} from '../identity/kyrubTagPasskeyVerifier.js';
 import {assertSamePasskeyCredential} from '../identity/kyrubTagPasskeyState.js';
 const APP='privacy-cid-evidence-local-emulator';
-export const PRIVACY_CID_ORIGIN='https://kyrub-cid-emulator.vercel.app';
+export const PRIVACY_CID_ORIGIN='https://kyrub-privacy-emulator.vercel.app';
 const deny=():never=>{throw Error('PRIVACY_CID_EVIDENCE_FORBIDDEN');};
 const opaque=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{43}$/.test(v);
 const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(v);
