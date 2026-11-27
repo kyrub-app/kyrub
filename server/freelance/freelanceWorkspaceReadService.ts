@@ -1,4 +1,6 @@
 import {adminDb} from '../firebaseAdmin.js';
+import {FieldPath} from 'firebase-admin/firestore';
+import {projectVisibleDirectoryEntry} from '../identity/socialDiscoveryDirectoryService.js';
 import {validFreelanceId,normalizeFreelanceOffer,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
 
 const offers=()=>adminDb.collection('freelanceOffersV1');
@@ -15,27 +17,37 @@ function projectApplication(raw:unknown,offer:FreelanceOffer,uid:string){
  const effectiveStatus=a.status==='pending'&&offer.status!=='open'&&offer.status!=='selected'?'not_selected':a.status;
  return {applicantUid:a.applicantUid,status:effectiveStatus,createdAt:a.createdAt};
 }
-export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:unknown){
+const PAGE_SIZE=20;
+export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:unknown,cursor?:unknown){
+ if(cursor!==undefined&&cursor!==null&&cursor!==''&&!validFreelanceId(cursor))throw Error('FREELANCE_INVALID');
+ const after=validFreelanceId(cursor)?cursor:undefined;
  if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
   if(view==='open'||view==='owner'){
-   const query=view==='open'?offers().where('status','==','open'):offers().where('ownerUid','==',uid);
-   const result=await tx.get(query.limit(51));
-   if(result.size>50)throw Error('FREELANCE_PAGE_LIMIT');
-   return {items:result.docs.filter(d=>view!=='open'||d.get('ownerUid')!==uid).map(d=>project(d.id,d.data(),uid))};
+   let query=(view==='open'?offers().where('status','==','open'):offers().where('ownerUid','==',uid)).orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
+   if(after)query=query.startAfter(after);
+   const result=await tx.get(query);
+   const page=result.docs.slice(0,PAGE_SIZE);
+   return {items:page.filter(d=>view!=='open'||d.get('ownerUid')!==uid).map(d=>project(d.id,d.data(),uid)),nextCursor:result.size>PAGE_SIZE?page[page.length-1].id:null};
   }
   if(view==='applications'){
-   const result=await tx.get(adminDb.collectionGroup('applications').where('applicantUid','==',uid).limit(51));
-   if(result.size>50)throw Error('FREELANCE_PAGE_LIMIT');
+   // Cursor is the examined document path, never an arbitrary document supplied by the browser.
+   let query=adminDb.collectionGroup('applications').where('applicantUid','==',uid).orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
+   if(after)query=query.startAfter(adminDb.doc('freelanceOffersV1/'+after+'/applications/'+uid));
+   const result=await tx.get(query);
+   const page=result.docs.slice(0,PAGE_SIZE);
    const items=[];
-   for(const d of result.docs){
+   for(const d of page){
     const parent=d.ref.parent.parent;
     if(!parent||parent.parent.path!=='freelanceOffersV1'||d.id!==uid)continue;
     const o=(await tx.get(parent)).data() as FreelanceOffer|undefined;
     if(!o||o.id!==parent.id)throw Error('FREELANCE_CONFLICT');
     items.push({...project(parent.id,o,uid),application:projectApplication(d.data(),o,uid)});
    }
-   return {items};
+   const last=page[page.length-1];
+   // Do not silently truncate a page containing an unexpected collection-group namespace.
+   if(page.some(d=>d.ref.parent.parent?.parent.path!=='freelanceOffersV1'||d.id!==uid))throw Error('FREELANCE_CONFLICT');
+   return {items,nextCursor:result.size>PAGE_SIZE?last.ref.parent.parent!.id:null};
   }
   if(view!=='detail'||!validFreelanceId(offerId))throw Error('FREELANCE_INVALID');
   const ref=offers().doc(offerId),o=(await tx.get(ref)).data() as FreelanceOffer|undefined;
@@ -51,12 +63,19 @@ export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:un
    if(!r||r.id!==o.occurrenceId||r.offerId!==o.id||r.ownerUid!==o.ownerUid||r.applicantUid!==o.selectedApplicantUid||r.status!=='awaiting_review')throw Error('FREELANCE_CONFLICT');
    occurrence={id:r.id,kind:r.kind,openedByMe:r.openedBy===uid,response:r.response?.position??null};
   }
-  if(!owner)return {item,occurrence,applications:mine?.exists?[projectApplication(mine.data(),o,uid)]:[]};
-  const applications=await tx.get(ref.collection('applications').limit(51));
-  if(applications.size>50)throw Error('FREELANCE_PAGE_LIMIT');
-  return {item,occurrence,applications:applications.docs.map(d=>{
+  if(!owner){if(after)throw Error('FREELANCE_INVALID');return {item,occurrence,applications:mine?.exists?[{...projectApplication(mine.data(),o,uid),publicName:null}]:[],nextApplicationCursor:null};}
+  let query=ref.collection('applications').orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
+  if(after)query=query.startAfter(after);
+  const applications=await tx.get(query);
+  const page=applications.docs.slice(0,PAGE_SIZE);
+  const names=new Map<string,string>();
+  if(page.length){
+   const profiles=await tx.getAll(...page.map(d=>adminDb.doc('users/'+d.id)),{fieldMask:['uid','name','isProfileVisible']});
+   for(const p of profiles){const data=p.data();const entry=data?projectVisibleDirectoryEntry(p.id,data):null;if(entry)names.set(p.id,entry.name);}
+  }
+  return {item,occurrence,applications:page.map(d=>{
    if(d.id!==d.get('applicantUid'))throw Error('FREELANCE_CONFLICT');
-   return projectApplication(d.data(),o,uid);
-  })};
+   return {...projectApplication(d.data(),o,uid),publicName:names.get(d.id)??null};
+  }),nextApplicationCursor:applications.size>PAGE_SIZE?page[page.length-1].id:null};
  },{readOnly:true});
 }

@@ -4,7 +4,7 @@ import {auth} from '../../utils/firebase';
 type Alert={offerId:string;role:'requester'|'freelancer';title:string;state:string};
 type Entry={offerId:string;title:string;agreedMinor:number;confirmedServiceMinor:number|null;state:'projected'|'service_confirmed'|'financial_review';receivedMinor:null};
 type Earnings={currency:'BRL';entries:Entry[];projectedMinor:number;confirmedMinor:number;reviewCount:number;receivedMinor:null};
-const labels:Record<string,string>={applications_pending:'Candidatura pendente',selected:'Seleção registrada',contracted:'Contratação confirmada',in_progress:'Serviço em execução',completion_requested:'Conclusão solicitada',under_review:'Ocorrência em análise',completed:'Serviço concluído',cancelled:'Serviço cancelado'};
+const labels:Record<string,string>={applications_pending:'Candidatura recebida',application_pending:'Sua candidatura está pendente',not_selected:'Candidatura não selecionada',withdrawn:'Candidatura retirada',released:'Seleção liberada',selected:'Seleção registrada',contracted:'Contratação confirmada',in_progress:'Serviço em execução',completion_requested:'Conclusão solicitada',under_review:'Ocorrência em análise',completed:'Serviço concluído',cancelled:'Serviço cancelado'};
 const money=(v:number)=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v/100);
 const minor=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
 const id=(v:unknown)=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
@@ -41,7 +41,7 @@ export function FreelancePersonalSummary({view}:{view:'alerts'|'earnings'}){
    {(['requester','freelancer'] as const).map(role=><div key={role} className="space-y-2"><h4 className="font-bold text-white">{role==='requester'?'Como contratante':'Como prestador'}</h4>
     {current.alerts.filter(a=>a.role===role).map(a=><article key={a.offerId+role} className="rounded-xl border border-slate-800 p-3"><strong>{labels[a.state]}</strong><p className="break-words">{a.title}</p></article>)}
     {!current.alerts.some(a=>a.role===role)&&<p>Nenhum estado confirmado nesta consulta.</p>}</div>)}
-   <p>Estados atuais dos contratos e candidaturas recebidas, não histórico de notificações nem contador de não lidas.</p>
+   <p>Estados atuais dos contratos e candidaturas, não histórico de notificações nem contador de não lidas.</p>
   </>}
   {view==='earnings'&&current&&'entries' in current&&<>
    <div className="grid grid-cols-2 gap-2">{[['Previsto',money(current.projectedMinor)],['Serviço confirmado',money(current.confirmedMinor)],['Em análise',String(current.reviewCount)+' serviço(s)'],['Recebido','Não verificado']].map(([label,value])=><div key={label} className="rounded-xl border border-slate-800 bg-slate-950 p-3"><p>{label}</p><strong className="block text-sm text-white break-words">{value}</strong></div>)}</div>
