@@ -7,6 +7,7 @@ import {
   calculatePitangueiraJourney, planPostSemeadura, sumVerifiedPersonalSeeds,
 } from '../shared/pitangueiraJourney';
 import {planSeedAllowanceDebit,planReputationSeedGrant,projectSeedAllowance} from '../shared/semeaduraReserve';
+import {KAIRUBIDO_EQUIPMENT,projectKairubidoEvolution} from '../shared/kairubidoEvolution';
 import { PITANGAS_PER_XP } from '../shared/pitangaXpConversion';
 
 test('one tree earns exactly one Pitanga equivalent and 100 trees form one bosque', () => {
@@ -117,4 +118,19 @@ test('daily allowance is consumed before reputation reserve; rollover preserves 
  assert.throws(()=>projectSeedAllowance(0,{earned:1,spent:2}),/RESERVE_INVALID/);
  assert.throws(()=>planReputationSeedGrant(reserve,0),/RESERVE_INVALID/);
  assert.throws(()=>planReputationSeedGrant({earned:Number.MAX_SAFE_INTEGER,spent:0},1),/RESERVE_INVALID/);
+});
+
+test('cosmetic Kairubido equipment is a projection of canonical XP, not a new ledger',()=>{
+ const policy=KAIRUBIDO_EQUIPMENT.map((equipment,i)=>({equipment,minimumXp:i*2}));
+ assert.deepEqual(projectKairubidoEvolution(0,policy).unlocked,['arco_e_flecha']);
+ assert.deepEqual(projectKairubidoEvolution(3,policy),{xp:3,level:2,unlocked:['arco_e_flecha','bracelete'],next:{equipment:'colar',minimumXp:4,remainingXp:1}});
+ assert.deepEqual(projectKairubidoEvolution(12,policy).unlocked,[...KAIRUBIDO_EQUIPMENT]);
+ assert.equal(projectKairubidoEvolution(12,policy).next,null);
+ assert.throws(()=>projectKairubidoEvolution(null,policy),/EVOLUTION_INVALID/);
+ assert.throws(()=>projectKairubidoEvolution(-1,policy),/EVOLUTION_INVALID/);
+ assert.throws(()=>projectKairubidoEvolution(0,[...policy].reverse()),/EVOLUTION_INVALID/);
+ assert.throws(()=>projectKairubidoEvolution(0,policy.map(m=>({...m,minimumXp:0}))),/EVOLUTION_INVALID/);
+ const panel=readFileSync('src/components/KairubidoEvolutionPanel.tsx','utf8');
+ assert.match(panel,/VITE_KAIRUBIDO_EVOLUTION_PREVIEW==='true'/);
+ assert.doesNotMatch(panel,/fetch\(|setDoc\(|addDoc\(|runTransaction\(/);
 });
