@@ -4,6 +4,7 @@ import {getApps,initializeApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {createHash,timingSafeEqual} from 'node:crypto';
+import {PRIVACY_ASSESSMENT_FINDINGS,type PrivacyAssessmentFinding} from '../../shared/privacyRightsAssessment.js';
 import {normalizePrivacyRequest} from '../../shared/privacyRights.js';
 import {preparePrivacyRequest,projectPrivacyReceipt,type PrivacyRequestRecord} from './privacyRightsPolicy.js';
 export const PRIVACY_EMULATOR_PROJECT='demo-kyrub-privacy';
@@ -91,7 +92,7 @@ export function createPrivacyRightsEmulator(){
     if(!a||a.protocol!==protocol||a.simulation!==true||a.revokedAt!==undefined||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||a.expiresAt-a.createdAt>PRIVACY_TRACKING_TTL_MS||!equal(a.digest,hash(code)))return deny();
     if(!r||r.protocol!==protocol||r.simulation!==true||r.status!=='received'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed'||!validTime(r.receivedAt)||r.receivedAt!==a.createdAt||!['pending-review','verification-required'].includes(r.triageStatus))return deny();
     // Status only: no draft, channel reference, identity or personal data.
-    return {protocol,receivedAt:r.receivedAt,evidenceStatus:r.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:r.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
+    return {protocol,receivedAt:r.receivedAt,...(typeof r.assessmentFinding==='string'&&Object.hasOwn(PRIVACY_ASSESSMENT_FINDINGS,r.assessmentFinding)?{assessmentFinding:r.assessmentFinding as PrivacyAssessmentFinding}:{}),evidenceStatus:r.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:r.evidenceStatus==='cid-control-confirmed'?'cid-control-confirmed' as const:'awaiting-evidence' as const,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
    });
   },
   async revokeTracking(protocol:string,code:string,now:number){
