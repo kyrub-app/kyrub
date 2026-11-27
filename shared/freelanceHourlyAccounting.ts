@@ -22,25 +22,7 @@ export function calculateFreelanceHourlyAccounting(input:{
  if(!terms||terms.mode!=='hourly'||terms.location!==input.schedule.location||terms.estimatedMinutes!==input.schedule.agreedMinutes||
  !Array.isArray(input.extensions)||input.extensions.length>64)return fail();
  const projection=projectFreelanceAttendance(input.schedule,input.events);
- let authorizedMinutes=terms.estimatedMinutes,lastAccepted=-Infinity;
- const ids=new Set<string>();
- for(const e of input.extensions){
-  if(!e||typeof e!=='object'||Object.keys(e).length!==6||typeof e.id!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(e.id)||ids.has(e.id)||
-  !Number.isSafeInteger(e.extraMinutes)||e.extraMinutes<1||e.extraMinutes>FREELANCE_MAX_ESTIMATED_MINUTES-authorizedMinutes||
-  !['worker','requester'].includes(e.proposedBy)||!['worker','requester'].includes(e.acceptedBy)||e.proposedBy===e.acceptedBy||
-  !iso(e.proposedAt)||!iso(e.acceptedAt))return fail();
-  const proposed=Date.parse(e.proposedAt),accepted=Date.parse(e.acceptedAt);
-  if(proposed<lastAccepted||accepted<proposed)return fail();
-  // Strictly earlier timeline entries establish the state at each authorization.
-  // Same-timestamp boundary events are rejected conservatively until a unified sequence exists.
-  if(input.events.some(event=>event.at===e.proposedAt||event.at===e.acceptedAt))return fail();
-  for(const at of [e.proposedAt,e.acceptedAt]){
-   const prefix=input.events.filter(event=>Date.parse(event.at)<Date.parse(at));
-   const before=projectFreelanceAttendance(input.schedule,prefix,at);
-   if(!['working','waiting','paused'].includes(before.status)||before.elapsedCompensableMs>=authorizedMinutes*60000)return fail();
-  }
-  ids.add(e.id);authorizedMinutes+=e.extraMinutes;lastAccepted=accepted;
- }
+ const authorizedMinutes=validateFreelanceExtensions(input.schedule,input.events,input.extensions);
  const authorizedMs=authorizedMinutes*60000;
  const authorizedCapMinor=price(terms.hourlyRateMinor,authorizedMs);
  const recordedMs=projection.compensableMs;
@@ -52,4 +34,30 @@ export function calculateFreelanceHourlyAccounting(input:{
  compensableMs:recordedMs,excessMs,withinCapReferenceMinor,
  calculatedServiceMinor:status==='calculated'?withinCapReferenceMinor:null,status,
  bankVerified:false as const,settlement:'not_verified' as const};
+}
+
+/** Shared authorization validation for fixed and hourly schedules. */
+export function validateFreelanceExtensions(schedule:FreelanceAttendanceSchedule,events:readonly FreelanceAttendanceEvent[],extensions:readonly FreelanceHourlyExtension[]){
+ projectFreelanceAttendance(schedule,events);
+ if(!Array.isArray(extensions)||extensions.length>64)return fail();
+ let authorizedMinutes=schedule.agreedMinutes,lastAccepted=-Infinity;
+ const ids=new Set<string>();
+ for(const e of extensions){
+  if(!e||typeof e!=='object'||Object.keys(e).length!==6||typeof e.id!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(e.id)||ids.has(e.id)||
+  !Number.isSafeInteger(e.extraMinutes)||e.extraMinutes<1||e.extraMinutes>FREELANCE_MAX_ESTIMATED_MINUTES-authorizedMinutes||
+  !['worker','requester'].includes(e.proposedBy)||!['worker','requester'].includes(e.acceptedBy)||e.proposedBy===e.acceptedBy||
+  !iso(e.proposedAt)||!iso(e.acceptedAt))return fail();
+  const proposed=Date.parse(e.proposedAt),accepted=Date.parse(e.acceptedAt);
+  if(proposed<lastAccepted||accepted<proposed)return fail();
+  // Strictly earlier timeline entries establish the state at each authorization.
+  // Same-timestamp boundary events are rejected conservatively until a unified sequence exists.
+  if(events.some(event=>event.at===e.proposedAt||event.at===e.acceptedAt))return fail();
+  for(const at of [e.proposedAt,e.acceptedAt]){
+   const prefix=events.filter(event=>Date.parse(event.at)<Date.parse(at));
+   const before=projectFreelanceAttendance(schedule,prefix,at);
+   if(!['working','waiting','paused'].includes(before.status)||before.elapsedCompensableMs>=authorizedMinutes*60000)return fail();
+  }
+  ids.add(e.id);authorizedMinutes+=e.extraMinutes;lastAccepted=accepted;
+ }
+ return authorizedMinutes;
 }
