@@ -15,11 +15,10 @@ import {chromium} from 'playwright';
 import {assertPrivacyEmulator,PRIVACY_EMULATOR_PROJECT} from '../server/governance/privacyRightsEmulator.ts';
 import {PRIVACY_CID_ORIGIN as origin} from '../server/governance/privacyCidEvidenceEmulator.ts';
 import {createPrivacyHttpEmulatorHandler} from '../server/governance/privacyHttpEmulator.ts';
-import {createPrivacyRightsAdminEmulator} from '../server/governance/privacyRightsAdminEmulator.ts';
 import {isolatedTagPasskeyScope,issueTagPasskeyChallenge} from '../server/identity/kyrubTagPasskeyPolicy.ts';
 import {tagRegistrationOptions,verifyTagRegistration} from '../server/identity/kyrubTagPasskeyVerifier.ts';
 const random=()=>randomBytes(32).toString('base64url'),hash=s=>createHash('sha256').update(s).digest('hex');
-test('privacy central: CID request, real virtual WebAuthn, independent review and private tracking',{timeout:180000},async()=>{
+test('privacy central: CID request, virtual WebAuthn, separate operator browsers and private tracking',{timeout:180000},async()=>{
  assertPrivacyEmulator();
  const app=initializeApp({projectId:PRIVACY_EMULATOR_PROJECT},'privacy-browser-fixtures'),db=getFirestore(app),auth=getAuth(app);
  const folder=mkdtempSync(join(tmpdir(),'privacy-browser-')),key=join(folder,'key.pem'),cert=join(folder,'cert.pem');
@@ -35,7 +34,7 @@ test('privacy central: CID request, real virtual WebAuthn, independent review an
    const response=await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,returnSecureToken:true})});
    assert.equal(response.status,200);return (await response.json()).idToken;
   }
-  const adminToken=await operator('privacy-browser-admin',['privacy:read','privacy:triage','privacy:assess','privacy:prepare-response']),reviewerToken=await operator('privacy-browser-reviewer',['privacy:read','privacy:review-response']);
+  const adminToken=await operator('privacy-browser-admin',['privacy:read','privacy:triage','privacy:assess','privacy:prepare-response','privacy:review-response']),reviewerToken=await operator('privacy-browser-reviewer',['privacy:read','privacy:review-response']);
   execFileSync('openssl',['req','-x509','-newkey','rsa:2048','-nodes','-keyout',key,'-out',cert,'-days','1','-subj','/CN='+host,'-addext','subjectAltName=DNS:'+host],{stdio:'ignore'});
   const out=join(folder,'dist');
   await viteBuild({configFile:false,publicDir:false,plugins:[tailwindcss()],esbuild:{jsx:'automatic'},build:{outDir:out,emptyOutDir:true,rollupOptions:{input:resolve('tests/fixtures/privacy-browser.html')}}});
@@ -56,7 +55,15 @@ test('privacy central: CID request, real virtual WebAuthn, independent review an
    await page.goto(origin+'/privacy-test');await page.waitForFunction(()=>typeof window.privacyTestMount==='function');
    return {ctx,page};
   }
-  const owner=await device(),other=await device(),p=owner.page;
+  const owner=await device(),other=await device(),preparer=await device(),reviewer=await device(),p=owner.page;
+  async function mountOperator(device,uid,token,role='compliance'){
+   const profile={uid,role,status:'active',email:uid+'@example.invalid',displayName:'Operador fictício',createdBy:'fixture',createdAt:'',updatedAt:'',suspendedAt:'',revokedAt:''};
+   await device.page.evaluate(({profile,token})=>window.privacyTestMountAdmin(profile,token),{profile,token});
+  }
+  await mountOperator(preparer,'privacy-browser-admin',adminToken);
+  await mountOperator(reviewer,'privacy-browser-reviewer',reviewerToken);
+  for(const device of [preparer,reviewer]){await device.page.getByRole('heading',{name:'Governança e Compliance'}).click();await device.page.getByRole('button',{name:'Consultar fila'}).waitFor();}
+  const a=preparer.page,b=reviewer.page;
   const cdp=await owner.ctx.newCDPSession(p);
   await cdp.send('WebAuthn.enable');
   await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
@@ -78,8 +85,10 @@ test('privacy central: CID request, real virtual WebAuthn, independent review an
   const protocol=requests.docs[0].id;
   await p.getByRole('button',{name:'Exibir código privado'}).click();
   const code=await p.getByLabel('Código privado de acompanhamento').inputValue();
-  const admin=createPrivacyRightsAdminEmulator();
-  await admin.markVerificationRequired(adminToken,{protocol,expectedRevision:0},Date.now());
+  await a.getByRole('button',{name:'Consultar fila'}).click();
+  await a.getByRole('button',{name:'Solicitar verificação'}).click();
+  await a.getByText('Verificação requerida · Aguardando comprovação').waitFor();
+  assert.equal((await requests.docs[0].ref.get()).get('revision'),1);
   async function track(page,secret){
    await page.getByRole('button',{name:'Acompanhar',exact:true}).click();
    await page.getByLabel('Protocolo',{exact:true}).fill(protocol);
@@ -94,9 +103,33 @@ test('privacy central: CID request, real virtual WebAuthn, independent review an
   await p.getByText('Controle do CID confirmado. Análise de identidade pendente.').waitFor();
   const evidence=(await db.collection('privacy_emulator_identity_evidence').doc(protocol).get()).data();
   assert.equal(evidence.authorizesExecution,false);assert.equal(evidence.kind,'cid-passkey-control');
-  await admin.assess(adminToken,{protocol,expectedRevision:0,finding:'ready-for-fulfillment-review',reason:'Exercício fictício'},Date.now());
-  await admin.prepareResponse(adminToken,{protocol,expectedAssessmentRevision:1},Date.now());
-  await admin.reviewResponse(reviewerToken,{protocol,expectedAssessmentRevision:1,expectedResponseRevision:1,decision:'approve'},Date.now());
+  await a.getByRole('button',{name:'Consultar fila'}).click();
+  await a.getByText('Verificação requerida · Controle de credencial comprovado').waitFor();
+  await a.getByRole('button',{name:'Registrar parecer'}).click();
+  await a.getByLabel('Parecer',{exact:true}).selectOption('ready-for-fulfillment-review');
+  assert.equal(await a.getByRole('button',{name:'Confirmar parecer'}).isDisabled(),true);
+  await a.getByLabel('Justificativa fictícia (sem dados pessoais)').fill('Exercício fictício');
+  await a.getByRole('button',{name:'Confirmar parecer'}).click();
+  await a.getByRole('button',{name:'Preparar aviso'}).click();
+  await a.getByText('Aviso: rascunho').waitFor();
+  const record=db.collection('privacy_emulator_responses').doc(protocol+'_1');
+  // Same actor has the review grant but cannot approve its own draft.
+  await a.getByRole('button',{name:'Aprovar aviso'}).click();
+  await a.getByText('Não foi possível confirmar a operação.',{exact:false}).waitFor();
+  assert.equal((await record.get()).get('status'),'draft');
+  await b.getByRole('button',{name:'Consultar fila'}).click();
+  await b.getByRole('button',{name:'Aprovar aviso'}).waitFor();
+  const grant=db.doc('kyrub_admin/control_plane/privacy_rights_grants/privacy-browser-reviewer');
+  await grant.update({status:'revoked'});
+  await b.getByRole('button',{name:'Aprovar aviso'}).click();
+  await b.getByText('Não foi possível confirmar a operação.',{exact:false}).waitFor();
+  assert.equal((await record.get()).get('status'),'draft');
+  await grant.update({status:'active'});
+  await b.getByRole('button',{name:'Consultar fila'}).click();
+  await b.getByRole('button',{name:'Aprovar aviso'}).click();
+  await b.getByText('Aviso: revisado').waitFor();
+  const reviewed=(await record.get()).data();
+  assert.equal(reviewed.preparedBy,'privacy-browser-admin');assert.equal(reviewed.reviewedBy,'privacy-browser-reviewer');assert.equal(reviewed.delivered,false);
   await p.getByRole('button',{name:'Consultar andamento'}).click();
   await p.getByText('Sua solicitação foi encaminhada para preparação do atendimento.',{exact:false}).waitFor();
   assert.equal((await requests.docs[0].ref.get()).get('actionStatus'),'not-executed');
@@ -104,7 +137,13 @@ test('privacy central: CID request, real virtual WebAuthn, independent review an
   await p.getByRole('button',{name:'Revogar código'}).click();
   await p.getByText('Código de acompanhamento revogado na homologação.',{exact:false}).waitFor();
   assert.equal((await requests.docs[0].ref.get()).exists,true);
-  assert.equal(await p.evaluate(()=>localStorage.length+sessionStorage.length),0);
+  for(const device of [owner,other,preparer,reviewer]){
+   assert.equal(await device.page.evaluate(()=>localStorage.length+sessionStorage.length),0);
+   assert.equal((await device.ctx.cookies()).length,0);
+  }
+  await mountOperator(other,'privacy-browser-reviewer',reviewerToken,'support');
+  await other.page.getByRole('region',{name:'Central de Privacidade'}).waitFor({state:'detached'});
+  assert.equal(await other.page.getByRole('heading',{name:'Governança e Compliance'}).count(),0);
   assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  }finally{await browser?.close();if(server)await new Promise(r=>server.close(r));rmSync(folder,{recursive:true,force:true});for(const a of getApps().filter(a=>a.name.startsWith('privacy-')))await deleteApp(a);}
 });
