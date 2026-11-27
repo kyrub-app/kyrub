@@ -123,3 +123,70 @@ test('HTTP occurrence freezes contract; administrative authority requires recent
  assert.equal((await db.doc('freelanceOffersV1/'+offerId).get()).get('status'),'under_review');
  console.log('PASS freelance HTTP: occurrence, response, freeze, refusal without MFA; positive MFA not covered');
 });
+
+
+test('administrative transaction: role, synthetic MFA claim policy, resume, cancellation, replay and audit',async t=>{
+ const owner=await account('admin-test-owner',['requester']),worker=await account('admin-test-worker',['freelancer']),admin=await account('admin-test-reviewer',[]),inactive=await account('admin-test-inactive',[]);
+ const role=(uid:string)=>db.doc('kyrub_admin/control_plane/admins/'+uid);
+ await Promise.all([role(admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'}),role(owner.uid).set({uid:owner.uid,role:'super_admin',status:'active'}),role(inactive.uid).set({uid:inactive.uid,role:'super_admin',status:'inactive'})]);
+ const offerId='http-admin-'+suffix,first='http-admin-resume-'+suffix,second='http-admin-cancel-'+suffix;
+ await act(owner,offerId,'publish',200,{terms:{title:'Decisão fictícia',description:'Teste administrativo isolado',requirements:'',paymentMinor:24000}});
+ await act(worker,offerId,'apply');await act(owner,offerId,'select',200,{applicantUid:worker.uid});
+ await act(worker,offerId,'confirm',200,{confirmed:true});
+ await confirmSimulatedFreelanceFunding(offerId,'http-admin-payment-'+suffix,24000,owner.uid,worker.uid);
+ await act(worker,offerId,'start',200,{confirmed:true});
+ await act(worker,offerId,'report',200,{confirmed:true,kind:'service_disputed',occurrenceId:first});
+ const authz=(a:Actor)=>'Bearer '+a.token;
+ const reason='Fundamentação fictícia para teste';
+ const decision=(occurrenceId:string,outcome:'resume'|'cancel')=>({offerId,occurrenceId,outcome,reason,confirmed:true});
+ await assert.rejects(decideFreelanceReview(authz(admin),decision(first,'resume')),/second_factor_required/);
+ // Test-only seam: original verifier must accept the emulator token first.
+ // Synthetic TOTP claim tests policy + real database transactions, NOT actual MFA login/enrollment.
+ const original=auth.verifyIdToken.bind(auth);
+ const fixtures=new Set([admin.token,owner.token,inactive.token]);
+ let stale=false;
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+   const decoded=await original(token,checkRevoked);
+   if(!fixtures.has(token))return decoded;
+   assert.equal(checkRevoked,true);
+   return {...decoded,auth_time:Math.floor(Date.now()/1000)-(stale?301:0),firebase:{...decoded.firebase,sign_in_second_factor:'totp'}};
+ });
+ try{
+   stale=true;
+   await assert.rejects(listFreelanceReviews(authz(admin),undefined),/reauthentication_required/);
+   stale=false;
+   await assert.rejects(listFreelanceReviews(authz(inactive),undefined),/FORBIDDEN/);
+   const queue=await listFreelanceReviews(authz(admin),undefined);
+   assert.ok(queue.items.some(a=>a.offerId===offerId&&a.canResume===false&&a.canDecide===true));
+   const self=await listFreelanceReviews(authz(owner),undefined);
+   assert.ok(self.items.some(a=>a.offerId===offerId&&a.canDecide===false));
+   await assert.rejects(decideFreelanceReview(authz(owner),decision(first,'cancel')),/FREELANCE_FORBIDDEN/);
+   await assert.rejects(decideFreelanceReview(authz(admin),decision(first,'resume')),/FREELANCE_CONFLICT/);
+   await act(owner,offerId,'respond',200,{confirmed:true,position:'agree',occurrenceId:first});
+   const resumes=await Promise.all([decideFreelanceReview(authz(admin),decision(first,'resume')),decideFreelanceReview(authz(admin),decision(first,'resume'))]);
+   assert.deepEqual(resumes.map(x=>x.replay).sort(),[false,true]);
+   const ref=db.doc('freelanceOffersV1/'+offerId);
+   assert.equal((await ref.get()).get('status'),'in_progress');
+   assert.equal((await ref.collection('financialBasis').get()).size,0);
+   await act(worker,offerId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:second});
+   const cancels=await Promise.all([decideFreelanceReview(authz(admin),decision(second,'cancel')),decideFreelanceReview(authz(admin),decision(second,'cancel'))]);
+   assert.deepEqual(cancels.map(x=>x.replay).sort(),[false,true]);
+   assert.equal((await ref.get()).get('status'),'cancelled');
+   assert.equal((await ref.collection('applications').doc(worker.uid).get()).get('status'),'cancelled');
+   const basis=await ref.collection('financialBasis').get();
+   assert.equal(basis.size,1);assert.equal(basis.docs[0].get('agreedMinor'),24000);
+   assert.equal(basis.docs[0].get('confirmedServiceMinor'),null);
+   assert.equal(basis.docs[0].get('settlement'),'not_verified');
+   assert.equal(basis.docs[0].get('sourceOccurrenceId'),second);
+   const audits=await db.collection('kyrub_admin/control_plane/audit_logs').where('targetId','==',offerId).get();
+   assert.equal(audits.size,2);
+   assert.deepEqual(audits.docs.map(d=>d.get('outcome')).sort(),['cancel','resume']);
+   assert.ok(audits.docs.every(d=>d.get('actorId')===admin.uid&&d.get('actorRole')==='super_admin'));
+   await assert.rejects(decideFreelanceReview(authz(admin),{...decision(second,'cancel'),reason:'Outra fundamentação fictícia'}),/FREELANCE_CONFLICT/);
+   const earnings=await call(worker,'?view=earnings',200);
+   assert.equal(earnings.reviewCount,1);assert.equal(earnings.receivedMinor,null);
+   assert.ok(!(await listFreelanceReviews(authz(admin),undefined)).items.some(a=>a.offerId===offerId));
+   console.log('PASS admin transaction with synthetic TOTP claim: role, recent session, resume, cancel, replay, audit; genuine TOTP login NOT tested');
+ }finally{t.mock.restoreAll();}
+ await assert.rejects(listFreelanceReviews(authz(admin),undefined),/second_factor_required/);
+});

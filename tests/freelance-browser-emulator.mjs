@@ -51,7 +51,7 @@ async function session(actor,width){
  assert.deepEqual(identity,{uid:actor.uid,auth:project,db:project,storage:project});
  await page.reload({waitUntil:'domcontentloaded'});
  await page.locator('#btn-solicitar-freela').waitFor({state:'visible',timeout:30000});
- assert.equal((await page.locator('#btn-fazer-freela').innerText()).trim(),'Fazer freela','Candidate must not show an unverified local vacancy count');
+ assert.equal((await page.locator('#btn-fazer-freela').innerText()).trim().toLocaleLowerCase('pt-BR'),'fazer freela','Candidate must not show an unverified local vacancy count');
  return page;
 }
 const waitText=(root,text)=>root.getByText(text,{exact:false}).first().waitFor({state:'visible',timeout:20000});
@@ -90,6 +90,7 @@ async function detail(modal,tab){
  // Inner locator must be relative to the article, not include the enclosing dialog.
  const article=modal.locator('article').filter({has:page.getByRole('heading',{name:title,exact:true})}).first();
  await article.waitFor({state:'visible',timeout:20000});
+ console.log('PASS browser list and visible offer:',tab);
  const details=page.waitForResponse(r=>r.url().includes('/api/freelance/workspace?view=detail&offerId=')&&r.request().method()==='GET',{timeout:20000});
  await button(article,'Ver detalhes').click();
  const read=await details;
