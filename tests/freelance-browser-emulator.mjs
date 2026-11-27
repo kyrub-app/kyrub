@@ -428,18 +428,25 @@ try{
  const adminPanel=section.locator('#admin-freelance-financial-review-workspace');
  await button(adminPanel,'Consultar divergências').click();
  await waitText(adminPanel,'Entre com autenticação multifator');
+ const cancelPanel=section.locator('#admin-freelance-cancellation-review');
+ await button(cancelPanel,'Consultar cancelamentos').click();await waitText(cancelPanel,'Entre com autenticação multifator');
  // UI-only fixture: real endpoint denied without genuine MFA above. Do not
  // forge claims or alter server authorization to demonstrate rendering.
  const {sanitizeReceiptPng}=await import('../server/freelance/freelanceReceiptPng.ts');
  const png=sanitizeReceiptPng(receiptFixture()),now=new Date().toISOString();
  const item={offerId:directId,title:directTitle,amountMinor:15000,currency:'BRL',timing:'advance',requestedAt:now,requestedByRole:'freelancer',requesterUid:fp.uid,beneficiaryUid:fw.uid,restrictionActive:true,bankVerified:false,settlementEvidence:'participant_statements_only',statements:[{role:'requester',statement:'paid',recordedAt:now},{role:'freelancer',statement:'not_received',recordedAt:now}],evidenceRevision:2,evidenceNotes:[{role:'freelancer',note:'Nota privada fictícia.',recordedAt:now}],receipts:[{id:'fixture-png',role:'requester',recordedAt:now,size:png.bytes.length,mimeType:'image/png'}]};
+ const cancelItem={offerId:'cancel-review-'+suffix,title:'Cancelamento horário fictício',sourceDigest:'a'.repeat(64),requestedAt:now,capMinor:12000,referenceMinor:7000,recordedMs:12600000,excessMs:0,proposal:{id:'p1',recognizedServiceMinor:7000,proposedBy:'worker',status:'declined'},bankVerified:false};
+ let cancelPosts=0;
  let posts=0;
  await adminPage.route('**/api/admin/freelance-financial-review**',async route=>{
   const req=route.request(),u=new URL(req.url());
   if(req.method()==='POST'){
-   const b=req.postDataJSON();assert.equal(b.offerId,directId);assert.equal(b.expectedEvidenceRevision,2);assert.equal(b.expectedRequestedAt,now);assert.equal(b.confirmed,true);assert.equal(b.outcome,'inconclusive');
+   const b=req.postDataJSON();
+   if(b.action==='decide_hourly_cancellation'){assert.deepEqual(b,{action:'decide_hourly_cancellation',offerId:cancelItem.offerId,sourceDigest:cancelItem.sourceDigest,expectedRequestedAt:now,recognizedServiceMinor:7000,reason:'Fundamentação fictícia do cancelamento.',confirmed:true});cancelPosts++;await route.fulfill({status:cancelPosts===1?409:200,json:cancelPosts===1?{code:'FREELANCE_FINANCIAL_REVIEW_CONFLICT'}:{status:'resolved_administratively',replay:false,bankVerified:false}});return;}
+   assert.equal(b.offerId,directId);assert.equal(b.expectedEvidenceRevision,2);assert.equal(b.expectedRequestedAt,now);assert.equal(b.confirmed,true);assert.equal(b.outcome,'inconclusive');
    posts++;await route.fulfill({status:posts===1?409:200,json:posts===1?{code:'FREELANCE_FINANCIAL_REVIEW_CONFLICT'}:{status:'resolved_administratively',outcome:'inconclusive',replay:false,bankVerified:false}});return;
   }
+  if(u.searchParams.get('view')==='hourly_cancellation'){await route.fulfill({status:200,json:{items:[cancelItem],nextCursor:null}});return;}
   await route.fulfill({status:200,json:u.searchParams.get('view')==='receipt'?{id:'fixture-png',mimeType:'image/png',pngBase64:png.bytes.toString('base64'),bankVerified:false}:{items:[item],nextCursor:null}});
  });
  async function prepareDecision(){
@@ -455,6 +462,19 @@ try{
  await prepareDecision();await waitText(adminPanel,'Consulte novamente antes de decidir');
  await prepareDecision();await waitText(adminPanel,'Decisão administrativa registrada.');
  assert.equal(posts,2);
+ async function prepareCancellationDecision(){
+  await button(cancelPanel,'Consultar cancelamentos').click();await button(cancelPanel,'Analisar cancelamento').click();
+  await waitText(cancelPanel,'Tempo registrado: 210 min');
+  const submit=button(cancelPanel,'Registrar decisão de cancelamento');assert.equal(await submit.isDisabled(),true);
+  await cancelPanel.getByLabel('Valor reconhecido (R$)',{exact:true}).fill('120,01');
+  await cancelPanel.getByLabel('Fundamentação do cancelamento').fill('Fundamentação fictícia do cancelamento.');
+  await cancelPanel.getByLabel('Confirmo o valor e a decisão fundamentada.').check();assert.equal(await submit.isDisabled(),true);
+  await cancelPanel.getByLabel('Valor reconhecido (R$)',{exact:true}).fill('70,00');assert.equal(await submit.isDisabled(),true);
+  await cancelPanel.getByLabel('Confirmo o valor e a decisão fundamentada.').check();await submit.click();
+ }
+ await prepareCancellationDecision();await waitText(cancelPanel,'Consulte novamente antes de decidir.');
+ await prepareCancellationDecision();await waitText(cancelPanel,'Decisão de cancelamento registrada.');assert.equal(cancelPosts,2);
+ await adminPage.screenshot({path:'freelance-browser-evidence/admin-hourly-cancellation-review.png',fullPage:true});
  await adminPage.screenshot({path:'freelance-browser-evidence/admin-financial-review.png',fullPage:true});
  console.log('PASS admin financial UI: actual MFA denial; isolated intercepted fixture for receipt preview, stale revision and confirmation; no real decision from UI');
  // Prepare only the administrative cancellation in the isolated emulator.
