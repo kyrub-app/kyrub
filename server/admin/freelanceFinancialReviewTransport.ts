@@ -1,15 +1,21 @@
-import {financialReviewAdminEnabled,listFreelanceFinancialReviews} from './freelanceFinancialReviewService.js';
-type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>};
+import {financialReviewAdminEnabled,listFreelanceFinancialReviews,decideFreelanceFinancialReview} from './freelanceFinancialReviewService.js';
+type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
 export async function handleFreelanceFinancialReview(req:Request,res:Response){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
  res.setHeader('X-Content-Type-Options','nosniff');
  try{if(!financialReviewAdminEnabled())throw Error('DISABLED');}catch{res.status(503).json({code:'FREELANCE_FINANCIAL_REVIEW_DISABLED'});return;}
- if(req.method!=='GET'){res.setHeader('Allow','GET');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;}
+ if(req.method!=='GET'&&req.method!=='POST'){res.setHeader('Allow','GET, POST');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;}
  const h=req.headers.authorization;
  if(typeof h!=='string'||h.length>8199||!/^Bearer [^\s]+$/i.test(h)){res.status(401).json({code:'AUTH_REQUIRED'});return;}
- if(Object.keys(req.query??{}).some(k=>k!=='cursor')){res.status(400).json({code:'FREELANCE_INVALID'});return;}
- try{res.status(200).json(await listFreelanceFinancialReviews(h,req.query?.cursor));}
+ if(Object.keys(req.query??{}).some(k=>req.method==='POST'||k!=='cursor')){res.status(400).json({code:'FREELANCE_INVALID'});return;}
+ try{
+  if(req.method==='GET'){res.status(200).json(await listFreelanceFinancialReviews(h,req.query?.cursor));return;}
+  const media=req.headers['content-type'];
+  if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
+  if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>8192){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
+  res.status(200).json(await decideFreelanceFinancialReview(h,req.body));
+ }
  catch(e){
   const code=e instanceof Error?e.message:'';
   const status=['second_factor_required','reauthentication_required','FORBIDDEN','FREELANCE_FORBIDDEN'].includes(code)?403:

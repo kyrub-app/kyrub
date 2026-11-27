@@ -52,9 +52,22 @@ export async function prepareVoluntaryDisputeRestriction(tx:FirebaseFirestore.Tr
 }
 
 /** Server-only consistency check; a missing bilateral restriction is not a valid pending review. */
-export async function assertFinancialCaseRestrictions(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation){
+export async function assertFinancialCaseRestrictions(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,expected=true){
  assertLocal();
  const ids=[obligation.requesterUid,obligation.beneficiaryUid];
  const docs=await tx.getAll(...ids.map(root));
- if(docs.some((d,i)=>!readIds(d.data(),ids[i]).includes(obligation.offerId)))throw Error('FREELANCE_RESTRICTION_CONFLICT');
+ if(docs.some((d,i)=>readIds(d.data(),ids[i]).includes(obligation.offerId)!==expected))throw Error('FREELANCE_RESTRICTION_CONFLICT');
+}
+
+/** Only the authorized administrative decision transaction may invoke this closure.
+ * Remove this specific case, never the user's entire restriction record. */
+export async function prepareAdministrativeDisputeRelease(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation){
+ assertLocal();
+ const ids=[obligation.requesterUid,obligation.beneficiaryUid],refs=ids.map(root),docs=await tx.getAll(...refs);
+ const updates=docs.map((d,i)=>{
+  const open=readIds(d.data(),ids[i]);
+  if(!open.includes(obligation.offerId))throw Error('FREELANCE_RESTRICTION_CONFLICT');
+  return {schemaVersion:1,uid:ids[i],openOfferIds:open.filter(id=>id!==obligation.offerId)};
+ });
+ return ()=>{for(let i=0;i<refs.length;i++)tx.set(refs[i],updates[i]);};
 }
