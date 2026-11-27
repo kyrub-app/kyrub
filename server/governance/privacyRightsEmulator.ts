@@ -47,7 +47,8 @@ export function createPrivacyRightsEmulator(){
     const bucket=Math.floor(now/900000),count=q.get('bucket')===bucket?q.get('count'):0;
     if(!Number.isSafeInteger(count)||count<0||count>=5)return deny();
     const record=preparePrivacyRequest(draft,{reference:credential.id,verifiedAt:c.verifiedAt},now);
-    tx.create(requests.doc(record.protocol),{...record,revision:0,triageStatus:'pending-review'});
+    const boundAccountUid=draft.context==='ecosystem'&&typeof c.boundAccountUid==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(c.boundAccountUid)?c.boundAccountUid:null;
+    tx.create(requests.doc(record.protocol),{...record,revision:0,triageStatus:'pending-review',boundAccountUid});
     tx.create(index.doc(key),{channelReference:credential.id,protocol:record.protocol,payloadDigest:digest});
     tx.set(q.ref,{bucket,count:count+1});
     const trackingExpiresAt=now+PRIVACY_TRACKING_TTL_MS;
@@ -69,7 +70,7 @@ export function createPrivacyRightsEmulator(){
     const a=t.data(),r=s.data();
     if(!a||a.protocol!==protocol||a.simulation!==true||a.revokedAt!==undefined||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||a.expiresAt-a.createdAt>PRIVACY_TRACKING_TTL_MS||!equal(a.digest,hash(code))||!r||r.protocol!==protocol||r.simulation!==true||r.status!=='received'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed'||r.triageStatus!=='verification-required'||r.revision!==1||r.receivedAt!==a.createdAt||!opaque(r.channelReference)||normalizePrivacyRequest(r.draft).context!=='ecosystem')return deny();
     const c=(await tx.get(channels.doc(r.channelReference))).data();
-    if(!c||c.id!==r.channelReference||c.simulation!==true||c.revokedAt!==undefined||c.boundAccountUid!==identity.uid||!validTime(c.verifiedAt)||c.verifiedAt>r.receivedAt)return deny();
+    if(!c||c.id!==r.channelReference||c.simulation!==true||c.revokedAt!==undefined||c.boundAccountUid!==identity.uid||r.boundAccountUid!==identity.uid||!validTime(c.verifiedAt)||c.verifiedAt>r.receivedAt)return deny();
     const proofRef=db.collection('privacy_emulator_identity_evidence').doc(protocol),prior=(await tx.get(proofRef)).data();
     if(prior){
      if(prior.protocol!==protocol||prior.accountUid!==identity.uid||prior.simulation!==true||prior.kind!=='existing-account-control')return deny();
