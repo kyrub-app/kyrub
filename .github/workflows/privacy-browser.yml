@@ -1,0 +1,39 @@
+name: Privacy isolated Chromium
+on:
+  pull_request:
+    paths:
+      - 'src/components/KyrubPrivacy*.tsx'
+      - 'src/utils/privacyHomologationHttpClient.ts'
+      - 'server/governance/privacy*.ts'
+      - 'server/identity/kyrubTagPasskey*.ts'
+      - 'tests/privacy-browser.test.mjs'
+      - 'tests/fixtures/privacy-browser.*'
+      - '.github/workflows/privacy-browser.yml'
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - name: Verify CID privacy journey in local Chromium
+        env:
+          KYRUB_PRIVACY_EMULATOR: 'true'
+          GCLOUD_PROJECT: demo-kyrub-privacy
+          FIREBASE_PROJECT_ID: demo-kyrub-privacy
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-privacy --only firestore,auth "node --test --test-concurrency=1 --import tsx tests/privacy-browser.test.mjs"
