@@ -1,3 +1,4 @@
+import FreelaPixWithdrawal from './FreelaPixWithdrawal';
 import FreelaHourlyExcessReview from './FreelaHourlyExcessReview';
 import FreelaHourlyCancellationAgreement from './FreelaHourlyCancellationAgreement';
 import {useEffect,useRef,useState} from 'react';
@@ -71,13 +72,15 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
  };
  const paused=['under_review','cancelled'].includes(data?.operationalStatus??operationalStatus??'')&&!(data?.amountMode==='hourly_final'&&data.operationalStatus==='cancelled'&&data.due);
  const paid=data?.statements.some(s=>s.statement==='paid'),received=data?.statements.some(s=>s.statement==='received'),denied=data?.statements.some(s=>s.statement==='not_received');
+ const showPix=!busy&&!paused&&!paid&&!received&&!data?.reviewStatus&&(workMode!=='hourly'||['contracted','in_progress','completion_requested'].includes(operationalStatus??'')||data?.amountMode==='hourly_final');
  if(auth.currentUser?.uid!==user.uid)return null;
  return <section aria-label="Financeiro do Freela" className="rounded-xl border border-slate-700 p-3 space-y-3 text-sm">
   <h4 className="text-base font-bold text-white">Financeiro do Freela</h4>
   <p>Homologação: use somente dados e comprovantes fictícios. O Kyrub não realiza transferências nem confirma pagamentos bancários.</p>
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar situação financeira</button>
   {busy&&<p role="status">Consultando financeiro…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status" className="text-emerald-300">{message}</p>}
-  {!busy&&!paused&&!paid&&!received&&!data?.reviewStatus&&(workMode!=='hourly'||['contracted','in_progress','completion_requested'].includes(operationalStatus??'')||data?.amountMode==='hourly_final')&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role} hourly={workMode==='hourly'}/> }
+  {showPix&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role} hourly={workMode==='hourly'}/> }
+  {!showPix&&!busy&&role==='freelancer'&&['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(operationalStatus??data?.operationalStatus??'')&&<FreelaPixWithdrawal key={'withdraw:'+user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {workMode==='hourly'&&<p>Jornada em homologação. A chave pode ser vinculada antes da execução; somente a obrigação final positiva permite consulta integral. Não pague pela estimativa.</p>}
   {data&&<>
    <p className="font-bold text-white">{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.amountMinor/100)} · {data.amountMode==='hourly_final'||data.amountMode==='hourly_zero'?'Valor final apurado':data.timing==='advance'?'Antecipado':'Na conclusão'}</p>

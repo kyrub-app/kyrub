@@ -1,3 +1,5 @@
+import {buildFreelanceHourlyCommitment} from '../../shared/freelanceVariablePaymentBasis.js';
+import {canonicalVariablePaymentRecord} from './freelanceVariablePaymentBasisService.js';
 import {readHourlyPixPreparation} from './freelanceHourlyPixPreparationService.js';
 import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
@@ -57,7 +59,7 @@ export async function bindFreelancePixDestination(uid:string,offerId:string,inpu
 }
 
 type Sharing={schemaVersion:1;offerId:string;requesterUid:string;beneficiaryUid:string;destinationRevision:number;authorizedAt:string};
-function matchesSharing(raw:unknown,obligation:ReturnType<typeof buildFreelancePaymentObligation>,binding:Binding):raw is Sharing{
+function matchesSharing(raw:unknown,obligation:Pick<ReturnType<typeof buildFreelancePaymentObligation>,'offerId'|'requesterUid'|'beneficiaryUid'>,binding:Binding):raw is Sharing{
  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
  const s=raw as Sharing;
  return Object.keys(s).length===6&&s.schemaVersion===1&&s.offerId===obligation.offerId&&s.requesterUid===obligation.requesterUid&&
@@ -78,6 +80,43 @@ async function readSharingControl(tx:FirebaseFirestore.Transaction,direct:Fireba
 }
 function sharingActive(sharing:Sharing|undefined,control:SharingControl|undefined){return !!sharing&&control?.state!=='revoked';}
 
+/** Withdrawal of consent is not a payment action. Validate the original
+ * contracted pair and binding, independently of current key, attendance,
+ * settlement, eligibility for new work or review. Never read a raw key. */
+async function readWithdrawalContext(tx:FirebaseFirestore.Transaction,uid:string,id:string){
+ const ref=adminDb.doc('freelanceOffersV1/'+id),direct=ref.collection('directPayment');
+ const offer=(await tx.get(ref)).data() as FreelanceOffer|undefined;
+ if(!offer||offer.id!==id||offer.selectedApplicantUid!==uid||!validFreelanceId(offer.ownerUid)||offer.ownerUid===uid)throw Error('FREELANCE_FORBIDDEN');
+ const [a,fixed,hourly,bindingDoc,sharingDoc]=await tx.getAll(ref.collection('applications').doc(uid),direct.doc('obligation'),direct.doc('hourlyCommitment'),direct.doc('receivingDestination'),direct.doc('pixSharing'));
+ const app=a.data() as FreelanceApplication|undefined;
+ if(!app||offer.status!==app.status||!['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(offer.status))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+ let obligation:Pick<ReturnType<typeof buildFreelancePaymentObligation>,'offerId'|'requesterUid'|'beneficiaryUid'|'contractedAt'>;
+ if(offer.workTerms?.mode==='hourly'){
+  const expected=buildFreelanceHourlyCommitment(offer,app);
+  if(fixed.exists||!hourly.exists||canonicalVariablePaymentRecord(hourly.data())!==canonicalVariablePaymentRecord(expected))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+  obligation=expected;
+ }else{
+  const snapshot=<T extends FreelanceOffer|FreelanceApplication>(r:T):T=>{const {startedAt,completionRequestedAt,completedAt,cancelledAt,occurrenceId,...rest}=r;return {...rest,status:'contracted'} as T;};
+  const expected=buildFreelancePaymentObligation(snapshot(offer),snapshot(app));
+  if(hourly.exists||expected.terms.method!=='external_pix'||!matchesFreelancePaymentObligation(fixed.data(),expected))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+  obligation=expected;
+ }
+ const binding=bindingDoc.data();
+ if(!bindingDoc.exists){if(sharingDoc.exists)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');}
+ if(!matches(binding,id,uid,obligation.contractedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ const sharing=sharingDoc.data();
+ if(sharingDoc.exists&&!matchesSharing(sharing,obligation,binding))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
+ const consent=sharing as Sharing|undefined,control=await readSharingControl(tx,direct,binding,consent);
+ return {obligation,binding,sharing:consent,control,direct};
+}
+export async function readFreelancePixWithdrawal(uid:string,id:string){
+ assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const c=await readWithdrawalContext(tx,uid,id);
+  return {revision:c.binding.destinationRevision,sharingAuthorized:sharingActive(c.sharing,c.control),sharingRevoked:c.control?.state==='revoked',sharingSequence:c.control?.sequence??0};
+ },{readOnly:true});
+}
+
 /** A beneficiary may stop future disclosures for this contract only.
  * Restoring requires a new explicit action with the exact consent sequence.
  * Initial authorization and every prior change remain in the private audit. */
@@ -90,7 +129,7 @@ export async function changeFreelancePixSharingConsent(uid:string,id:string,acti
  !Number.isSafeInteger(b.expectedSequence)||Number(b.expectedSequence)<0||Number(b.expectedSequence)>=Number.MAX_SAFE_INTEGER)throw Error('FREELANCE_INVALID');
  const revision=Number(b.expectedRevision),expected=Number(b.expectedSequence);
  return adminDb.runTransaction(async tx=>{
-  const c=await readDisclosureContext(tx,uid,id);
+  const c=action==='revoke'?await readWithdrawalContext(tx,uid,id):await readDisclosureContext(tx,uid,id);
   if(uid!==c.obligation.beneficiaryUid)throw Error('FREELANCE_FORBIDDEN');
   if(!c.sharing||c.binding.destinationRevision!==revision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   const seq=c.control?.sequence??0,state=action==='revoke'?'revoked':'active';
@@ -107,6 +146,7 @@ export async function changeFreelancePixSharingConsent(uid:string,id:string,acti
   const next:SharingControl={schemaVersion:1,offerId:id,beneficiaryUid:uid,requesterUid:c.obligation.requesterUid,destinationRevision:revision,sequence:seq+1,state,changedAt};
   tx.create(c.direct.doc('pixSharingEvent-'+revision+'-'+next.sequence),next);
   tx.set(controlRef(c.direct,revision),next);
+  if(action==='revoke')writeFreelanceFinancialNotices(tx,c.obligation,'pix_sharing_revoked',changedAt,'requester',revision+'-'+next.sequence);
   return {changed:true,sequence:next.sequence};
  });
 }
