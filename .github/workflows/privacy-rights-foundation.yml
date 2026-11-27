@@ -1,0 +1,24 @@
+name: Privacy rights foundation
+on:
+  pull_request:
+    paths:
+      - 'shared/privacyRights.ts'
+      - 'server/governance/privacyRightsPolicy.ts'
+      - 'src/components/KyrubPrivacyRightsPilot.tsx'
+      - 'tests/privacy-rights-foundation.test.ts'
+      - '.github/workflows/privacy-rights-foundation.yml'
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx --test tests/privacy-rights-foundation.test.ts
