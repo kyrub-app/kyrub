@@ -253,3 +253,15 @@ test('connected reputation share uses accepted contacts and protected chat read'
  assert.match(ui,/reputation_connected_card&offerId=/);assert.match(chat,/<ConnectedReputationCard/);
  assert.match(hook,/reputationPostId:/);assert.match(ui,/VITE_KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY/);
 });
+
+test('chat card preserves all four original indicators and identifies the original author',()=>{
+ const ui=read('src/components/ReputationSquarePreview.tsx');
+ const renderer=ui.slice(ui.indexOf('export function ReputationPublicationIndicators'),ui.indexOf('export function ReputationSquarePreview'));
+ for(const field of ['completedServices','completedHires','reputations.professional','reputations.personalRequester'])assert.ok(renderer.includes(field),field);
+ const chat=ui.slice(ui.indexOf('export function ConnectedReputationCard'));
+ assert.match(chat,/<ReputationPublicationIndicators summary=\{summary\}/);
+ assert.match(chat,/summary.publication.authorName/);
+ assert.match(chat,/Autor original/);
+ assert.match(chat,/Math.min\(60_000,/);
+ assert.match(chat,/validConnectedReputationCard/);
+});
