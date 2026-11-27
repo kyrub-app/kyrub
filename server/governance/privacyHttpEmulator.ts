@@ -5,6 +5,7 @@ import {assertPrivacyEmulator,createPrivacyRightsEmulator} from './privacyRights
 import {createPrivacyRightsAdminEmulator} from './privacyRightsAdminEmulator.js';
 import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import {createPrivacyCidEvidenceEmulator,PRIVACY_CID_ORIGIN} from './privacyCidEvidenceEmulator.js';
+import {createPrivacyOwnDataExportEmulator} from './privacyOwnDataExportEmulator.js';
 import {createPrivacyOptionalConsentEmulator} from './privacyOptionalConsentEmulator.js';
 export const PRIVACY_HTTP_ORIGIN='https://127.0.0.1:8449';
 const deny=():never=>{throw Error('PRIVACY_HTTP_DENIED');};
@@ -30,7 +31,7 @@ export function createPrivacyHttpEmulatorHandler(){
    const requestOrigin=req.headers.origin;
    if(requestOrigin!==PRIVACY_HTTP_ORIGIN&&requestOrigin!==PRIVACY_CID_ORIGIN)return deny();
    if((req.socket as TLSSocket).encrypted!==true||req.socket.localAddress!=='127.0.0.1'||req.socket.remoteAddress!=='127.0.0.1'||req.socket.localPort!==8449||req.method!=='POST'||req.headers.host!==new URL(requestOrigin).host||req.headers['x-privacy-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'PRIVACY_HTTP_DENIED'});
-   const match=/^\/privacy-homologation\/api\/(submit|track|revoke|confirm-account|cid-begin|cid-finish|admin-list|admin-triage|admin-assess|admin-prepare|admin-review|consents-list|consents-change)$/.exec(req.url??'');
+   const match=/^\/privacy-homologation\/api\/(submit|track|revoke|confirm-account|cid-begin|cid-finish|admin-list|admin-triage|admin-assess|admin-prepare|admin-review|consents-list|consents-change|own-export|own-confirm|own-correct)$/.exec(req.url??'');
    if(!match)return respond(res,404,{error:'PRIVACY_HTTP_DENIED'});
    const action=match[1],input=await body(req),now=Date.now();
    if(action.startsWith('admin-')){
@@ -46,6 +47,15 @@ export function createPrivacyHttpEmulatorHandler(){
     const consents=createPrivacyOptionalConsentEmulator(),idToken=token(req);
     if(action==='consents-list'){exact(input,[]);return respond(res,200,await consents.list(idToken,now));}
     return respond(res,200,await consents.change(idToken,input,now));
+   }
+   if(action.startsWith('own-')){
+    const idToken=token(req),service=createPrivacyOwnDataExportEmulator();
+    exact(input,action==='own-correct'?['protocol','code','change']:['protocol','code']);
+    const p=protocol(input.protocol),code=opaque(input.code);
+    if(action==='own-export')return respond(res,200,await service.exportOwnFixture(p,code,idToken,now));
+    if(action==='own-confirm')return respond(res,200,await service.confirmOwnFixture(p,code,idToken,now));
+    if(action==='own-correct')return respond(res,200,await service.correctOwnFixture(p,code,idToken,input.change,now));
+    return deny();
    }
    const intake=createPrivacyRightsEmulator();
    if(action==='submit'){
