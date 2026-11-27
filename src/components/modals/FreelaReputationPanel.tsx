@@ -1,5 +1,5 @@
-import {reputationCriteria,projectReputationRating,type ReputationScores} from '../../../shared/freelanceReputationCriteria';
-import {useEffect,useRef,useState} from 'react';
+import {reputationCriteria,reputationCriterionDescriptions,projectReputationRating,type ReputationScores} from '../../../shared/freelanceReputationCriteria';
+import {useEffect,useId,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 type Rating={subject:{kind:'professional'|'personal_requester'|'store_requester';id:string};scores:ReputationScores;mean:number;applicableCount:number;submittedAt:string};
@@ -38,9 +38,13 @@ export function freelaReputationCandidateEnabled(){
 }
 export default function FreelaReputationPanel({user,offerId,role}:{user:User;offerId:string;role:View['role']}){
  const [view,setView]=useState<View|null>(null),[contest,setContest]=useState<Contest|null>(null),[scores,setScores]=useState<Record<string,string>>({}),[reason,setReason]=useState(''),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const criteria=reputationCriteria(role==='requester'?'professional':'personal_requester');
+ const targetKind=role==='requester'?'professional':'personal_requester';
+ const criteria=reputationCriteria(targetKind),descriptions=reputationCriterionDescriptions(targetKind);
+ const formId=useId();
  const scoreInput=()=>Object.fromEntries(Object.entries(scores).map(([k,v])=>[k,v==='na'?null:Number(v)]));
  const complete=Object.keys(criteria).every(k=>['1','2','3','4','5','na'].includes(scores[k]))&&Object.values(scores).some(v=>v!=='na'&&v!=='');
+ const applicable=Object.keys(criteria).map(k=>Number(scores[k])).filter(n=>Number.isInteger(n)&&n>=1&&n<=5);
+ const previewMean=applicable.length?applicable.reduce((a,b)=>a+b,0)/applicable.length:null;
  const active=useRef<AbortController|null>(null);
  useEffect(()=>()=>{active.current?.abort();active.current=null;},[]);
  async function run(action?:'submit_reputation'|'contest_reputation'){
@@ -71,7 +75,19 @@ export default function FreelaReputationPanel({user,offerId,role}:{user:User;off
   {busy&&<p role="status">Consultando servidor…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}
   {view&&<><p>{view.publicationState==='bilateral_released'?'Avaliações disponibilizadas às duas partes.':'A avaliação recebida fica reservada até o envio das duas partes.'}</p>
    {view.own?<p>Avaliação enviada: {view.own.mean.toLocaleString('pt-BR',{maximumFractionDigits:2})}/5 · {labels[view.own.subject.kind]}</p>:<form className="space-y-2" onSubmit={e=>{e.preventDefault();void run('submit_reputation');}}>
-    {Object.entries(criteria).map(([k,label])=><label key={k} className="block">{label}<select className={field} value={scores[k]??''} onChange={e=>{setScores(prev=>({...prev,[k]:e.target.value}));setConfirmed(false);}}><option value="">Selecione</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n}/5</option>)}<option value="na">Não se aplica</option></select></label>)}
+    <p className="text-sm text-slate-300">Selecione de uma a cinco estrelas em cada critério, ou Não se aplica quando não puder avaliá-lo.</p>
+    {Object.entries(criteria).map(([k,label])=><fieldset key={k} disabled={busy} aria-describedby={formId+'-'+k+'-description'} className="min-w-0 space-y-2 border-b border-slate-800 pb-3">
+     <legend className="text-sm font-bold text-white">{label}</legend>
+     <p id={formId+'-'+k+'-description'} className="text-sm text-slate-400">{descriptions[k]}</p>
+     <div className="flex flex-wrap items-center gap-1">
+      {[1,2,3,4,5].map(n=><label key={n} className="relative flex min-h-11 min-w-10 cursor-pointer items-center justify-center rounded-lg focus-within:ring-2 focus-within:ring-teal-300">
+       <input type="radio" className="sr-only" name={formId+'-'+k} value={String(n)} checked={scores[k]===String(n)} aria-label={label+': '+n+(n===1?' estrela':' estrelas')} onChange={()=>{setScores(prev=>({...prev,[k]:String(n)}));setConfirmed(false);}}/>
+       <span aria-hidden="true" className={'text-2xl '+(Number(scores[k])>=n?'text-amber-300':'text-slate-400')}>{Number(scores[k])>=n?'★':'☆'}</span>
+      </label>)}
+      <label className="ml-1 flex min-h-11 items-center gap-2 text-sm text-slate-300"><input type="radio" name={formId+'-'+k} value="na" checked={scores[k]==='na'} onChange={()=>{setScores(prev=>({...prev,[k]:'na'}));setConfirmed(false);}}/>Não se aplica</label>
+     </div>
+    </fieldset>)}
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-700 p-3 text-sm" aria-live="polite"><div><p className="font-bold text-white">Média da avaliação</p><p className="text-slate-400">{applicable.length} critérios pontuados · {complete?'Pronta para confirmar':'Preencha todos os critérios'}</p></div><strong className="text-base text-amber-300">{previewMean===null?'—':previewMean.toLocaleString('pt-BR',{maximumFractionDigits:2})+' / 5'}</strong></div>
     <label className="flex gap-2"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>Confirmo o envio da avaliação.</label>
     <button type="submit" className={btn} disabled={busy||!confirmed||!complete}>Enviar avaliação</button>
    </form>}
