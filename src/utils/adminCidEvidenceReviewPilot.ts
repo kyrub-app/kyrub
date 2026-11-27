@@ -1,8 +1,9 @@
+import type {CidLegalReviewInput,CidLegalReviewReceipt} from '../../shared/cidEvidenceLegalReview';
 import type {CidSpecialistInput,CidSpecialistReceipt} from '../../shared/cidEvidenceSpecialist';
 import type {User} from 'firebase/auth';
 import type {CidEvidenceReviewAdapter,CidReviewDetail,CidReviewInput,CidReviewQueueItem,CidReviewDisposition} from '../../shared/cidEvidenceReview';
 const origin='https://kyrub-cid-emulator.vercel.app';
-export function createAdminCidEvidenceReviewPilot(user:Pick<User,'uid'|'getIdToken'>,currentUid:()=>string|null,specialistEnabled=false):CidEvidenceReviewAdapter{
+export function createAdminCidEvidenceReviewPilot(user:Pick<User,'uid'|'getIdToken'>,currentUid:()=>string|null,specialistEnabled=false,legalEnabled=false):CidEvidenceReviewAdapter{
  async function post<T>(action:string,input:unknown):Promise<T>{
   if(window.location.origin!==origin||currentUid()!==user.uid)throw Error('CID_REVIEW_DENIED');
   const token=await user.getIdToken();
@@ -11,5 +12,5 @@ export function createAdminCidEvidenceReviewPilot(user:Pick<User,'uid'|'getIdTok
   if(!result.ok||currentUid()!==user.uid)throw Error('CID_REVIEW_DENIED');
   return await result.json() as T;
  }
- return {...(specialistEnabled?{specialist:{review:(input:CidSpecialistInput)=>post<CidSpecialistReceipt>('specialist',input)}}:{}),list:()=>post<{items:CidReviewQueueItem[];hasMore:boolean}>('list',{}),detail:id=>post<CidReviewDetail>('detail',{id}),decide:(input:CidReviewInput)=>post<{revision:number;status:CidReviewDisposition}>('decide',input)};
+ return {...(legalEnabled?{legal:{review:(input:CidLegalReviewInput)=>post<CidLegalReviewReceipt>('legal',input)}}:{}),...(specialistEnabled?{specialist:{review:(input:CidSpecialistInput)=>post<CidSpecialistReceipt>('specialist',input)}}:{}),list:()=>post<{items:CidReviewQueueItem[];hasMore:boolean}>('list',{}),detail:id=>post<CidReviewDetail>('detail',{id}),decide:(input:CidReviewInput)=>post<{revision:number;status:CidReviewDisposition}>('decide',input)};
 }
