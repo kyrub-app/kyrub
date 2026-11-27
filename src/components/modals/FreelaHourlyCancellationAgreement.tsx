@@ -1,3 +1,4 @@
+import FreelaHourlyReviewNotes from './FreelaHourlyReviewNotes';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -42,6 +43,7 @@ export default function FreelaHourlyCancellationAgreement({user,offerId}:{user:U
    {p&&<p>{labels[p.status]}: {money(p.recognizedServiceMinor)}</p>}
    {view.restrictionActive&&<p className="text-amber-300">Divergência financeira: novas contratações restritas para ambas as partes. O acordo voluntário continua disponível.</p>}
    {view.dispute?.status==='review_requested'&&<p>Análise administrativa solicitada. Aguarde a decisão pelo Control Plane.</p>}
+   {view.dispute&&['review_requested','resolved_administratively','resolved_voluntarily'].includes(view.dispute.status)&&<FreelaHourlyReviewNotes key={user.uid+':'+offerId+':'+view.sourceDigest} user={user} offerId={offerId} kind="cancellation" sourceDigest={view.sourceDigest}/>}
    {view.dispute?.status==='resolved_voluntarily'&&<p>Divergência deste cancelamento resolvida por acordo. Outras restrições podem permanecer.</p>}
    {!view.dispute&&p?.status==='declined'&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('dispute_hourly_cancellation')}>Declarar divergência financeira</button>}
    {view.dispute?.status==='open'&&<button type="button" className={btn} disabled={busy||!!pending} onClick={()=>ask('request_hourly_cancellation_review')}>Solicitar análise administrativa</button>}
