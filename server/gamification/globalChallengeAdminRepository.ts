@@ -1,3 +1,4 @@
+import {assertPlantPitangueiraDraft,assertPlantPitangueiraPublicationReady} from '../../shared/plantPitangueiraChallenge.js';
 import { parseGlobalChallengeDraft } from './globalChallengeAdminValidation.js';
 import { FieldPath } from 'firebase-admin/firestore';
 import { GLOBAL_CHALLENGE_FIELDS } from '../../shared/globalChallengeAdmin.js';
@@ -33,7 +34,9 @@ export const createGlobalChallengeDraft = async (
 ): Promise<KyrubChallengeDefinition> => {
   safeId(actorId, 'ADMIN_ACTOR');
   safeId(challenge.id, 'CHALLENGE_ID');
-  const planned = planGlobalChallengeDraft(parseGlobalChallengeDraft(challenge), actorId, occurredAt);
+  const draft=parseGlobalChallengeDraft(challenge);
+  assertPlantPitangueiraDraft(draft);
+  const planned = planGlobalChallengeDraft(draft, actorId, occurredAt);
   const ref = root().doc(challenge.id);
   await adminDb.runTransaction(async tx => {
     await requireActiveSuperAdmin(tx, actorId);
@@ -59,6 +62,7 @@ export const publishGlobalChallenge = async (
     if (!snapshot.exists) throw new Error('GLOBAL_CHALLENGE_NOT_FOUND');
     const current = snapshot.data() as KyrubChallengeDefinition;
     if (current.id !== challengeId) throw new Error('GLOBAL_CHALLENGE_ID_MISMATCH');
+    assertPlantPitangueiraPublicationReady(challengeId);
     const planned = planGlobalChallengePublication(current, actorId, occurredAt);
     tx.update(ref, { status: planned.challenge.status, publishedAt: occurredAt, publishedBy: actorId });
     tx.create(ref.collection('audit').doc('published'), planned.audit);
