@@ -1,3 +1,5 @@
+import {storeReputationCandidateEnabled} from '../utils/storeReputationCandidate';
+import {StoreReputationWorkspace} from './store/StoreReputationWorkspace';
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { canStoreRoleAccessErpMenuItem } from './MobileErpMenu';
 import type { StoreRole } from '../utils/storeSecurity';
@@ -116,6 +118,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [props.activeSubTab]);
 
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
+  if (props.activeSubTab === 'reputacoes') return storeReputationCandidateEnabled()&&props.accessRole&&canStoreRoleAccessErpMenuItem(props.accessRole,'reputacoes')?<StoreReputationWorkspace key={props.activeRetailerId} legacyStoreId={props.activeRetailerId}/>:<p>Reputações indisponíveis.</p>;
   if (managementModule && props.accessRole && canStoreRoleAccessErpMenuItem(props.accessRole, managementModule)) {
     return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
   }
