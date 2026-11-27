@@ -1,3 +1,4 @@
+import {projectReputationRating} from '../../shared/freelanceReputationCriteria.js';
 import {FieldPath} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
@@ -24,7 +25,7 @@ export async function listFreelanceReputationContests(authorization:string,curso
    const q=await contestationContext(tx,x);
    if(!q.raw||!q.rating||!q.own||q.ref.id!==doc.id)return fail();
    items.push({caseId:doc.id,offerId:x.parties.offerId,subjectKind:q.rating.subject.kind,ratingRole:q.other,
-    stars:q.rating.stars,submittedAt:q.rating.submittedAt,requestedAt:q.raw.requestedAt,reason:q.raw.reason,
+    ...projectReputationRating(q.rating.subject.kind,q.rating.scores),submittedAt:q.rating.submittedAt,requestedAt:q.raw.requestedAt,reason:q.raw.reason,
     ratingDigest:q.raw.ratingDigest,status:q.raw.status});
   }
   return {items,nextCursor:result.size>20?page.at(-1)!.id:null,readOnly:true as const};
