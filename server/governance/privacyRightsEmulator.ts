@@ -40,7 +40,7 @@ export function createPrivacyRightsEmulator(){
      const saved=(await tx.get(requests.doc(p.protocol))).data() as PrivacyRequestRecord|undefined;
      if(!saved||saved.protocol!==p.protocol||saved.channelReference!==credential.id||hash(JSON.stringify(normalizePrivacyRequest(saved.draft)))!==digest)return deny();
      const t=(await tx.get(tracking.doc(saved.protocol))).data();
-     if(!t||t.protocol!==saved.protocol||t.simulation!==true||!equal(t.digest,hash(trackingCode)))return deny();
+     if(!t||t.protocol!==saved.protocol||t.simulation!==true||t.revokedAt!==undefined||!validTime(t.createdAt)||!validTime(t.expiresAt)||t.createdAt!==saved.receivedAt||now>=t.expiresAt||!equal(t.digest,hash(trackingCode)))return deny();
      return {...projectPrivacyReceipt(saved),trackingCode,trackingExpiresAt:t.expiresAt as number};
     }
     const bucket=Math.floor(now/900000),count=q.get('bucket')===bucket?q.get('count'):0;
