@@ -1,3 +1,4 @@
+import {coverageRef,checkedCoverage,indexDigest,writeCoverage} from './freelanceReputationCoverage.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {digestVariablePaymentSources,canonicalVariablePaymentRecord} from './freelanceVariablePaymentBasisService.js';
@@ -18,16 +19,17 @@ export function reputationContractContext(offer:FreelanceOffer,application:Freel
  return {parties,contractDigest};
 }
 /** Prepare all reads before any write in the enclosing transaction. */
-export async function prepareFreelanceReputationIndex(tx:Transaction,x:Context){
+export async function prepareFreelanceReputationIndex(tx:Transaction,x:Context,sourceEvent=false){
  if(!reputationIndexEnabled())throw Error('FREELANCE_FORBIDDEN');
  const offerId=x.parties.offerId;
   const released=!!x.slots.worker&&!!x.slots.requester;
   const receipt=adminDb.doc('freelanceReputationIndexReceiptsV1/'+offerId);
   const scopes=[{subject:x.parties.worker,representativeUid:x.parties.workerUid,rating:x.slots.requester},{subject:x.parties.requester,representativeUid:x.parties.requesterUid,rating:x.slots.worker}];
   const refs=scopes.map(s=>adminDb.doc('freelanceReputationIndexesV1/'+digestVariablePaymentSources({subject:s.subject,representativeUid:s.representativeUid})));
-  const [prior,...snapshots]=await tx.getAll(receipt,...refs);
-  const prev=prior.data();
   const scopeIdentity=scopes.map(s=>({subject:s.subject,representativeUid:s.representativeUid}));
+  const [prior,...all]=await tx.getAll(receipt,...refs,...scopeIdentity.map(coverageRef));
+  const snapshots=all.slice(0,refs.length),witnesses=all.slice(refs.length);
+  const prev=prior.data();
   const releaseDigest=released?digestVariablePaymentSources([x.slots.requester,x.slots.worker]):null;
   if(prev&&(Object.keys(prev).length!==5||prev.schemaVersion!==1||prev.offerId!==offerId||prev.contractDigest!==x.contractDigest||!equal(prev.scopes,scopeIdentity)||!(prev.releaseDigest===null||typeof prev.releaseDigest==='string'&&/^[a-f0-9]{64}$/.test(prev.releaseDigest))||prev.releaseDigest!==null&&prev.releaseDigest!==releaseDigest))return fail();
   const addExperience=!prev,addRatings=released&&(!prev||prev.releaseDigest===null);
@@ -40,6 +42,13 @@ export async function prepareFreelanceReputationIndex(tx:Transaction,x:Context){
    return {schemaVersion:1,subject:s.subject,representativeUid:s.representativeUid,accumulator};
   });
   const write=()=>{
+  if(sourceEvent||addExperience||addRatings){
+   for(let i=0;i<refs.length;i++){
+    const scope=scopeIdentity[i],raw=snapshots[i].data(),w=checkedCoverage(scope,witnesses[i].data());
+    const maintained=sourceEvent&&w?.verifiedDigest===indexDigest(raw);
+    writeCoverage(tx,scope,maintained?indexDigest(addExperience||addRatings?plans[i]:raw):null);
+   }
+  }
   if(addExperience||addRatings){
    for(let i=0;i<refs.length;i++)tx.set(refs[i],plans[i]);
    const record={schemaVersion:1,offerId,contractDigest:x.contractDigest,scopes:scopeIdentity,releaseDigest};
