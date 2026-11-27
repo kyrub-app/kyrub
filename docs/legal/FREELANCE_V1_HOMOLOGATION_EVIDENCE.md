@@ -11,13 +11,13 @@ Data: 27/11/2026. Candidata empilhada, não implantada. Este documento registra 
 - #1427: Application build 45983769497 e Store security rules 45983769378 aprovados.
 - #1428: Application build 45985193001 e Store security rules 45985192978 aprovados.
 - #1429: execução inicial 45985480445 falhou por expectativa incorreta do código HTTP da auto-seleção; corrigida em 60e22ac192eeaf00bbe60f20dd135b1181177714. Application build 45986349192 e Freelas authenticated HTTP homologation 45986349257 aprovados. Prova jornada autenticada isolada, financiamento simulado, remuneração única, acesso pessoal e ocorrência bloqueada sem MFA.
-- #1430: Chromium 45986439441 falhou após publicação persistida, na localização da vaga pelo teste. Correção do locator relativo e validação da resposta da consulta, seguida de remoção do contador legado na candidata (5e0b574e48559eacf78397d5d30e9233c5de8d0a). Novos runs 45987048423 e 45987048509 ainda em execução no momento do registro. Não declarar aprovação visual até confirmação.
+- #1430: Chromium 45986439441 falhou após publicação persistida, na localização da vaga pelo teste. Correção do locator relativo e validação da resposta da consulta, seguida de remoção do contador legado na candidata (5e0b574e48559eacf78397d5d30e9233c5de8d0a). Application build 45987048423 aprovado. Chromium 45987048509 interrompido antes da publicação por comparação literal de caixa do texto FAZER FREELA (CSS uppercase), sem contador legado, sem erros JS ou chamadas Firebase remotas registrados. Corrigida comparação sem distinção de caixa, preservada exigência de ausência de contador. Novo Chromium será executado na #1431; não declarar aprovação visual até confirmação.
 
 Todos os runs podem ser consultados em https://github.com/kyrub-app/kyrub/actions/runs/{id}.
 
 ## Cobertura administrativa acrescentada nesta parcela
 
-Teste com token do emulador validado pelo verificador original e injeção exclusivamente no processo de teste de uma claim TOTP fictícia. Exercita política de sessão recente, papel ativo, impedimento de julgar contrato próprio, ausência de concordância, retomada, cancelamento, concorrência, replay, auditoria e base de remuneração indefinida. Não altera código de autenticação, não cria mecanismo de bypass e não comprova login TOTP real. Resultado pendente de CI.
+Teste com token do emulador validado pelo verificador original e injeção exclusivamente no processo de teste de uma claim TOTP fictícia. Exercita política de sessão recente, papel ativo, impedimento de julgar contrato próprio, ausência de concordância, retomada, cancelamento, concorrência, replay, auditoria e base de remuneração indefinida. Não altera código de autenticação, não cria mecanismo de bypass e não comprova login TOTP real. Aprovado no run 45987371634: 3 testes passaram, 0 falharam, incluindo transação administrativa. Application build 45987371693 aprovado. TOTP efetivo continua pendente.
 
 ## Portões remanescentes
 
