@@ -1,3 +1,4 @@
+import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication} from '../../shared/freelanceLifecycle.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
@@ -220,6 +221,7 @@ export async function changeFreelancePixBinding(uid:string,id:string,action:'pro
   if(action==='propose'){
    if(saved)return {changed:false,status:'pending' as const,revision:newRevision};
    tx.create(proposal.ref,{...base,status:'pending',proposedAt:now});
+   writeFreelanceFinancialNotices(tx,o,'pix_rebind_proposed',now,'requester',newRevision);
    return {changed:true,status:'pending' as const,revision:newRevision};
   }
   if(!saved||saved.status!=='pending'||Date.parse(now)<Date.parse(saved.proposedAt))throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
@@ -234,6 +236,7 @@ export async function changeFreelancePixBinding(uid:string,id:string,action:'pro
   tx.set(c.direct.doc('receivingDestination'),binding);
   tx.delete(c.direct.doc('pixSharing'));
   tx.delete(c.direct.doc('pixDisclosure'));
+  writeFreelanceFinancialNotices(tx,o,'pix_rebind_accepted',now,'freelancer',newRevision);
   return {changed:true,status:'accepted' as const,revision:newRevision};
  });
 }
