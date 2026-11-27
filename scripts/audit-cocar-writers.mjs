@@ -10,6 +10,16 @@ const expected = new Map([
   ['server/gamification/pitangaXpConversionTransaction.ts','conversion writer'],
 ]);
 const known = new Map([
+  ['api/health.ts','authenticated own-ledger reader'],
+  ['scripts/audit-canonical-pitanga-callers.mjs','read-only audit'],
+  ['scripts/audit-cocar-writers.mjs','read-only audit'],
+  ['server/gamification/cleanBaselineVerifiedXpConversion.ts','conversion adapter'],
+  ['server/gamification/firstStoreChallengeAwardService.ts','first-store adapter'],
+  ['server/gamification/firstStorePublicationAuthority.ts','publication adapter/replay reader'],
+  ['server/gamification/pitangaAccountService.ts','account reader/conversion adapter'],
+  ['server/gamification/pitangaEarnTransaction.ts','Pitanga writer excludes XP references'],
+  ['server/gamification/pitangaSpendTransaction.ts','Pitanga writer excludes XP references'],
+  ['shared/gamificationEconomies.ts','economy type contract'],
   ['server/gamification/cocarProjectionTransaction.ts','candidate projection/rebuild'],
   ['server/gamification/pitangaXpConversionService.ts','conversion adapter'],
   ['server/gamification/pitangaVerifiedXpConversion.ts','conversion adapter'],
@@ -36,4 +46,4 @@ const absent=[...expected.keys()].filter(path=>!matches.some(m=>m.path===path));
 const unintegrated=[...expected.keys()].filter(path=>!readFileSync(path,'utf8').includes('prepareCocarProjectionForNewXp('));
 const review=matches.filter(m=>m.classification==='REVIEW REQUIRED'||m.classification==='rules review');
 console.log(JSON.stringify({scannedTrackedPaths:files.length,matchedFiles:matches.length,expectedDirectWriters:expected.size,absent,unintegrated,reviewRequired:review.length,matches,productionCoverageCertified:false},null,2));
-if(absent.length||unintegrated.length)process.exitCode=1;
+if(absent.length||unintegrated.length||review.length)process.exitCode=1;
