@@ -33,8 +33,8 @@ export async function readVariablePaymentSources(tx:Transaction,uid:string,offer
   const record={...basis,sourceDigest:digest({schedule:c.current,events:t.events,extensions})};
   const direct=c.ref.collection('directPayment'),financial=c.ref.collection('financialBasis');
   const commitmentRef=direct.doc('hourlyCommitment'),basisRef=financial.doc('hourlyCompletion');
-  const [savedCommitment,savedBasis,fixedObligation,fixedBasis,statements]=await tx.getAll(commitmentRef,basisRef,direct.doc('obligation'),financial.doc('remuneration'),direct.doc('externalStatements'));
-  if(fixedObligation.exists||fixedBasis.exists||statements.exists)return fail();
+  const [savedCommitment,savedBasis,fixedObligation,fixedBasis,statements,final,hourlyStatements]=await tx.getAll(commitmentRef,basisRef,direct.doc('obligation'),financial.doc('remuneration'),direct.doc('externalStatements'),direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'));
+  if(fixedObligation.exists||fixedBasis.exists||statements.exists||((final.exists||hourlyStatements.exists)&&(!savedCommitment.exists||!savedBasis.exists))||(hourlyStatements.exists&&!final.exists))return fail();
   if(savedCommitment.exists&&canonical(savedCommitment.data())!==canonical(commitment))return fail();
   if(savedBasis.exists&&(!savedCommitment.exists||canonical(savedBasis.data())!==canonical(record)))return fail();
   return {c,record,commitment,commitmentRef,basisRef,savedCommitment,savedBasis};
