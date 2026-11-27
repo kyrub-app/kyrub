@@ -147,3 +147,24 @@ test('CID import in Movimentações uses server candidates and separate confirma
  assert.match(settings,/Utilizar chave Pix do meu CID/);
  assert.match(settings,/setCandidates\(\[\]\)/);
 });
+
+test('private experience and reputation are outside reward wallet and verify minimal scoped projections',async()=>{
+ const {validVerifiedReputationView}=await import('../src/components/modals/verifiedReputationView');
+ const {emptyReputationAccumulator,projectReputationAccumulator}=await import('../shared/freelanceReputationAccumulator');
+ const kind='professional',id='fixture-user';
+ const projection=projectReputationAccumulator(kind,emptyReputationAccumulator(kind));
+ const v={subject:{kind,id},state:'verified_snapshot',projection};
+ assert.equal(validVerifiedReputationView(v,kind,id),true);
+ assert.equal(validVerifiedReputationView(v,kind,'outsider'),false);
+ assert.equal(validVerifiedReputationView({...v,state:'repair_required'},kind,id),false);
+ assert.equal(validVerifiedReputationView({...v,state:'repair_required',projection:null},kind,id),true);
+ assert.equal(validVerifiedReputationView({...v,projection:{...projection,aggregate:{...projection.aggregate,mean:5}}},kind,id),false);
+ assert.equal(validVerifiedReputationView({...v,missingReceipts:0},kind,id),false);
+ const ui=read('src/components/modals/PersonalReputationPanel.tsx');
+ assert.match(profile,/personalReputationCandidateEnabled\(\) && <div/);
+ assert.match(profile,/<PersonalReputationPanel key=\{currentUserId\}/);
+ assert.match(ui,/VITE_KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY/);
+ assert.match(ui,/onAuthStateChanged/);assert.match(ui,/auth.currentUser!==user/);assert.match(ui,/cache:'no-store'/);
+ assert.match(ui,/data\?\.state==='verified_snapshot'&&p/);
+ assert.doesNotMatch(ui,/method:'POST'|localStorage|rewardXp/);
+});
