@@ -2165,6 +2165,34 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
          delete process.env[forwardFlag];await call(payer,'',403,distribution);
          process.env[forwardFlag]='true';
          await call(null,'',401,distribution);await call(payer,'',400,{...distribution,destination:'unknown'});await call(payer,'',400,{...distribution,confirmed:false});
+         const directFlag='KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY',oldDirect=process.env[directFlag];
+         const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
+         const direct={action:'forward_reputation_connected',offerId:postId,connectionId,recipientId:worker.uid,confirmed:true};
+         const chat=db.collection('social_chats/'+connectionId+'/messages');
+         try{
+          delete process.env[directFlag];await call(payer,'',403,direct);
+          process.env[directFlag]='true';
+          await call(null,'',401,direct);await call(payer,'',403,direct);
+          await connection.set({senderId:payer.uid,receiverId:worker.uid,participantIds:[payer.uid,worker.uid],status:'pending'});
+          await call(payer,'',403,direct);
+          await connection.update({status:'accepted'});
+          await call(payer,'',400,{...direct,recipientId:payer.uid});
+          await call(payer,'',400,{...direct,reputationPostId:'fake'});
+          await call(payer,'',400,{...direct,confirmed:false});
+          await call(payer,'',200,direct);await call(payer,'',409,direct);
+          const messages=await chat.get();assert.equal(messages.size,1);
+          assert.equal(messages.docs[0].get('senderId'),payer.uid);assert.equal(messages.docs[0].get('receiverId'),worker.uid);
+          assert.equal(messages.docs[0].get('reputationPostId'),postId);assert.equal(messages.docs[0].get('reputations'),undefined);
+          assert.deepEqual((await post.get()).data(),stored);
+          await profile.update({isProfileVisible:false});await call(payer,'',403,direct);await profile.update({isProfileVisible:true});
+          await connection.delete();await call(payer,'',403,direct);
+          assert.equal((await chat.get()).size,1);
+         }finally{
+          await connection.delete();
+          for(const d of (await chat.get()).docs)await d.ref.delete();
+          for(const d of (await proof.collection('directForwards').get()).docs)await d.ref.delete();
+          if(oldDirect===undefined)delete process.env[directFlag];else process.env[directFlag]=oldDirect;
+         }
          await call(payer,'',200,distribution);await call(payer,'',409,distribution);
          const changed=(await post.get()).data()!;
          assert.equal(changed.authorId,worker.uid);assert.equal(changed.createdAtIso,stored.createdAtIso);assert.equal(changed.postId,postId);
