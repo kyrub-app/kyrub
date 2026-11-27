@@ -1,5 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
 
@@ -154,6 +155,7 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       const [owner,worker]=await tx.getAll(eligibility(offer.ownerUid),eligibility(offer.selectedApplicantUid));
       assertApproved(owner.data(),'requester');
       assertApproved(worker.data(),'freelancer');
+      await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
     if(action==='confirm_completion'){
