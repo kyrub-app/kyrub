@@ -5,6 +5,8 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ pix_rebind_proposed:['Substituição de chave Pix solicitada','Consulte o financeiro do contrato. Se já pagou, não aceite a troca nem repita a transferência.'],
+ pix_rebind_accepted:['Substituição de chave Pix aceita','Consulte o financeiro do contrato e autorize o novo compartilhamento antes de disponibilizar a chave.'],
  payment_reported:['Pagamento informado em Freelas','Consulte o financeiro do contrato para acompanhar o recebimento.'],
  nonreceipt_reported:['Não recebimento informado em Freelas','Consulte o financeiro do contrato para acompanhar as manifestações.'],
  receipt_reported:['Recebimento informado em Freelas','Consulte o financeiro do contrato. Não é confirmação bancária.'],
@@ -19,11 +21,13 @@ export type FinancialNotice=keyof typeof messages;
  * actual transitions. Atomic create: retries cannot reset an existing readAt.
  * Category system reuses the private Platform inbox; no browser push, no raw
  * party IDs beyond recipient, no title of service, amount, key or evidence. */
-export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,kind:FinancialNotice,recordedAt:string,recipient:'both'|'requester'|'freelancer'='both'){
+export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,kind:FinancialNotice,recordedAt:string,recipient:'both'|'requester'|'freelancer'='both',revision?:number){
  if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
  !['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!validFreelanceId(obligation.offerId)||!validFreelanceId(obligation.requesterUid)||!validFreelanceId(obligation.beneficiaryUid)||obligation.requesterUid===obligation.beneficiaryUid)throw Error('FREELANCE_INVALID');
- const sourceId=createHash('sha256').update(JSON.stringify([obligation.offerId,kind])).digest('hex');
+ const replacement=kind==='pix_rebind_proposed'||kind==='pix_rebind_accepted';
+ if(replacement?(!Number.isSafeInteger(revision)||Number(revision)<1):revision!==undefined)throw Error('FREELANCE_INVALID');
+ const sourceId=createHash('sha256').update(JSON.stringify(replacement?[obligation.offerId,kind,revision]:[obligation.offerId,kind])).digest('hex');
  const ids=recipient==='both'?[obligation.requesterUid,obligation.beneficiaryUid]:[recipient==='requester'?obligation.requesterUid:obligation.beneficiaryUid];
  for(const recipientUserId of ids){
   const [title,body]=messages[kind];
