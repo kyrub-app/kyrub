@@ -46,7 +46,7 @@ export async function readAdjustmentPix(uid:string,id:string){
    try{destination=await readPersonalPixForContract(tx,o.recipientUid);}catch(e){if(!(e instanceof Error)||e.message!=='FREELANCE_PIX_DESTINATION_REQUIRED')throw e;}
   }
   const current=!!destination&&(!consent||destination.revision===consent.revision&&destination.keyType===consent.keyType);
-  const pending=x.replacement?.status==='pending',replacement=consent&&!x.paymentBlocked&&!x.storeRefund&&destination&&destination.revision>consent.revision&&(role==='recipient'||pending)?{oldRevision:consent.revision,newRevision:destination.revision,pending:!!pending&&x.replacement!.newRevision===destination.revision}:null;
+  const pending=x.replacement?.status==='pending',replacement=pending?{oldRevision:x.replacement!.oldRevision,newRevision:x.replacement!.newRevision,pending:true,available:!x.paymentBlocked&&!x.storeRefund&&destination?.revision===x.replacement!.newRevision}:consent&&!x.paymentBlocked&&!x.storeRefund&&destination&&destination.revision>consent.revision&&role==='recipient'&&(!x.replacement||destination.revision>x.replacement.newRevision)?{oldRevision:consent.revision,newRevision:destination.revision,pending:false,available:true}:null;
   return {offerId:id,sourceDigest:o.sourceDigest,direction:o.direction,amountMinor:o.amountMinor,role,replacement,storeRefund:x.storeRefund,consentRevision:consent?.revision??null,authorized:!!consent&&!consent.revokedAt,revoked:!!consent?.revokedAt,disclosed:!!x.access,blocked:x.paymentBlocked||x.storeRefund,financialState:x.financialState, destination:current&&!pending?destination:null,bankVerified:false};
  },{readOnly:true});
 }
