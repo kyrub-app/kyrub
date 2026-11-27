@@ -23,7 +23,7 @@ function valid(v:unknown,id:string,role:Case['role']):v is Case{
  Array.isArray(c.ownNotes)&&c.ownNotes.length<=2&&c.ownNotes.every(n=>typeof n.id==='string'&&typeof n.note==='string'&&typeof n.recordedAt==='string')&&
  Array.isArray(c.ownReceipts)&&c.ownReceipts.length<=1&&c.ownReceipts.every(r=>typeof r.id==='string'&&r.mimeType==='image/png'&&Number.isSafeInteger(r.size)&&r.size>0&&r.size<=262144);
 }
-export default function FreelaFinancialPanel({user,offerId,role}:{user:User;offerId:string;role:Case['role']}){
+export default function FreelaFinancialPanel({user,offerId,role,operationalStatus}:{user:User;offerId:string;role:Case['role'];operationalStatus?:string}){
  const [data,setData]=useState<Case|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [pending,setPending]=useState<{label:string;body:Action}|null>(null),[note,setNote]=useState(''),[file,setFile]=useState<File|null>(null);
  const ticket=useRef(0),lock=useRef(false),controller=useRef<AbortController|null>(null),fileInput=useRef<HTMLInputElement|null>(null);
@@ -65,7 +65,7 @@ export default function FreelaFinancialPanel({user,offerId,role}:{user:User;offe
   }catch{if(active())setError('Não foi possível ler o arquivo.');}
   finally{if(active()){lock.current=false;setBusy(false);}}
  };
- const paused=data?.operationalStatus==='under_review'||data?.operationalStatus==='cancelled';
+ const paused=['under_review','cancelled'].includes(data?.operationalStatus??operationalStatus??'');
  const paid=data?.statements.some(s=>s.statement==='paid'),received=data?.statements.some(s=>s.statement==='received'),denied=data?.statements.some(s=>s.statement==='not_received');
  if(auth.currentUser?.uid!==user.uid)return null;
  return <section aria-label="Financeiro do Freela" className="rounded-xl border border-slate-700 p-3 space-y-3 text-sm">
