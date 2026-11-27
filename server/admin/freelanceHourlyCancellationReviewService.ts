@@ -1,3 +1,4 @@
+import {buildHourlyCancellationResolution,writeCancellationResolution} from '../freelance/freelanceHourlyCancellationResolution.js';
 import {createHash} from 'node:crypto';
 import {FieldPath,FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
@@ -59,7 +60,10 @@ export async function decideHourlyCancellationReview(auth:string,input:unknown){
   if(c.dispute.status!=='review_requested'||!c.restricted||audit.exists)return fail();
   const release=await prepareCancellationRestriction(tx,c.record.commitment,true,false),now=new Date().toISOString();
   if(Date.parse(now)<Date.parse(c.dispute.requestedAt!))return fail();
-  tx.update(c.disputeRef,{status:'resolved_administratively',decision:{actorUid:uid,recognizedServiceMinor:amount,reason,decidedAt:now}});
+  const decision={actorUid:uid,recognizedServiceMinor:amount,reason,decidedAt:now};
+  const resolution=buildHourlyCancellationResolution({sourceDigest:c.record.sourceDigest,commitment:c.record.commitment,capMinor:c.capMinor,recognizedServiceMinor:amount,resolvedAt:now,resolution:'administrative',evidence:decision});
+  writeCancellationResolution(tx,c.resolutionRecords,resolution);
+  tx.update(c.disputeRef,{status:'resolved_administratively',decision});
   tx.update(c.queueRef,{status:'resolved_administratively'});
   tx.create(auditRef,{id:auditId,action:'admin.freelance.hourly_cancellation_resolved',actorId:uid,actorRole:'super_admin',targetType:'freelance_hourly_cancellation_review',targetId:id,sourceDigest:b.sourceDigest,recognizedServiceMinor:amount,reasonHash,bankVerified:false,source:'server',createdAt:FieldValue.serverTimestamp()});
   release();writeFreelanceFinancialNotices(tx,c.record.commitment,'hourly_cancellation_admin_resolved',now,'both','dispute');

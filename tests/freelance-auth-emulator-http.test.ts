@@ -1219,7 +1219,30 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
     if(started)await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[]});
    }
    assert.equal((await ref.collection('directPayment').doc('hourlyCancellationAgreement-p1').get()).get('status'),'declined');
-   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+   const resolution=(await ref.collection('directPayment').doc('hourlyCancellationResolution').get()).data()!;
+   assert.equal(resolution.recognizedServiceMinor,proposal.recognizedServiceMinor);
+   assert.equal(resolution.disposition,started?'positive_amount_calculated':'no_payment_required');
+   assert.equal(settled.payable,started);
+   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,started);
+   if(started){
+    const final=(await ref.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;
+    assert.equal(final.kind,'hourly_cancellation_obligation');assert.equal(final.amountMinor,proposal.recognizedServiceMinor);
+    assert.equal(final.sourceDigest,resolution.sourceDigest);assert.notEqual(final.sourceDigest,a.sourceDigest);
+    const financial=await finance(owner,200,undefined,{},'case');assert.equal(financial.amountMinor,final.amountMinor);assert.equal(financial.due,true);
+    const reveal=await finance(owner,200,'reveal_pix',{expectedRevision:1});assert.equal(reveal.amountMinor,final.amountMinor);
+    const fields={eventId:'cancel-paid',statement:'paid',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest};
+    await finance(owner,409,'statement',{...fields,expectedAmountMinor:360000});
+    await finance(owner,409,'statement',{...fields,sourceDigest:a.sourceDigest});
+    await finance(owner,200,'statement',fields);
+    await finance(worker,200,'statement',{...fields,eventId:'cancel-denied',statement:'not_received'});
+    assert.equal((await finance(owner,200,undefined,{},'case')).financialState,'disputed');
+    await finance(worker,200,'statement',{...fields,eventId:'cancel-received',statement:'received'});
+    assert.equal((await finance(owner,200,undefined,{},'case')).financialState,'bilaterally_reported_received');
+    assert.equal((await agreement(owner,200)).restrictionActive,false);
+   }else{
+    await finance(owner,409,'reveal_pix',{expectedRevision:1});await finance(owner,409,undefined,{},'case');
+    await finance(owner,409,'statement',{eventId:'zero-paid',statement:'paid',expectedAmountMinor:0,sourceDigest:resolution.sourceDigest});
+   }
    await finance(owner,409,'propose_hourly_cancellation',{...proposal,proposalId:'p3'});
    if(started){
     await ref.collection('attendance').doc('timeline').delete();

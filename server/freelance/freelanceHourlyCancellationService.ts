@@ -19,7 +19,7 @@ async function validateHourlyCancellation(tx:Transaction,uid:string,id:string,r:
  const basis=buildHourlyCancellationBasis({...r,attendance});
  const record={...basis,sourceDigest:digestVariablePaymentSources({occurrence:r.occurrence,schedule:c.current,attendance})};
  const direct=c.ref.collection('directPayment'),financial=c.ref.collection('financialBasis'),target=financial.doc('hourlyCancellation');
- const [commitment,saved,...forbidden]=await tx.getAll(direct.doc('hourlyCommitment'),target,direct.doc('obligation'),direct.doc('externalStatements'),direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'),financial.doc('remuneration'),financial.doc('hourlyCompletion'));
+ const [commitment,saved,...forbidden]=await tx.getAll(direct.doc('hourlyCommitment'),target,direct.doc('obligation'),direct.doc('externalStatements'),financial.doc('remuneration'),financial.doc('hourlyCompletion'),...(r.changed?[direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'),direct.doc('hourlyCancellationResolution')]:[]));
  if(!equal(commitment.data(),basis.commitment)||forbidden.some(d=>d.exists)||(r.changed?saved.exists:!equal(saved.data(),record)))return fail();
  return {target,record};
 }
