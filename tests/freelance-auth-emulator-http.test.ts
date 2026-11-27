@@ -411,11 +411,18 @@ test('participant finance HTTP: authenticated statements, private own evidence, 
  const send=(a:Actor,status:number,action:string,extra:Record<string,unknown>={})=>call(a,status,'',{offerId:id,action,confirmed:true,...extra});
  await call(null,401,q);await call(other,403,q);await call(payer,400,q+'&uid='+worker.uid);
  assert.equal((await call(payer,200,q)).financialState,'awaiting_payment');
+ const movements=(a:Actor,role:string)=>call(a,200,'?view=movements&role='+role);
+ const movement=(p:Awaited<ReturnType<typeof movements>>)=>p.entries.find((e:{offerId:string})=>e.offerId===id);
+ assert.equal(movement(await movements(payer,'requester')).financialState,'awaiting_payment');
+ assert.equal(movement(await movements(worker,'freelancer')).amountMinor,15000);
+ assert.equal(movement(await movements(other,'freelancer')),undefined);
+ await call(payer,400,'?view=movements&role=requester&uid='+worker.uid);
  await send(worker,403,'statement',{statement:'paid',eventId:'forged'});
  await send(payer,400,'statement',{statement:'paid',eventId:'paid',actorUid:worker.uid});
  await send(payer,200,'statement',{statement:'paid',eventId:'paid'});
  await send(worker,200,'statement',{statement:'not_received',eventId:'denied'});
  assert.equal((await call(payer,200,q)).financialState,'disputed');
+ assert.equal(movement(await movements(worker,'freelancer')).financialState,'disputed');
  for(const a of [payer,worker])assert.deepEqual(await call(a,200,'?view=restrictions'),{restricted:true,openOfferIds:[id]});
  const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
  const {shouldDeliverUserNotificationToBrowser,buildDefaultUserCommunicationPreferences}=await import('../shared/userCommunicationPreferences.js');
@@ -436,6 +443,7 @@ test('participant finance HTTP: authenticated statements, private own evidence, 
  assert.equal((await call(payer,200,receiptQ)).mimeType,'image/png');
  await send(worker,200,'statement',{statement:'received',eventId:'received'});
  const resolved=await call(payer,200,q);assert.equal(resolved.reviewStatus,'resolved_voluntarily');assert.equal(resolved.bankVerified,false);
+ for(const [actor,role] of [[payer,'requester'],[worker,'freelancer']] as const){const p=await movements(actor,role);assert.equal(p.bankVerifiedMinor,null);assert.equal(movement(p).financialState,'bilaterally_reported_received');assert.equal(movement(p).bankVerified,false);assert.ok(!JSON.stringify(p).includes('pngBase64'));}
  await call(payer,403,receiptQ);
  assert.deepEqual(await call(worker,200,'?view=restrictions'),{restricted:false,openOfferIds:[]});
  for(const a of [payer,worker]){
