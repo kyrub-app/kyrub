@@ -1,4 +1,5 @@
-import { FieldPath, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
+import { getApps } from 'firebase-admin/app';
+import { getFirestore, FieldPath, type DocumentReference, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import { advanceCocarProjection, rebuildCocarProjection, validCocarProjection } from '../../shared/cocarProjection.js';
 import type { KyrubXpEntry } from '../../shared/gamification.js';
 
@@ -15,7 +16,7 @@ function candidateEpoch(db: Firestore): string | null {
       process.env.FIREBASE_PROJECT_ID !== 'kyrub-security-test' ||
       process.env.GCLOUD_PROJECT !== 'kyrub-security-test' ||
       process.env.GOOGLE_CLOUD_PROJECT !== 'kyrub-security-test' ||
-      db.projectId !== 'kyrub-security-test') return null;
+      !getApps().some(app => app.options.projectId === 'kyrub-security-test' && getFirestore(app) === db)) return null;
   const epoch = process.env.KYRUB_COCAR_PROJECTION_TEST_EPOCH;
   return epoch && /^[A-Za-z0-9_-]{1,128}$/.test(epoch) ? epoch : null;
 }
