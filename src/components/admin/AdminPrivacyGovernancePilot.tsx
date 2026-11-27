@@ -1,6 +1,6 @@
 import {useRef,useState} from 'react';
 import {ShieldCheck} from 'lucide-react';
-import {hasAdminPermission,type AdminProfile} from '../../utils/adminControlPlane';
+import {hasAdminPermission,type AdminProfile} from '../../utils/adminControlPlanePermissions';
 import AdminAccordionSection from './AdminAccordionSection';
 import {PRIVACY_CONTEXTS,PRIVACY_RIGHTS} from '../../../shared/privacyRights';
 import {PRIVACY_ASSESSMENT_FINDINGS,type PrivacyAssessmentFinding} from '../../../shared/privacyRightsAssessment';
