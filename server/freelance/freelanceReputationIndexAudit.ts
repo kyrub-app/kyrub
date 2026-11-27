@@ -259,24 +259,37 @@ const squareWindow=24*60*60*1000;
 
 const cocarSnapshotEnabled=()=>process.env.KYRUB_FREELANCE_REPUTATION_COCAR_HEADER_TEST_ONLY==='true';
 const validCocarSnapshot=(v:unknown)=>v===null||typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
-/** Bounded one-time read at publication, never in the feed or conversation.
- * Match the existing private XP statement's authority and document ordering.
- * Fail closed instead of estimating when the bounded history is incomplete. */
+/** Exact, emulator-only reconstruction at publication; never in the feed or chat.
+ * Page size bounds each query, not the total history. Preserve document-ID order
+ * and cross-page idempotency validation, including signed adjustments.
+ * This is an interim linear-cost read until all XP writers can maintain a
+ * certified materialized projection. Do not activate on production.
+ */
 async function readPublicationCocares(tx:Transaction,uid:string):Promise<number|null>{
- const cap=32;
- const rows=await tx.get(adminDb.collection('users/'+uid+'/xpLedger').orderBy(FieldPath.documentId()).limit(cap+1));
- if(rows.size>cap)return null;
- try{
-  let magnitude=0;
-  const entries=rows.docs.map(d=>{
-   const e=d.data() as KyrubXpEntry&{economy?:string};
-   if(e.userId!==uid||e.id!==d.id||e.economy!=='kyrub_xp'||!Number.isFinite(Date.parse(e.occurredAt))||!Number.isSafeInteger(e.deltaXp))throw Error('XP_LEDGER_INVALID');
-   magnitude+=Math.abs(e.deltaXp);if(!Number.isSafeInteger(magnitude))throw Error('XP_LEDGER_INVALID');
-   return e;
-  });
-  const count=kyrubXpTotal(entries);
-  return Number.isSafeInteger(count)&&count>=0?count:null;
- }catch{return null;}
+ const pageSize=32;
+ const query=adminDb.collection('users/'+uid+'/xpLedger').orderBy(FieldPath.documentId()).limit(pageSize);
+ let cursor:QueryDocumentSnapshot|undefined;
+ let total=0,magnitude=0;
+ const seen=new Set<string>();
+ for(;;){
+  const rows=await tx.get(cursor?query.startAfter(cursor):query);
+  try{
+   for(const d of rows.docs){
+    const e=d.data() as KyrubXpEntry&{economy?:string};
+    if(e.userId!==uid||e.id!==d.id||e.economy!=='kyrub_xp'||!Number.isFinite(Date.parse(e.occurredAt))||!Number.isSafeInteger(e.deltaXp))throw Error('XP_LEDGER_INVALID');
+    magnitude+=Math.abs(e.deltaXp);
+    if(!Number.isSafeInteger(magnitude))throw Error('XP_LEDGER_INVALID');
+    if(seen.has(e.idempotencyKey))throw Error('XP_LEDGER_INVALID');
+    // Reuse the canonical single-entry validation. Its zero floor must
+    // be applied to the running total, not to an independently summed page.
+    kyrubXpTotal([e]);
+    seen.add(e.idempotencyKey);
+    total=Math.max(0,total+e.deltaXp);
+   }
+  }catch{return null;}
+  if(rows.size<pageSize)return total;
+  cursor=rows.docs[rows.docs.length-1];
+ }
 }
 
 export async function publishOwnReputationSquare(uid:string,identifier:unknown,requestId:unknown,confirmed:unknown){
