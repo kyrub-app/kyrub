@@ -197,3 +197,13 @@ test('management reputation uses bounded forward pages with the current report s
  assert.match(ui,/fetch\(url\(pageCursor\)/);
  assert.match(ui,/encodeURIComponent\(cursor\)/);
 });
+
+test('public profile experience uses canonical address and isolated authenticated consultation',()=>{
+ const page=read('src/components/PublicSocialDestinationPage.tsx'),ui=read('src/components/PublicProfileExperience.tsx');
+ assert.match(page,/data.kind==='profile'&&publicExperienceCandidateEnabled\(\)/);
+ assert.match(page,/data.identifier===identifier/);
+ assert.match(ui,/reputation_public_address_experience&identifier=/);
+ assert.match(ui,/cache:'no-store'/);assert.match(ui,/VITE_KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY/);
+ assert.match(ui,/auth.currentUser!==user/);assert.match(ui,/validPublicExperienceResponse/);
+ assert.doesNotMatch(ui,/targetUid|localStorage|ratingCount|method:'POST'/);
+});
