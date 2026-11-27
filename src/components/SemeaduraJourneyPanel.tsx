@@ -75,11 +75,11 @@ export function SemeaduraJourneyPanel({
       <p className="mt-1 text-xs text-slate-400">
         {communityId
           ? 'Crescimento coletivo de todas as publicações desta comunidade.'
-          : 'Suas semeaduras recebidas em publicações pessoais e comunitárias.'}
+          : 'Semeaduras recebidas em suas publicações pessoais e comunitárias. Estes números representam progresso, não sementes disponíveis para semear.'}
       </p>
       <div className={`mt-3 grid grid-cols-3 gap-2 text-center ${showCanonicalXp ? "sm:grid-cols-3" : "sm:grid-cols-5"}`} aria-label="Etapas da Jornada da Pitangueira">
         {([
-          ['🌰', 'Sementes', journey.totalSeeds],
+          ['🌰', 'Sementes recebidas', journey.totalSeeds],
           ['🌱', 'Brotos', Math.floor(journey.totalSeeds / SEEDS_PER_BROTO)],
           ['🌿', 'Mudas', Math.floor(journey.totalSeeds / SEEDS_PER_MUDA)],
           ['🌳', 'Pitangueiras', Math.floor(journey.totalSeeds / SEEDS_PER_PITANGUEIRA)],
