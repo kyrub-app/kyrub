@@ -57,7 +57,7 @@ export async function recordFreelanceAttendance(uid:string,offerId:string,input:
  * The operational transition and timeline commit atomically. Unscheduled legacy contracts remain unchanged. */
 export async function prepareFreelanceAttendanceLifecycle(tx:Transaction,uid:string,offerId:string,action:'start'|'request_completion'|'confirm_completion',at:string,changed:boolean){
  const c=await readAttendanceContext(tx,uid,offerId),t=await readAttendanceTimeline(tx,c);
- if(!t){if(c.current?.status==='pending'&&action==='start')return fail();return ()=>{};}
+ if(!t){if(c.terms?.mode==='hourly'||(c.current?.status==='pending'&&action==='start'))return fail();return ()=>{};}
  const kind=action==='start'?'start':action==='request_completion'?'checkout':'confirm_checkout';
  const id='l-'+action;
  if(!changed){const existing=t.events.find(e=>e.id===id);if(!existing||existing.kind!==kind||existing.actor!==c.actor||existing.at!==at)return fail();return ()=>{};}
