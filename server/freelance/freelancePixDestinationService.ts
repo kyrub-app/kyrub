@@ -1,3 +1,4 @@
+import {readHourlyPixPreparation} from './freelanceHourlyPixPreparationService.js';
 import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication} from '../../shared/freelanceLifecycle.js';
@@ -34,8 +35,10 @@ export async function bindFreelancePixDestination(uid:string,offerId:string,inpu
   const [o,a,ob,existing,identity]=await tx.getAll(ref,ref.collection('applications').doc(uid),ref.collection('directPayment').doc('obligation'),bindingRef,adminDb.doc('identity_verifications/'+uid));
   const offer=o.data() as FreelanceOffer|undefined,app=a.data() as FreelanceApplication|undefined;
   if(!offer||!app||offer.id!==offerId||offer.selectedApplicantUid!==uid||app.applicantUid!==uid)throw Error('FREELANCE_FORBIDDEN');
-  const obligation=buildFreelancePaymentObligation(offer,app);
-  if(obligation.terms.method!=='external_pix'||!matchesFreelancePaymentObligation(ob.data(),obligation))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+  const hourly=offer.workTerms?.mode==='hourly';
+  if(hourly&&offer.status!=='contracted')throw Error('FREELANCE_PIX_DISCLOSURE_UNAVAILABLE');
+  const obligation=hourly?(await readHourlyPixPreparation(tx,uid,offerId)).obligation:buildFreelancePaymentObligation(offer,app);
+  if(obligation.terms.method!=='external_pix'||(!hourly&&!matchesFreelancePaymentObligation(ob.data(),obligation)))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
   const roles=identity.get('approvedProfiles');
   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
   const destination=await readPersonalPixForContract(tx,uid);
@@ -118,9 +121,13 @@ function explicitRevision(input:unknown){
 async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string,id:string){
  const direct=adminDb.doc('freelanceOffersV1/'+id).collection('directPayment');
  const reviewDoc=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+id));
- const context=await readFinancialContext(tx,uid,id,true);
+ const offerDoc=await tx.get(direct.parent!);
+ const offer=offerDoc.data() as FreelanceOffer|undefined;
+ const preparing=offer?.workTerms?.mode==='hourly'&&['contracted','in_progress','completion_requested'].includes(offer.status);
+ const context=preparing?await readHourlyPixPreparation(tx,uid,id):await readFinancialContext(tx,uid,id,true);
  const {obligation,events}=context;
  const review=checkedReview(reviewDoc.data(),obligation);
+ if(preparing&&reviewDoc.exists)return blocked();
  const [bindingDoc,sharingDoc]=await tx.getAll(direct.doc('receivingDestination'),direct.doc('pixSharing'));
  if(['under_review','cancelled'].includes(context.offer.status)||review||events.some(e=>e.statement==='paid'||e.statement==='received'))return blocked();
  const binding=bindingDoc.data();
@@ -206,7 +213,7 @@ export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offe
  if(!['contracted','in_progress'].includes(offer.status)||!validFreelanceId(offer.selectedApplicantUid))throw Error('FREELANCE_CONFLICT');
  const id=offer.id,worker=offer.selectedApplicantUid;
  const direct=adminDb.doc('freelanceOffersV1/'+id).collection('directPayment');
- const {obligation,projection}=await readFinancialContext(tx,worker,id,true);
+ const {obligation,projection}=offer.workTerms?.mode==='hourly'?await readHourlyPixPreparation(tx,worker,id):await readFinancialContext(tx,worker,id,true);
  // An already committed start may be replayed after a destination changes.
  // The lifecycle still checks matching pair, timestamps and actor.
  if(offer.status==='in_progress')return;
