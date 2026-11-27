@@ -220,12 +220,44 @@ try{
  console.log('PASS deferred cache refresh: original Pix panel retained while open, legacy refresh applied after close');
  assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),undefined);
  console.log('PASS personal Pix UI: Central Pessoal, masked declaration and revocation across two contexts');
- // Administrative fixture of an already linked CID; actual passkey linking is
- // covered by its separate emulator suite, not simulated as a UI success here.
+ // Provision only virgin stock. Register and link with the real lifecycle,
+ // real ES256 signatures and test authenticator data, in this same emulator.
  const cidId=randomUUID().replaceAll('-',''),cidRef=db.doc('kyrub_official_tags/'+cidId);
- const cidOwner='tagpk_'+'x'.repeat(43),cidKey='cid-'+suffix+'@example.invalid';
- await cidRef.set({distribution:'promotional',model:'adesivo',manufacturingState:'released',ownerAuthMode:'passkey',ownerId:cidOwner,firstOwnerId:cidOwner,linkedAccountId:worker.uid,linkedAccountAt:new Date().toISOString(),enabled:true,blocked:false,presentation:{name:'CID fictício',occupation:'',about:'',pix:{keyType:'email',key:cidKey,recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true}}});
+ const cidKey='cid-'+suffix+'@example.invalid';
+ const {makeSoftwareTagAuthenticator}=await import('./fixtures/kyrub-tag-software-authenticator.ts');
+ const {beginTagPasskeyMutation:begin,finishTagPasskeyMutation:finish}=await import('../server/identity/kyrubTagPasskeyLifecycle.ts');
+ const {cidFinanceIntegratedTestEnabled,CID_FINANCE_TEST_ORIGIN}=await import('../server/identity/kyrubTagPilotIsolation.ts');
+ assert.equal(cidFinanceIntegratedTestEnabled(),false,'test seam disabled by default');
+ process.env.KYRUB_CID_FINANCE_INTEGRATED_TEST='true';
+ const rp=new URL(CID_FINANCE_TEST_ORIGIN).hostname;
+ const authenticator=makeSoftwareTagAuthenticator(CID_FINANCE_TEST_ORIGIN,rp);
+ const finder=makeSoftwareTagAuthenticator(CID_FINANCE_TEST_ORIGIN,rp);
+ const card={name:'CID fictício',occupation:'',about:'',pix:{keyType:'email',key:cidKey,recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true}};
+ await cidRef.create({distribution:'promotional',model:'adesivo',manufacturingState:'released',ownerId:null,activationHash:null,reservedEmailHash:null,enabled:false,blocked:false,targets:[],externalUrls:[],presentation:{name:'',occupation:'',about:''}});
  try{
+  assert.equal(cidFinanceIntegratedTestEnabled(),true);
+  await assert.rejects(begin('https://other.vercel.app',cidId,'register',card));
+  const registration=await begin(CID_FINANCE_TEST_ORIGIN,cidId,'register',card);
+  await finish(CID_FINANCE_TEST_ORIGIN,cidId,registration.challengeId,authenticator.register(registration.options));
+  const registered=(await cidRef.get()).data();
+  assert.equal(registered.ownerAuthMode,'passkey');assert.equal(registered.presentation.pix.key,cidKey);
+  assert.equal(registered.linkedAccountId,undefined);
+  await button(secondPix,'Atualizar cadastro').click();
+  await secondPix.getByRole('button',{name:'Atualizar cadastro',exact:true}).waitFor();
+  await waitText(secondPix,'Chave revogada');
+  await secondPix.getByRole('radio').waitFor({state:'detached'});
+  const idToken=await second.evaluate(async()=>{
+   const {auth}=await import('/src/utils/firebase.ts');
+   return auth.currentUser.getIdToken();
+  });
+  const verified=await auth.verifyIdToken(idToken,true);
+  assert.equal(verified.uid,worker.uid);assert.equal(verified.email_verified,true);
+  const link=await begin(CID_FINANCE_TEST_ORIGIN,cidId,'link-account',undefined,undefined,verified.uid);
+  await assert.rejects(finish(CID_FINANCE_TEST_ORIGIN,cidId,link.challengeId,finder.assert(link.options,{credentialId:authenticator.id,handle:authenticator.handle}),undefined,verified.uid));
+  assert.equal((await cidRef.get()).get('linkedAccountId'),undefined);
+  await finish(CID_FINANCE_TEST_ORIGIN,cidId,link.challengeId,authenticator.assert(link.options),undefined,verified.uid);
+  assert.equal((await cidRef.get()).get('linkedAccountId'),worker.uid);
+  console.log('PASS actual signed CID activation and link: virgin stock, wrong RP and foreign signature rejected, verified account UID');
   await button(secondPix,'Atualizar cadastro').click();
   await waitText(secondPix,'Chaves Pix dos meus CIDs');
   await secondPix.getByRole('radio').check();
@@ -243,13 +275,15 @@ try{
   assert.equal(await button(secondPix,'Substituir pela chave do CID').isDisabled(),true);
   await button(secondPix,'Cancelar escolha do CID').click();
   assert.equal((await financialRef.get()).get('revision'),3);
-  await cidRef.update({'presentation.pix':null});
+  const removal=await begin(CID_FINANCE_TEST_ORIGIN,cidId,'edit',{...card,pix:null});
+  await finish(CID_FINANCE_TEST_ORIGIN,cidId,removal.challengeId,authenticator.assert(removal.options));
+  assert.equal((await cidRef.get()).get('presentation.pix'),null);
   await button(secondPix,'Atualizar cadastro').click();
   await waitText(secondPix,'Chave declarada: E-mail');
   await secondPix.getByRole('radio').waitFor({state:'detached'});
   assert.equal((await financialRef.get()).get('key'),cidKey);
   console.log('PASS CID Pix UI: masked linked choice, separate confirmation, import without retyping, explicit replacement and independent destination');
- }finally{await cidRef.delete();}
+ }finally{delete process.env.KYRUB_CID_FINANCE_INTEGRATED_TEST;await cidRef.delete();}
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){

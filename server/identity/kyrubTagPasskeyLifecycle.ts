@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
-import {assertTagPilotWriteIsolated,stableTagPilotHost,productionTagPasskeyTestId,cidPixEmulatorEnabled} from './kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,stableTagPilotHost,productionTagPasskeyTestId,cidPixEmulatorEnabled,cidFinanceIntegratedTestEnabled,CID_FINANCE_TEST_ORIGIN} from './kyrubTagPilotIsolation.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {isBoundTarget,parseCardTargets} from './publicCardPolicy.js';
 import {resolveTarget} from './publicVisitCardService.js';
@@ -21,6 +21,7 @@ const indexes=()=>adminDb.collection('kyrub_tag_passkey_credential_index');
 const quotas=()=>adminDb.collection('kyrub_tag_passkey_quotas');
 type RecordData=TagPasskeyChallenge&{presentation:PromotionalTagPresentation|null;tagVersion:string;credentialVersion:string|null;linkedAccountActor?:string};
 function scope(origin:string,tagId:string){
+ if(cidFinanceIntegratedTestEnabled())return isolatedTagPasskeyScope(CID_FINANCE_TEST_ORIGIN,origin);
  if(process.env.VERCEL_ENV==='production'){
   const approved=productionTagPasskeyTestId();
   if(!approved||approved!==tagId)throw Error('TAG_PASSKEY_DISABLED');
