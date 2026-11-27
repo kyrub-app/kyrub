@@ -1,3 +1,4 @@
+import {reputationCriteria} from '../../../shared/freelanceReputationCriteria';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -33,7 +34,8 @@ export default function AdminFreelanceReputationContests({user}:{user:User}){
   {page?.items.length===0&&<p>Nenhuma contestação pendente nesta página.</p>}
   {page?.items.map(i=><article key={i.caseId} className="space-y-2 rounded-xl border border-slate-800 p-3">
    <h4 className="text-base font-bold text-white">{subjects[i.subjectKind]}</h4>
-   <p>Avaliação original (escala de teste): {i.stars}/5</p>
+   <p>Média original: {i.mean.toLocaleString('pt-BR',{maximumFractionDigits:2})}/5</p>
+   <dl>{Object.entries(reputationCriteria(i.subjectKind)).map(([k,label])=><div key={k} className="flex justify-between gap-2"><dt>{label}</dt><dd>{i.scores[k]===null?'Não se aplica':i.scores[k]+'/5'}</dd></div>)}</dl>
    <p>Avaliador: {i.ratingRole==='requester'?'Contratante':'Profissional'}</p>
    <p className="break-all">Contrato: {i.offerId}</p>
    <p className="break-all">Protocolo: {i.caseId}</p>
