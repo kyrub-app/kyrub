@@ -1,0 +1,62 @@
+name: Privacy V1 integrated verification
+on:
+  pull_request:
+    paths:
+      - 'shared/privacy*.ts'
+      - 'server/governance/privacy*.ts'
+      - 'tests/*privacy*.test.ts'
+      - 'src/components/KyrubPrivacy*.tsx'
+      - 'src/components/KyrubOptionalConsentPilot.tsx'
+      - '.github/workflows/privacy-v1-integrated.yml'
+permissions:
+  contents: read
+jobs:
+  policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx --test tests/privacy-rights-foundation.test.ts tests/privacy-lifecycle-planning.test.ts tests/privacy-incident-triage.test.ts
+  emulator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        suite:
+          - firestore-privacy-rights
+          - firestore-privacy-identity
+          - firestore-privacy-cid-evidence
+          - firestore-privacy-assessment
+          - firestore-privacy-response
+          - firestore-privacy-own-export
+          - firestore-privacy-own-correction
+          - firestore-privacy-optional-consent
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run firestore:compose
+      - name: Verify isolated privacy suite
+        env:
+          KYRUB_PRIVACY_EMULATOR: 'true'
+          GCLOUD_PROJECT: demo-kyrub-privacy
+          FIREBASE_PROJECT_ID: demo-kyrub-privacy
+          TEST_SUITE: ${{ matrix.suite }}
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-privacy --only firestore,auth "node --test --test-concurrency=1 --import tsx tests/${TEST_SUITE}.test.ts"
