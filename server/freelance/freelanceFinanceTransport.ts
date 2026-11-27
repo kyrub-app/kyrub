@@ -12,7 +12,7 @@ import {readFinancialContext,checkedReview,recordFreelanceExternalPaymentStateme
 import {submitFreelanceFinancialEvidence,readFinancialEvidence} from './freelanceFinancialEvidenceService.js';
 import {submitFreelanceFinancialReceipt,readFinancialReceiptManifest,readFinancialReceiptBytes} from './freelanceFinancialReceiptService.js';
 import {personalPixRecentLogin} from '../payments/personalPixTransport.js';
-import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination,changeFreelancePixBinding,readFreelancePixRebind,changeFreelancePixSharingConsent} from './freelancePixDestinationService.js';
+import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination,changeFreelancePixBinding,readFreelancePixRebind,changeFreelancePixSharingConsent,readFreelancePixWithdrawal} from './freelancePixDestinationService.js';
 import {readOwnFreelanceRestrictions,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 import {adminDb} from '../firebaseAdmin.js';
 
@@ -79,6 +79,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
    if(q.view==='cancellation_accounting'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCancellationAccounting(uid,q.offerId));return;}
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
    if(q.view==='pix_rebind'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixRebind(uid,q.offerId));return;}
+   if(q.view==='pix_withdrawal'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixWithdrawal(uid,q.offerId));return;}
    if(q.view==='pix_sharing'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixSharing(uid,q.offerId));return;}
    if(q.view==='restrictions'&&keys.length===1){res.status(200).json(await readOwnFreelanceRestrictions(uid));return;}
    if(q.view==='case'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCase(uid,q.offerId));return;}
