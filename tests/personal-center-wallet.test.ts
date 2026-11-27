@@ -217,7 +217,7 @@ test('reputation sharing prepares a voluntary profile link without publication o
  assert.match(modal,/visibleIdentifier=\{profileVisibilityReady&&isProfileVisible&&!visibilityBusy&&personalIdentifier\?\.status==='ready'/);
  assert.match(panel,/buildPublicDestinationUrl\('profile',visibleIdentifier\)/);
  assert.match(panel,/navigator.clipboard.writeText\(draft\)/);
- assert.match(panel,/Conheça minha Experiência e Reputações na Kyrub: /);
+ assert.match(panel,/Conheça minha Experiência e Reputações no Kyrub: /);
  assert.match(panel,/auth.currentUser!==user/);
  assert.doesNotMatch(panel,/setDoc\(|addDoc\(|localStorage|rewardXp|method:'POST'/);
 });
