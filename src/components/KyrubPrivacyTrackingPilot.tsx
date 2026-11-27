@@ -1,12 +1,18 @@
 import {useRef,useState} from 'react';
 import {ShieldCheck} from 'lucide-react';
-type TrackingResult={protocol:string;receivedAt:number;triageStatus:'pending-review'|'verification-required';identityStatus:'pending-verification';actionStatus:'not-executed';simulated:true};
-export type PrivacyTrackingAdapter={track:(protocol:string,code:string)=>Promise<TrackingResult>;revoke:(protocol:string,code:string)=>Promise<{revoked:true;simulated:true}>};
+type TrackingResult={evidenceStatus?:'awaiting-evidence'|'account-control-confirmed';protocol:string;receivedAt:number;triageStatus:'pending-review'|'verification-required';identityStatus:'pending-verification';actionStatus:'not-executed';simulated:true};
+export type PrivacyTrackingAdapter={confirmAccount?:(protocol:string,code:string)=>Promise<{evidenceStatus:'account-control-confirmed';identityStatus:'pending-verification';actionStatus:'not-executed';simulated:true}>;track:(protocol:string,code:string)=>Promise<TrackingResult>;revoke:(protocol:string,code:string)=>Promise<{revoked:true;simulated:true}>};
 const field='min-h-11 rounded-xl border border-[#34443B] p-3 text-sm disabled:opacity-50';
 export function KyrubPrivacyTrackingPilot({adapter}:{adapter?:PrivacyTrackingAdapter}){
  const [protocol,setProtocol]=useState(''),[code,setCode]=useState(''),[result,setResult]=useState<TrackingResult|null>(null),[busy,setBusy]=useState(false),[status,setStatus]=useState('');
  const [confirmRevoke,setConfirmRevoke]=useState(false),lock=useRef(false);
  const ready=/^[a-f0-9-]{36}$/.test(protocol.trim())&&/^[A-Za-z0-9_-]{43}$/.test(code.trim());
+ async function confirmAccount(){
+  if(!adapter?.confirmAccount||!result||!ready||lock.current)return;
+  lock.current=true;setBusy(true);setStatus('');
+  try{const r=await adapter.confirmAccount(protocol.trim(),code.trim());if(r.simulated!==true||r.evidenceStatus!=='account-control-confirmed'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed')throw Error('UNCONFIRMED');setResult(v=>v?{...v,evidenceStatus:r.evidenceStatus}:null);}
+  catch{setStatus('Não foi possível confirmar o controle da conta. A solicitação permanece registrada.');}finally{lock.current=false;setBusy(false);}
+ }
  function clearResult(){setResult(null);setConfirmRevoke(false);setStatus('');}
  async function run(revoke=false){
   if(!adapter||!ready||lock.current||revoke&&(!result||!confirmRevoke))return;
@@ -25,7 +31,7 @@ export function KyrubPrivacyTrackingPilot({adapter}:{adapter?:PrivacyTrackingAda
    <label className="block text-sm">Código privado<input type="password" autoComplete="off" className={field+' block w-full bg-[#1D2924]'} value={code} maxLength={43} disabled={busy} onChange={e=>{clearResult();setCode(e.target.value);}}/></label>
    <button className={field+' w-full'} type="submit" disabled={!adapter||busy||!ready}>Consultar andamento</button>
   </form>
-  {result&&<div className="space-y-2 rounded-xl border border-[#34443B] p-3"><strong>{result.triageStatus==='verification-required'?'Aguardando verificação de identidade':'Recebida — aguardando triagem'}</strong><p className="text-xs">Nenhuma ação sobre seus dados foi executada. O código permite consultar apenas o andamento, não comprova identidade.</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmRevoke} disabled={busy} onChange={e=>setConfirmRevoke(e.target.checked)}/> Revogar este código privado (não cancela o pedido).</label><button className={field} type="button" disabled={busy||!confirmRevoke} onClick={()=>void run(true)}>Revogar código</button></div>}
+  {result&&<div className="space-y-2 rounded-xl border border-[#34443B] p-3"><strong>{result.triageStatus==='verification-required'?'Aguardando verificação de identidade':'Recebida — aguardando triagem'}</strong>{result.evidenceStatus==='account-control-confirmed'?<p className="text-sm">Controle da conta confirmado. Análise de identidade pendente.</p>:result.triageStatus==='verification-required'&&adapter?.confirmAccount?<button type="button" className={field} disabled={busy} onClick={()=>void confirmAccount()}>Confirmar conta existente</button>:null}<p className="text-xs">Nenhuma ação sobre seus dados foi executada. O código permite consultar apenas o andamento, não comprova identidade.</p><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={confirmRevoke} disabled={busy} onChange={e=>setConfirmRevoke(e.target.checked)}/> Revogar este código privado (não cancela o pedido).</label><button className={field} type="button" disabled={busy||!confirmRevoke} onClick={()=>void run(true)}>Revogar código</button></div>}
   {status&&<p role="status" className="text-sm">{status}</p>}
   {!adapter&&<p className="text-xs">Consulta indisponível nesta prévia.</p>}
  </section>;

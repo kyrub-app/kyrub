@@ -1,6 +1,7 @@
 // Local-only prototype. A test harness seeds verified-channel fixtures; no public
 // channel verification, identity verification, data export or deletion is implemented.
 import {getApps,initializeApp} from 'firebase-admin/app';
+import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {normalizePrivacyRequest} from '../../shared/privacyRights.js';
@@ -46,12 +47,38 @@ export function createPrivacyRightsEmulator(){
     const bucket=Math.floor(now/900000),count=q.get('bucket')===bucket?q.get('count'):0;
     if(!Number.isSafeInteger(count)||count<0||count>=5)return deny();
     const record=preparePrivacyRequest(draft,{reference:credential.id,verifiedAt:c.verifiedAt},now);
-    tx.create(requests.doc(record.protocol),{...record,revision:0,triageStatus:'pending-review'});
+    const boundAccountUid=draft.context==='ecosystem'&&typeof c.boundAccountUid==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(c.boundAccountUid)?c.boundAccountUid:null;
+    tx.create(requests.doc(record.protocol),{...record,revision:0,triageStatus:'pending-review',boundAccountUid});
     tx.create(index.doc(key),{channelReference:credential.id,protocol:record.protocol,payloadDigest:digest});
     tx.set(q.ref,{bucket,count:count+1});
     const trackingExpiresAt=now+PRIVACY_TRACKING_TTL_MS;
     tx.create(tracking.doc(record.protocol),{protocol:record.protocol,digest:hash(trackingCode),createdAt:now,expiresAt:trackingExpiresAt,simulation:true});
     return {...projectPrivacyReceipt(record),trackingCode,trackingExpiresAt};
+   });
+  },
+  // The test harness establishes a prior account/channel association.
+  // Never infer it from a matching email or a caller-supplied UID.
+  async confirmExistingAccount(protocol:string,code:string,idToken:string,now:number){
+   assertPrivacyEmulator();
+   if(process.env.FIREBASE_AUTH_EMULATOR_HOST!=='127.0.0.1:9099'||!uuid(protocol)||!opaque(code)||typeof idToken!=='string'||!idToken||idToken.length>8192||!validTime(now))return deny();
+   const auth=getAuth(app),identity=await auth.verifyIdToken(idToken,true);
+   if(identity.aud!==PRIVACY_EMULATOR_PROJECT||identity.email_verified!==true||typeof identity.uid!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(identity.uid)||!Number.isSafeInteger(identity.auth_time)||!Number.isSafeInteger(identity.exp)||identity.auth_time*1000>now||now-identity.auth_time*1000>5*60000||identity.exp*1000<=now)return deny();
+   const user=await auth.getUser(identity.uid);if(user.disabled||!user.emailVerified)return deny();
+   return db.runTransaction(async tx=>{
+    assertPrivacyEmulator();
+    const [t,s]=await Promise.all([tx.get(tracking.doc(protocol)),tx.get(requests.doc(protocol))]);
+    const a=t.data(),r=s.data();
+    if(!a||a.protocol!==protocol||a.simulation!==true||a.revokedAt!==undefined||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||a.expiresAt-a.createdAt>PRIVACY_TRACKING_TTL_MS||!equal(a.digest,hash(code))||!r||r.protocol!==protocol||r.simulation!==true||r.status!=='received'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed'||r.triageStatus!=='verification-required'||r.revision!==1||r.receivedAt!==a.createdAt||!opaque(r.channelReference)||normalizePrivacyRequest(r.draft).context!=='ecosystem')return deny();
+    const c=(await tx.get(channels.doc(r.channelReference))).data();
+    if(!c||c.id!==r.channelReference||c.simulation!==true||c.revokedAt!==undefined||c.boundAccountUid!==identity.uid||r.boundAccountUid!==identity.uid||!validTime(c.verifiedAt)||c.verifiedAt>r.receivedAt)return deny();
+    const proofRef=db.collection('privacy_emulator_identity_evidence').doc(protocol),prior=(await tx.get(proofRef)).data();
+    if(prior){
+     if(prior.protocol!==protocol||prior.accountUid!==identity.uid||prior.simulation!==true||prior.kind!=='existing-account-control')return deny();
+     return {protocol,evidenceStatus:'account-control-confirmed' as const,identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
+    }
+    tx.create(proofRef,{protocol,accountUid:identity.uid,kind:'existing-account-control',confirmedAt:now,authenticatedAt:identity.auth_time*1000,simulation:true,authorizesExecution:false});
+    tx.update(s.ref,{evidenceStatus:'account-control-confirmed'});
+    return {protocol,evidenceStatus:'account-control-confirmed' as const,identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
    });
   },
   async track(protocol:string,code:string,now:number){
@@ -63,7 +90,7 @@ export function createPrivacyRightsEmulator(){
     if(!a||a.protocol!==protocol||a.simulation!==true||a.revokedAt!==undefined||!validTime(a.createdAt)||!validTime(a.expiresAt)||now<a.createdAt||now>=a.expiresAt||a.expiresAt-a.createdAt>PRIVACY_TRACKING_TTL_MS||!equal(a.digest,hash(code)))return deny();
     if(!r||r.protocol!==protocol||r.simulation!==true||r.status!=='received'||r.identityStatus!=='pending-verification'||r.actionStatus!=='not-executed'||!validTime(r.receivedAt)||r.receivedAt!==a.createdAt||!['pending-review','verification-required'].includes(r.triageStatus))return deny();
     // Status only: no draft, channel reference, identity or personal data.
-    return {protocol,receivedAt:r.receivedAt,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
+    return {protocol,receivedAt:r.receivedAt,evidenceStatus:r.evidenceStatus==='account-control-confirmed'?'account-control-confirmed' as const:'awaiting-evidence' as const,triageStatus:r.triageStatus as 'pending-review'|'verification-required',identityStatus:'pending-verification' as const,actionStatus:'not-executed' as const,simulated:true as const};
    });
   },
   async revokeTracking(protocol:string,code:string,now:number){
