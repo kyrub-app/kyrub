@@ -1,3 +1,5 @@
+import {readOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
+import {readFreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
 import {readFreelanceCounterproposal} from '../../shared/freelanceCounterproposal.js';
 import {adminDb} from '../firebaseAdmin.js';
 import {FieldPath} from 'firebase-admin/firestore';
@@ -12,7 +14,8 @@ function project(id:string,raw:unknown,uid:string){
  const visibleTerms=!participant&&o.originalOfferTerms?o.originalOfferTerms:o;
  const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:visibleTerms.paymentMinor,...(visibleTerms.paymentTerms!==undefined?{paymentTerms:visibleTerms.paymentTerms}:{}),...(visibleTerms.workTerms!==undefined?{workTerms:visibleTerms.workTerms}:{})});
  const proposal=participant?readFreelanceCounterproposal(o.selectedCounterproposal,o.originalOfferTerms??o):undefined;
- return {id,...terms,...(proposal?{selectedCounterproposal:proposal}:{}),status:o.status,isOwner:o.ownerUid===uid,isSelected:o.selectedApplicantUid===uid,createdAt:o.createdAt};
+ const requesterStore=readFreelanceStoreRepresentation(o.requesterStore);
+ return {id,...terms,...(requesterStore?{requesterStore}:{}),...(proposal?{selectedCounterproposal:proposal}:{}),status:o.status,isOwner:o.ownerUid===uid,isSelected:o.selectedApplicantUid===uid,createdAt:o.createdAt};
 }
 function projectApplication(raw:unknown,offer:FreelanceOffer,uid:string){
  const a=raw as FreelanceApplication;
@@ -28,6 +31,7 @@ export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:un
  const after=validFreelanceId(cursor)?cursor:undefined;
  if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
+  if(view==='requester_stores'){if(offerId||cursor)throw Error('FREELANCE_INVALID');const store=await readOwnedFreelanceStore(tx,uid);return {items:store?[store]:[]};}
   if(view==='open'||view==='owner'){
    let query=(view==='open'?offers().where('status','==','open'):offers().where('ownerUid','==',uid)).orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
    if(after)query=query.startAfter(after);

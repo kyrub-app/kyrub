@@ -1,3 +1,4 @@
+import {sameFreelanceStoreRepresentation,readFreelanceStoreRepresentation,type FreelanceStoreRepresentation} from './freelanceStoreRepresentation.js';
 import type {FreelanceCounterproposal,FreelanceOriginalTerms} from './freelanceCounterproposal.js';
 import {readFreelanceWorkTerms,sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady,type FreelanceWorkTerms} from './freelanceWorkTerms.js';
 import {createDirectPaymentTerms,type DirectPaymentTerms} from './directPaymentTerms.js';
@@ -12,6 +13,7 @@ export interface FreelanceOfferInput {
 export interface FreelanceOffer extends FreelanceOfferInput {
   id: string;
   ownerUid: string;
+  requesterStore?:FreelanceStoreRepresentation;
   selectedCounterproposal?:FreelanceCounterproposal;
   originalOfferTerms?:FreelanceOriginalTerms;
   status: 'open' | 'selected' | 'contracted' | 'in_progress' | 'completion_requested' | 'completed' | 'cancelled' | 'under_review';
@@ -27,6 +29,7 @@ export interface FreelanceOffer extends FreelanceOfferInput {
 }
 export interface FreelanceApplication {
   counterproposal?:FreelanceCounterproposal;
+  requesterStore?:FreelanceStoreRepresentation;
   paymentTerms?: DirectPaymentTerms;
   workTerms?: FreelanceWorkTerms;
   offerId: string;
@@ -88,7 +91,8 @@ export function createFreelanceApplication(offer: FreelanceOffer, applicantUid: 
   const paymentTerms=readFreelancePaymentTerms(offer.paymentTerms,offer.paymentMinor);
   const workTerms=readFreelanceWorkTerms(offer.workTerms,offer.paymentMinor);
   assertFreelanceWorkExecutionReady(workTerms);
-  return {offerId:offer.id,ownerUid:offer.ownerUid,applicantUid,status:'pending',createdAt:now,...(paymentTerms?{paymentTerms}:{}),...(workTerms?{workTerms}:{})};
+  const requesterStore=readFreelanceStoreRepresentation(offer.requesterStore);
+  return {offerId:offer.id,ownerUid:offer.ownerUid,applicantUid,status:'pending',createdAt:now,...(requesterStore?{requesterStore}:{}),...(paymentTerms?{paymentTerms}:{}),...(workTerms?{workTerms}:{})};
 }
 
 export interface FreelanceSelectionResult {
@@ -103,7 +107,7 @@ function validatePair(offer: FreelanceOffer, application: FreelanceApplication, 
       application.applicantUid === offer.ownerUid || !Number.isFinite(Date.parse(now)) ||
       !Number.isSafeInteger(offer.paymentMinor) || offer.paymentMinor <= 0 || offer.paymentMinor > 999999999 ||
       !sameFreelancePaymentTerms(offer.paymentTerms,application.paymentTerms,offer.paymentMinor)||
-      !sameFreelanceWorkTerms(offer.workTerms,application.workTerms,offer.paymentMinor)) {
+      !sameFreelanceWorkTerms(offer.workTerms,application.workTerms,offer.paymentMinor)||!sameFreelanceStoreRepresentation(offer.requesterStore,application.requesterStore)) {
     throw new Error('FREELANCE_CONFLICT');
   }
 }

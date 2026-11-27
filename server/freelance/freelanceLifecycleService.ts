@@ -1,3 +1,5 @@
+import {requireOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
+import {sameFreelanceStoreRepresentation,readFreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
 import {readFreelanceCounterproposal,sameFreelanceCounterproposal,negotiatedFreelanceTerms} from '../../shared/freelanceCounterproposal.js';
 import {sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from '../../shared/freelanceWorkTerms.js';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -19,8 +21,9 @@ const assertApproved = (data: Record<string, unknown> | undefined, profile: 'req
 
 /** Transport always supplies acceptance, including undefined for legacy.
  * Internal fixture callers retain their existing service contract. */
-function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown;expectedWorkTerms?:unknown}){
+function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown}){
  assertFreelanceWorkExecutionReady(offer.workTerms);
+ if(!sameFreelanceStoreRepresentation(offer.requesterStore,acceptance?.expectedRequesterStore))throw Error('FREELANCE_CONFLICT');
  if(!sameFreelanceWorkTerms(offer.workTerms,acceptance?.expectedWorkTerms,offer.paymentMinor))throw Error('FREELANCE_CONFLICT');
  if(!acceptance)return;
  if(offer.paymentTerms!==undefined&&(!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||
@@ -29,7 +32,8 @@ function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:u
  if(!sameFreelancePaymentTerms(offer.paymentTerms,acceptance.expected,offer.paymentMinor))throw Error('FREELANCE_CONFLICT');
 }
 /** Service-only candidate: no client writes and no migration of legacy records. */
-export async function publishFreelanceOffer(actorUid: string, offerId: string, input: unknown): Promise<{offer:FreelanceOffer;created:boolean}> {
+export async function publishFreelanceOffer(actorUid: string, offerId: string, input: unknown,requesterStoreId?:unknown): Promise<{offer:FreelanceOffer;created:boolean}> {
+  if(requesterStoreId!==undefined&&!validFreelanceId(requesterStoreId))throw Error('FREELANCE_INVALID');
   const proposed = createFreelanceOffer(offerId, actorUid, input, new Date().toISOString());
   assertFreelanceWorkExecutionReady(proposed.workTerms);
   if(proposed.workTerms&&!proposed.paymentTerms)throw Error('FREELANCE_INVALID');
@@ -38,12 +42,13 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
   return adminDb.runTransaction(async tx => {
     const [identity, existing] = await tx.getAll(eligibility(actorUid), ref);
     assertApproved(identity.data(), 'requester');
+    if(requesterStoreId!==undefined){if(!validFreelanceId(requesterStoreId)||!proposed.paymentTerms)throw Error('FREELANCE_INVALID');proposed.requesterStore=await requireOwnedFreelanceStore(tx,actorUid,requesterStoreId);}
     if (existing.exists) {
       const saved = existing.data() as FreelanceOffer;
       if (saved.id !== proposed.id || saved.ownerUid !== actorUid || saved.status !== 'open' ||
           saved.title !== proposed.title || saved.description !== proposed.description ||
           saved.requirements !== proposed.requirements || saved.paymentMinor !== proposed.paymentMinor ||
-          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,proposed.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,proposed.paymentMinor)) throw new Error('FREELANCE_CONFLICT');
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,proposed.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,proposed.paymentMinor)||!sameFreelanceStoreRepresentation(saved.requesterStore,proposed.requesterStore)) throw new Error('FREELANCE_CONFLICT');
       return {offer:saved,created:false};
     }
     await assertFreelanceEngagementAllowed(tx,actorUid);
@@ -51,7 +56,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
     return {offer:proposed,created:true};
   });
 }
-export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;counterproposal?:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
+export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown;counterproposal?:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId)) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
@@ -66,9 +71,10 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string, a
     if (applicationSnap.exists) {
       const saved = applicationSnap.data() as FreelanceApplication;
       if (saved.offerId !== offerId || saved.applicantUid !== actorUid || saved.ownerUid !== offer.ownerUid || saved.status !== 'pending' ||
-          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,offer.paymentMinor)||!sameFreelanceCounterproposal(saved.counterproposal,proposal,offer)) throw new Error('FREELANCE_CONFLICT');
+          !sameFreelancePaymentTerms(saved.paymentTerms,proposed.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(saved.workTerms,proposed.workTerms,offer.paymentMinor)||!sameFreelanceCounterproposal(saved.counterproposal,proposal,offer)||!sameFreelanceStoreRepresentation(saved.requesterStore,proposed.requesterStore)) throw new Error('FREELANCE_CONFLICT');
       return {application:saved,created:false};
     }
+    if(offer.requesterStore)await requireOwnedFreelanceStore(tx,offer.ownerUid,readFreelanceStoreRepresentation(offer.requesterStore)!.storeId);
     await assertFreelanceEngagementAllowed(tx,actorUid,offer.ownerUid);
     tx.create(applicationRef,proposed);
     return {application:proposed,created:true};
@@ -92,6 +98,7 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
     const result = selectFreelanceApplicant(offer,application,actorUid,new Date().toISOString());
     if(!result.changed&&!sameFreelanceCounterproposal(offer.selectedCounterproposal,proposal,offer))throw Error('FREELANCE_CONFLICT');
     if(proposal)result.offer={...result.offer,selectedCounterproposal:proposal};
+    if(result.changed&&offer.requesterStore)await requireOwnedFreelanceStore(tx,actorUid,readFreelanceStoreRepresentation(offer.requesterStore)!.storeId);
     if(result.changed)await assertFreelanceEngagementAllowed(tx,actorUid,applicantUid);
     if (result.changed) {
       tx.update(offerRef,{status:result.offer.status,selectedApplicantUid:result.offer.selectedApplicantUid!,selectedAt:result.offer.selectedAt!,...(proposal?{selectedCounterproposal:proposal}:{})});
@@ -101,7 +108,7 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
   });
 }
 /** The selected worker must explicitly confirm; the owner cannot confirm for them. */
-export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown}): Promise<FreelanceSelectionResult> {
+export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown}): Promise<FreelanceSelectionResult> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
@@ -125,6 +132,7 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
       result.offer={...result.offer,...agreed,originalOfferTerms:negotiatedFreelanceTerms(offer,undefined)};
       result.application={...result.application,paymentTerms:agreed.paymentTerms!,workTerms:agreed.workTerms!};
     }
+    if(result.changed&&offer.requesterStore)await requireOwnedFreelanceStore(tx,offer.ownerUid,readFreelanceStoreRepresentation(offer.requesterStore)!.storeId);
     if(result.changed)await assertFreelanceEngagementAllowed(tx,offer.ownerUid,actorUid);
     if(result.offer.paymentTerms!==undefined){
       // No new financial obligations outside the disposable local candidate.
