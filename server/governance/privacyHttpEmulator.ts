@@ -3,6 +3,8 @@ import type {IncomingMessage,ServerResponse} from 'node:http';
 import type {TLSSocket} from 'node:tls';
 import {assertPrivacyEmulator,createPrivacyRightsEmulator} from './privacyRightsEmulator.js';
 import {createPrivacyRightsAdminEmulator} from './privacyRightsAdminEmulator.js';
+import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
+import {createPrivacyCidEvidenceEmulator,PRIVACY_CID_ORIGIN} from './privacyCidEvidenceEmulator.js';
 import {createPrivacyOptionalConsentEmulator} from './privacyOptionalConsentEmulator.js';
 export const PRIVACY_HTTP_ORIGIN='https://127.0.0.1:8449';
 const deny=():never=>{throw Error('PRIVACY_HTTP_DENIED');};
@@ -25,8 +27,10 @@ export function createPrivacyHttpEmulatorHandler(){
   res.setHeader('Cache-Control','no-store');res.setHeader('Pragma','no-cache');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
   try{
    guard();
-   if((req.socket as TLSSocket).encrypted!==true||req.socket.localAddress!=='127.0.0.1'||req.socket.remoteAddress!=='127.0.0.1'||req.socket.localPort!==8449||req.method!=='POST'||req.headers.host!==new URL(PRIVACY_HTTP_ORIGIN).host||req.headers.origin!==PRIVACY_HTTP_ORIGIN||req.headers['x-privacy-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'PRIVACY_HTTP_DENIED'});
-   const match=/^\/privacy-homologation\/api\/(submit|track|revoke|confirm-account|admin-list|admin-triage|admin-assess|admin-prepare|admin-review|consents-list|consents-change)$/.exec(req.url??'');
+   const requestOrigin=req.headers.origin;
+   if(requestOrigin!==PRIVACY_HTTP_ORIGIN&&requestOrigin!==PRIVACY_CID_ORIGIN)return deny();
+   if((req.socket as TLSSocket).encrypted!==true||req.socket.localAddress!=='127.0.0.1'||req.socket.remoteAddress!=='127.0.0.1'||req.socket.localPort!==8449||req.method!=='POST'||req.headers.host!==new URL(requestOrigin).host||req.headers['x-privacy-homologation']!=='1'||(req.headers['sec-fetch-site']&&req.headers['sec-fetch-site']!=='same-origin'))return respond(res,403,{error:'PRIVACY_HTTP_DENIED'});
+   const match=/^\/privacy-homologation\/api\/(submit|track|revoke|confirm-account|cid-begin|cid-finish|admin-list|admin-triage|admin-assess|admin-prepare|admin-review|consents-list|consents-change)$/.exec(req.url??'');
    if(!match)return respond(res,404,{error:'PRIVACY_HTTP_DENIED'});
    const action=match[1],input=await body(req),now=Date.now();
    if(action.startsWith('admin-')){
@@ -47,6 +51,12 @@ export function createPrivacyHttpEmulatorHandler(){
    if(action==='submit'){
     exact(input,['credential','requestId','draft']);const c=object(input.credential);exact(c,['id','secret']);
     return respond(res,200,await intake.submit({id:opaque(c.id),secret:opaque(c.secret)},opaque(input.requestId),input.draft,now));
+   }
+   if(action==='cid-begin'||action==='cid-finish'){
+    if(requestOrigin!==PRIVACY_CID_ORIGIN)return deny();
+    const cid=createPrivacyCidEvidenceEmulator();
+    if(action==='cid-begin'){exact(input,['protocol','code']);return respond(res,200,await cid.begin(protocol(input.protocol),opaque(input.code),requestOrigin,now));}
+    exact(input,['protocol','code','challengeId','response']);return respond(res,200,await cid.finish(protocol(input.protocol),opaque(input.code),requestOrigin,opaque(input.challengeId),object(input.response) as unknown as AuthenticationResponseJSON,now));
    }
    exact(input,['protocol','code']);const p=protocol(input.protocol),code=opaque(input.code);
    if(action==='track')return respond(res,200,await intake.track(p,code,now));
