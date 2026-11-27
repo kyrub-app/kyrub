@@ -671,12 +671,18 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
  const payer=await account('cancel-pix-payer',['requester']),worker=await account('cancel-pix-worker',['freelancer']),admin=await account('cancel-pix-admin',[]),other=await account('cancel-pix-other',['requester']);
  await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
- const id='cancel-pix-'+suffix,completionId='cancel-completion-'+suffix,staleId='cancel-stale-'+suffix,adminId='cancel-admin-'+suffix,zeroId='cancel-zero-'+suffix;
- for(const [offerId,timing] of [[id,'advance'],[completionId,'on_completion'],[staleId,'advance'],[adminId,'on_completion'],[zeroId,'advance']] as const){
+ const id='cancel-pix-'+suffix,completionId='cancel-completion-'+suffix,staleId='cancel-stale-'+suffix,adminId='cancel-admin-'+suffix,zeroId='cancel-zero-'+suffix,storeId='cancel-business-'+suffix,storeOffer='cancel-business-refund-'+suffix;
+ const store={storeId,displayName:'Loja fictícia de devolução',representativeRole:'owner'};
+ await db.doc('users/'+payer.uid+'/stores/'+payer.uid).set({id:payer.uid,ownerId:payer.uid,canonicalStoreId:storeId,name:store.displayName});
+ await db.doc('tenants/'+payer.uid).set({ownerId:payer.uid,canonicalStoreId:storeId});
+ await db.doc('stores/'+storeId).set({ownerId:payer.uid,legacyTenantId:payer.uid});
+ const storeMember=db.doc('stores/'+storeId+'/members/'+payer.uid);await storeMember.set({userId:payer.uid,status:'active',role:'owner'});
+ for(const [offerId,timing] of [[id,'advance'],[completionId,'on_completion'],[staleId,'advance'],[adminId,'on_completion'],[zeroId,'advance'],[storeOffer,'advance']] as const){
   const terms=createDirectPaymentTerms({method:'external_pix',timing,amountMinor:15000});
-  await act(payer,offerId,'publish',200,{terms:{title:'Cancelamento fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms}});
-  await act(worker,offerId,'apply',200,{expectedPaymentTerms:terms});await act(payer,offerId,'select',200,{applicantUid:worker.uid});
-  await act(worker,offerId,'confirm',200,{confirmed:true,expectedPaymentTerms:terms});
+  await act(payer,offerId,'publish',200,{terms:{title:'Cancelamento fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms},...(offerId===storeOffer?{requesterStoreId:storeId}:{})});
+  const expected={expectedPaymentTerms:terms,...(offerId===storeOffer?{expectedRequesterStore:store}:{})};
+  await act(worker,offerId,'apply',200,expected);await act(payer,offerId,'select',200,{applicantUid:worker.uid});
+  await act(worker,offerId,'confirm',200,{confirmed:true,...expected});
  }
  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance';
  const finance=async(a:Actor,status:number,offerId:string,action?:string,extra:Record<string,unknown>={},view='case')=>{
@@ -687,11 +693,14 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(worker,200,id,'bind_pix',{expectedRevision:1});await finance(worker,200,id,'authorize_pix_share',{expectedRevision:1});
  await finance(payer,200,id,'statement',{eventId:'paid',statement:'paid'});
  await finance(worker,200,id,'statement',{eventId:'denied',statement:'not_received'});
- const first='cancel-advance-occurrence',second='cancel-completion-occurrence',third='cancel-stale-occurrence',fourth='cancel-admin-occurrence',fifth='cancel-zero-occurrence';
+ const first='cancel-advance-occurrence',second='cancel-completion-occurrence',third='cancel-stale-occurrence',fourth='cancel-admin-occurrence',fifth='cancel-zero-occurrence',sixth='cancel-business-occurrence';
  await act(worker,id,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:first});
  await act(worker,completionId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:second});
  await act(worker,staleId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:third});
  await act(worker,adminId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:fourth});
+ await finance(worker,200,storeOffer,'bind_pix',{expectedRevision:1});await finance(worker,200,storeOffer,'authorize_pix_share',{expectedRevision:1});
+ await finance(payer,200,storeOffer,'statement',{eventId:'store-paid',statement:'paid'});await finance(worker,200,storeOffer,'statement',{eventId:'store-received',statement:'received'});
+ await act(worker,storeOffer,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:sixth});
  await act(worker,zeroId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:fifth});
  assert.equal((await finance(payer,200,id)).operationalStatus,'under_review');
  assert.equal((await finance(worker,200,id)).restrictionActive,true);
@@ -705,7 +714,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
   const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
  });
  try{
-  for(const [offerId,occurrenceId] of [[id,first],[completionId,second],[staleId,third],[adminId,fourth],[zeroId,fifth]]){
+  for(const [offerId,occurrenceId] of [[id,first],[completionId,second],[staleId,third],[adminId,fourth],[zeroId,fifth],[storeOffer,sixth]]){
    await decideFreelanceReview('Bearer '+admin.token,{offerId,occurrenceId,outcome:'cancel',reason:'Cancelamento fictício fundamentado',confirmed:true});
    const ref=db.doc('freelanceOffersV1/'+offerId);
    assert.equal((await ref.get()).get('status'),'cancelled');
@@ -850,6 +859,28 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(payer,200,id,'withdraw_adjustment_pix_replacement',secondReplacement);
  await finance(payer,200,id,'withdraw_adjustment_pix_replacement',secondReplacement);
  assert.equal((await pix(worker,200,id)).destination,null);
+ // Store refund: never fall back to an active personal receiving key.
+ await propose(worker,200,storeOffer,'store-refund-proposal',5000,15000);await accept(payer,200,storeOffer,'store-refund-proposal');
+ const business=await accounting(payer,200,storeOffer),businessInput={sourceDigest:business.resolution.sourceDigest,expectedAmountMinor:10000,expectedRevision:1};
+ assert.equal((await pix(payer,200,storeOffer)).storeRefund,true);assert.equal((await pix(payer,200,storeOffer)).destination,null);
+ await finance(payer,403,storeOffer,'authorize_adjustment_pix',businessInput);
+ const setup={expectedRevision:0,destination:{keyType:'email',key:'business-'+suffix+'@example.invalid'},businessAccountDeclared:true};
+ await finance(payer,403,storeOffer,'declare_store_refund_pix',setup);
+ await finance(worker,403,storeOffer,undefined,{},'fixed_adjustment_store_destination');
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===payer.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
+ try{
+  await finance(payer,400,storeOffer,'declare_store_refund_pix',{...setup,businessAccountDeclared:false});
+  await finance(payer,200,storeOffer,'declare_store_refund_pix',setup);
+  const privateView=await finance(payer,200,storeOffer,undefined,{},'fixed_adjustment_store_destination');assert.equal(privateView.revision,1);assert.equal(privateView.ownershipVerified,false);assert.equal('key' in privateView,false);
+  assert.equal((await pix(worker,200,storeOffer)).destination,null);
+  await finance(payer,200,storeOffer,'authorize_adjustment_pix',businessInput);
+  const storeKey=await finance(worker,200,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});assert.equal(storeKey.key,'business-'+suffix+'@example.invalid');
+  await storeMember.update({status:'inactive'});
+  await finance(worker,403,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});
+  await storeMember.update({status:'active'});
+  await finance(payer,200,storeOffer,'revoke_store_refund_pix',{expectedRevision:1});
+  await finance(worker,409,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});
+ }finally{t.mock.restoreAll();}
  // Complement still points to the professional, with new consent.
  // Nonreceipt alone is not evidence of a transfer: allow the original
  // recipient to authorize and the payer to consult with explicit nonpayment.
