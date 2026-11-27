@@ -1,3 +1,4 @@
+import {reputationCoverageLocal,invalidateUnindexedCoverage} from './freelanceReputationCoverage.js';
 import {prepareFreelanceReputationIndex,reputationIndexEnabled,reputationContractContext} from './freelanceReputationIndexPreparation.js';
 import {assertHourlyLifecycleCandidate} from './freelanceHourlyLifecycleGate.js';
 import {prepareHourlyContract,prepareHourlyCompletion} from './freelanceHourlyLifecycleService.js';
@@ -234,7 +235,8 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString(),hourly);
     const at=action==='start'?'startedAt':action==='request_completion'?'completionRequestedAt':'completedAt';
     const writeAttendance=offer.workTerms?await prepareFreelanceAttendanceLifecycle(tx,actorUid,offerId,action,result.offer[at]!,result.changed):()=>{};
-    const indexPlan=action==='confirm_completion'&&result.changed&&reputationIndexEnabled()?await prepareFreelanceReputationIndex(tx,{...reputationContractContext(result.offer,result.application),slots:{}}):null;
+    const coverageContext=action==='confirm_completion'&&result.changed&&reputationCoverageLocal()?reputationContractContext(result.offer,result.application):null;
+    const indexPlan=coverageContext&&reputationIndexEnabled()?await prepareFreelanceReputationIndex(tx,{...coverageContext,slots:{}},true):null;
     if(action==='confirm_completion'&&hourly){
       const writeBasis=await prepareHourlyCompletion(tx,actorUid,offerId,result);writeBasis();
     }else if(action==='confirm_completion'){
@@ -248,6 +250,7 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
     }
     if(result.changed){
       indexPlan?.write();
+      if(coverageContext&&!indexPlan)invalidateUnindexedCoverage(tx,coverageContext.parties);
       writeAttendance();
       tx.update(offerRef,{status:result.offer.status,[at]:result.offer[at]!});
       tx.update(applicationRef,{status:result.application.status,[at]:result.application[at]!});
