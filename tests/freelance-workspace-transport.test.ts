@@ -64,3 +64,39 @@ test('counterproposal changes only price and estimated duration, preserves payme
  for(const invalid of [{...proposal,amountMinor:0},{...proposal,estimatedMinutes:0},{...proposal,location:'on_site'},{amountMinor:12000,estimatedMinutes:360}])assert.throws(()=>readFreelanceCounterproposal(invalid,original),/INVALID/);
  assert.throws(()=>readFreelanceCounterproposal(proposal,{paymentMinor:12000}),/INVALID/);
 });
+
+test('attendance separates early arrival, employer waiting, work and mutually agreed breaks',async()=>{
+ const {projectFreelanceAttendance}=await import('../shared/freelanceAttendance.js');
+ const schedule={location:'on_site' as const,scheduledStartAt:'2026-11-27T12:00:00.000Z',agreedMinutes:240};
+ const at=(h:string)=>'2026-11-27T'+h+':00.000Z';
+ const events=[
+  {id:'a',kind:'check_in',actor:'worker',at:at('11:45')},
+  {id:'b',kind:'confirm_presence',actor:'requester',at:at('11:50')},
+  {id:'c',kind:'acknowledge_waiting',actor:'requester',at:at('12:05')},
+  {id:'d',kind:'start',actor:'worker',at:at('12:30')},
+  {id:'e',kind:'request_break',actor:'worker',at:at('13:30')},
+  {id:'f',kind:'approve_break',actor:'requester',at:at('13:30')},
+  {id:'g',kind:'resume',actor:'worker',at:at('14:00')},
+  {id:'h',kind:'checkout',actor:'worker',at:at('16:00')},
+  {id:'i',kind:'confirm_checkout',actor:'requester',at:at('16:05')},
+ ] as const;
+ const r=projectFreelanceAttendance(schedule,events);
+ assert.equal(r.status,'confirmed');assert.equal(r.workMs,180*60000);assert.equal(r.waitMs,30*60000);assert.equal(r.breakMs,30*60000);assert.equal(r.compensableMs,210*60000);assert.equal(r.exceedsAgreedTime,false);assert.equal(r.financialSettlement,'not_verified');
+ assert.equal(projectFreelanceAttendance(schedule,events.slice(0,-1)).readyForReview,false);
+ assert.throws(()=>projectFreelanceAttendance(schedule,[events[0],{...events[3],at:at('11:50')}]),/CONFLICT/);
+ assert.throws(()=>projectFreelanceAttendance(schedule,[...events.slice(0,6),{...events[3],id:'repeat',at:at('13:45')}]),/CONFLICT/);
+ assert.throws(()=>projectFreelanceAttendance(schedule,[events[0],{...events[1],actor:'worker'}]),/CONFLICT/);
+ assert.throws(()=>projectFreelanceAttendance(schedule,[events[0],events[0]]),/CONFLICT/);
+});
+test('remote attendance needs no location, early start requires authorization and suspension stops accrual',async()=>{
+ const {projectFreelanceAttendance}=await import('../shared/freelanceAttendance.js');
+ const schedule={location:'remote' as const,scheduledStartAt:'2026-11-27T12:00:00.000Z',agreedMinutes:30};
+ const start={id:'start',kind:'start',actor:'worker',at:'2026-11-27T11:30:00.000Z'} as const;
+ const early={id:'early',kind:'authorize_early_start',actor:'requester',at:'2026-11-27T11:20:00.000Z'} as const;
+ const stop={id:'stop',kind:'suspend',actor:'system',at:'2026-11-27T12:15:00.000Z'} as const;
+ assert.throws(()=>projectFreelanceAttendance(schedule,[start]),/CONFLICT/);
+ assert.throws(()=>projectFreelanceAttendance(schedule,[{...start,kind:'check_in'}]),/CONFLICT/);
+ const result=projectFreelanceAttendance(schedule,[early,start,stop]);
+ assert.equal(result.status,'suspended');assert.equal(result.workMs,45*60000);assert.equal(result.exceedsAgreedTime,true);assert.equal(result.readyForReview,false);
+ assert.throws(()=>projectFreelanceAttendance(schedule,[early,start,stop,{...start,id:'new',at:'2026-11-27T12:20:00.000Z'}]),/CONFLICT/);
+});
