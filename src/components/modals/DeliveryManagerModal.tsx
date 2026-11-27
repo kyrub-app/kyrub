@@ -17,6 +17,7 @@ interface DeliveryManagerModalProps {
 }
 
 type OperationalDeliveryJob = DeliveryJob & {
+  acceptedByName?: string;
   source?: string;
   sourceOrderId?: string;
   orderStatus?: string;
@@ -130,6 +131,10 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   const isMine=(d:DeliveryJob)=>((d as OperationalDeliveryJob).source==='kyrub-order'||d.id.startsWith('order-'))
     ? Boolean(auth.currentUser&&d.acceptedBy===auth.currentUser.uid)
     : d.acceptedBy===(profileName||'Você');
+
+  const courierLabel=(job:DeliveryJob)=>((job as OperationalDeliveryJob).source==='kyrub-order'||job.id.startsWith('order-'))
+    ? ((job as OperationalDeliveryJob).acceptedByName||'Entregador Kyrub')
+    : job.acceptedBy||'Entregador';
 
   const handleStartPickup = (job: DeliveryJob): void => {
     try {
@@ -258,8 +263,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                     <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                       <div className="text-[9px] font-mono">
                         {job.status === 'available' && <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-bold">Aguardando Entregador</span>}
-                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {job.acceptedBy || 'Entregador'}</span>}
-                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em Trajeto ({job.acceptedBy})</span>}
+                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {courierLabel(job)}</span>}
+                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em Trajeto ({courierLabel(job)})</span>}
                       </div>
                       {job.status === 'available' ? (
                         <button type="button" onClick={() => handleDeleteDeliveryJob(job.id)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer font-mono">Cancelar</button>
@@ -281,7 +286,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                         <span className="text-[9px] px-1.5 py-0.5 bg-slate-900 border border-slate-800 text-slate-500 rounded font-mono uppercase font-semibold">ID: {job.id}</span>
                         <h4 className="text-xs font-black text-slate-300 uppercase truncate mt-1">{job.to}</h4>
                         <p className="text-[10px] text-slate-500 pt-1 font-mono">Retirada: {job.from}</p>
-                        {job.acceptedBy && <p className="text-[9px] text-slate-400 pt-1 font-mono">Entregue por: {job.acceptedBy}</p>}
+                        {job.acceptedBy && <p className="text-[9px] text-slate-400 pt-1 font-mono">Entregue por: {courierLabel(job)}</p>}
                       </div>
                       <div className="text-right shrink-0">
                         <span className="text-xs font-bold text-slate-400 font-mono block">{paymentLabel(job)}</span>
