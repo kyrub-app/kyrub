@@ -376,6 +376,7 @@
         && incoming().postId is string
         && incoming().postId.size() > 0
         && incoming().postId.size() <= 500
+        && !incoming().postId.matches('^reputation_.*')
         && incoming().authorId == request.auth.uid
         && incoming().authorName is string
         && incoming().authorName.size() > 0

@@ -392,6 +392,13 @@ export function usePublicSocialFeed() {
     const normalizedText = text.trim();
     if (!user) throw new Error('Usuário não autenticado.');
     if (!normalizedText) throw new Error('O comentário está vazio.');
+    if(postId.startsWith('reputation_')){
+      const token=await user.getIdToken(true);
+      if(auth.currentUser!==user)throw Error('Sessão alterada.');
+      const response=await fetch('/api/freelance/workspace',{method:'POST',cache:'no-store',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify({action:'comment_reputation_square',offerId:postId,text:normalizedText.slice(0,1000),...(parentCommentId?{parentCommentId}:{})})});
+      if(!response.ok||(await response.json())?.confirmed!==true)throw Error('Comentário não confirmado.');
+      return;
+    }
 
     if (parentCommentId) {
       const parent = await getDoc(doc(db, 'social_post_comments', parentCommentId));

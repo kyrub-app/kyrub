@@ -2146,11 +2146,27 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
         const read='?view=reputation_square_post&offerId='+postId;
         await call(null,read,401);
         assert.deepEqual(await call(payer,read,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+        const comment={action:'comment_reputation_square',offerId:postId,text:'Parabéns pela experiência!'};
+        await call(null,'',401,comment);await call(payer,'',400,{...comment,authorId:worker.uid});
+        await call(payer,'',200,comment);
+        const comments=await db.collection('social_post_comments').where('postId','==',postId).get();
+        assert.equal(comments.size,1);assert.equal(comments.docs[0].get('authorId'),payer.uid);
+        await call(worker,'',200,{...comment,parentCommentId:comments.docs[0].id});
+        await call(worker,'',400,{...comment,parentCommentId:'missing-parent'});
+        const {seedVerifiedPost,readVerifiedPostSemeadura}=await import('../server/gamification/semeaduraService.js');
+        const seedInput={authenticatedUserId:payer.uid,kind:'personal' as const,postId};
+        assert.equal((await seedVerifiedPost(db,seedInput)).status,'accepted');
+        assert.equal((await seedVerifiedPost(db,seedInput)).status,'already_seeded');
+        assert.equal((await readVerifiedPostSemeadura(db,seedInput)).count,1);
         await profile.update({isProfileVisible:false});assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
+        await call(payer,'',403,comment);
+        await assert.rejects(seedVerifiedPost(db,seedInput),/POST_NOT_ELIGIBLE/);
         await profile.update({isProfileVisible:true});
         const expired=new Date(Date.now()-86400001).toISOString();
         await proof.update({createdAtIso:expired});await post.update({createdAtIso:expired});
         assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
+        await call(payer,'',403,comment);
+        await assert.rejects(readVerifiedPostSemeadura(db,seedInput),/POST_NOT_ELIGIBLE/);
        }finally{await post.delete();await proof.delete();}
       }finally{if(oldPublish===undefined)delete process.env[publishFlag];else process.env[publishFlag]=oldPublish;}
       await profile.update({isProfileVisible:false});
