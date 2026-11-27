@@ -891,6 +891,34 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
   await propose(payer,409,adminId,'late-proposal',1000,0);
   await finance(worker,409,adminId,'submit_hourly_review_note',{...note,evidenceId:'late-note'});
   assert.equal((await finance(payer,200,adminId)).due,false);
+  // Review of the adjustment is separate from the already decided cancellation.
+  const adjustInput={sourceDigest:settled.resolution.sourceDigest,expectedAmountMinor:5000};
+  await finance(payer,200,adminId,'statement_adjustment',{...adjustInput,eventId:'admin-adjust-paid',statement:'paid'});
+  await finance(worker,200,adminId,'statement_adjustment',{...adjustInput,eventId:'admin-adjust-denied',statement:'not_received'});
+  await finance(worker,200,adminId,'request_adjustment_review',adjustInput);
+  const adjustAdmin=async(a:Actor,status:number,input?:Record<string,unknown>)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=fixed_adjustment'),{method:input?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+  await adjustAdmin(other,403);
+  const initial=(await adjustAdmin(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(initial);
+  const adjustDecision={action:'decide_fixed_adjustment',offerId:adminId,...adjustInput,expectedRequestedAt:initial.requestedAt,statementDigest:initial.statementDigest,evidenceDigest:initial.evidenceDigest,outcome:'inconclusive',reason:'Evidências fictícias insuficientes para conclusão bancária.',confirmed:true};
+  const adjustNote={kind:'fixed_adjustment',sourceDigest:adjustInput.sourceDigest,evidenceId:'adjust-note',note:'Manifestação fictícia sobre a regularização complementar.'};
+  await finance(worker,200,adminId,'submit_hourly_review_note',adjustNote);
+  await adjustAdmin(admin,409,adjustDecision);
+  const reviewItem=(await adjustAdmin(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.equal(reviewItem.notes.length,1);assert.equal(reviewItem.statements.length,2);
+  const finalDecision={...adjustDecision,evidenceDigest:reviewItem.evidenceDigest};
+  await adjustAdmin(other,403,finalDecision);
+  await adjustAdmin(admin,409,{...finalDecision,expectedAmountMinor:5001});
+  await adjustAdmin(admin,409,{...finalDecision,statementDigest:'0'.repeat(64)});
+  for(const a of [payer,worker])await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).update({openExcessOfferIds:[adminId]});
+  assert.equal((await adjustAdmin(admin,200,finalDecision)).replay,false);
+  assert.equal((await adjustAdmin(admin,200,finalDecision)).replay,true);
+  await adjustAdmin(admin,409,{...finalDecision,outcome:'payment_evidence_accepted'});
+  const closed=await adj(worker,200,adminId);
+  assert.equal(closed.state,'disputed');assert.equal(closed.reviewStatus,'resolved_administratively');assert.equal(closed.restrictionActive,false);assert.equal(closed.decision.outcome,'inconclusive');assert.equal(closed.bankVerified,false);assert.equal(closed.statements.length,2);
+  assert.equal('actorUid' in closed.decision,false);
+  await finance(worker,409,adminId,'statement_adjustment',{...adjustInput,eventId:'late-adjust-received',statement:'received'});
+  await finance(worker,409,adminId,'submit_hourly_review_note',{...adjustNote,evidenceId:'late-adjust-note'});
+  assert.equal((await adjustment(adminId))?.amountMinor,5000);
+  for(const a of [payer,worker]){assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[adminId]});const root=db.doc('freelanceEngagementRestrictionsV1/'+a.uid);assert.equal((await root.get()).get('openAdjustmentOfferIds'),undefined);await root.set({schemaVersion:1,uid:a.uid,openOfferIds:[]});}
  }finally{t.mock.restoreAll();}
  // Zero resolution: explicit zero amounts, no adjustment, original history frozen.
  await propose(worker,200,zeroId,'zero-proposal',0,0);
