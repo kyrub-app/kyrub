@@ -754,9 +754,33 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(payer,200,completionId,'close_cancellation_accounting',{proposalId:'first-proposal'});
  await accept(worker,409,completionId,'first-proposal');
  assert.equal((await inbox(worker.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_closed').length,1);
+ const declined=await accounting(worker,200,completionId);
+ assert.equal(declined.proposal.closure,'declined');assert.equal(declined.restrictionActive,false);
+ const restriction=(a:Actor)=>finance(a,200,completionId,undefined,{},'restrictions');
+ const df={snapshot:declined.snapshot};
+ await finance(other,403,completionId,'dispute_fixed_cancellation',df);
+ await finance(worker,409,completionId,'dispute_fixed_cancellation',{snapshot:'0'.repeat(64)});
+ await finance(worker,200,completionId,'dispute_fixed_cancellation',df);
+ await finance(worker,200,completionId,'dispute_fixed_cancellation',df);
+ for(const actor of [payer,worker])assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[completionId]});
+ await finance(payer,200,completionId,'request_fixed_cancellation_review',df);
+ await finance(payer,200,completionId,'request_fixed_cancellation_review',df);
+ assert.equal((await accounting(worker,200,completionId)).dispute.status,'review_requested');
+ assert.equal((await db.doc('freelanceFixedCancellationReviewsV1/'+completionId).get()).get('status'),'pending');
+ // Another cause on the same offer must survive the cancellation agreement.
+ for(const actor of [payer,worker])await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openExcessOfferIds:[completionId]});
  await propose(payer,200,completionId,'second-proposal',4000,0);
  await accept(worker,200,completionId,'second-proposal');
+ await accept(worker,200,completionId,'second-proposal');
+ assert.equal((await db.doc('freelanceFixedCancellationReviewsV1/'+completionId).get()).get('status'),'resolved_voluntarily');
+ for(const actor of [payer,worker]){
+  assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[completionId]});
+  const root=db.doc('freelanceEngagementRestrictionsV1/'+actor.uid),r=(await root.get()).data()!;
+  assert.equal(r.openCancellationOfferIds,undefined);assert.deepEqual(r.openExcessOfferIds,[completionId]);
+  await root.set({schemaVersion:1,uid:actor.uid,openOfferIds:[]});
+ }
  const additional=await accounting(worker,200,completionId);
+ assert.equal(additional.dispute.status,'resolved_voluntarily');assert.equal(additional.restrictionActive,false);
  assert.equal(additional.proposal.amounts.proposedAdditionalMinor,4000);assert.equal(additional.proposal.amounts.proposedRefundMinor,0);
  assert.equal((await finance(payer,200,completionId)).due,false);
  // Historical declarations can invalidate a proposal without erasing it.
