@@ -5,7 +5,7 @@ export type HourlyAttachment={id:string;role:'worker'|'requester';recordedAt:str
 export function validHourlyAttachments(v:unknown,max:number):v is HourlyAttachment[]{
  return Array.isArray(v)&&v.length<=max&&v.every(a=>a&&typeof a.id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(a.id)&&['worker','requester'].includes(a.role)&&typeof a.recordedAt==='string'&&Number.isSafeInteger(a.size)&&a.size>0&&a.size<=262144&&a.mimeType==='image/png');
 }
-export default function HourlyAttachmentPreview({user,offerId,kind,attachment,admin=false}:{user:User;offerId:string;kind:'cancellation'|'excess';attachment:HourlyAttachment;admin?:boolean}){
+export default function HourlyAttachmentPreview({user,offerId,kind,attachment,admin=false}:{user:User;offerId:string;kind:'cancellation'|'excess'|'fixed_cancellation';attachment:HourlyAttachment;admin?:boolean}){
  const [src,setSrc]=useState<string|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState('');
  const active=useRef<AbortController|null>(null);
  useEffect(()=>()=>{active.current?.abort();active.current=null;},[]);
