@@ -211,9 +211,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const financeCards = [
     { id: 'movements', label: 'Movimentações', description: 'Configurações e registros financeiros', icon: ArrowLeftRight },
     { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
-    { id: 'xp', label: 'Conquistas', description: 'XP, Pitangas e recompensas', icon: KyrubCocarIcon },
+    { id: 'xp', label: 'Conquistas', description: 'Cocares, Pitangas e recompensas', icon: KyrubCocarIcon },
     { id: 'devices', label: 'Dispositivos', description: 'Smartphone, NFC e LoRa', icon: RadioTower },
-    { id: 'challenges', label: 'Desafios da plataforma', description: 'Acompanhe missões e recompensas de XP e Pitangas', icon: Flag },
+    { id: 'challenges', label: 'Desafios da plataforma', description: 'Acompanhe missões e recompensas de Cocares e Pitangas', icon: Flag },
   ] as const;
 
   useEffect(() => {
