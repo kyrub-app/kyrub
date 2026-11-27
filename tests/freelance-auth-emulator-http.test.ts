@@ -1110,3 +1110,57 @@ test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparatio
   assert.equal((await finance(owner,200)).financialState,'bilaterally_reported_received');
  }finally{if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
 });
+
+test('hourly cancellation: administrative suspension snapshot, pre-start and worked service, no automatic debt',async t=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const owner=await account('hourly-cancel-owner',['requester']),worker=await account('hourly-cancel-worker',['freelancer']),other=await account('hourly-cancel-other',[]),admin=await account('hourly-cancel-admin',[]);
+ await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
+ const gate='KYRUB_FREELANCE_HOURLY_LIFECYCLE_TEST_ONLY',previous=process.env[gate];process.env[gate]='true';
+ const original=auth.verifyIdToken.bind(auth);
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+  const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
+ });
+ try{
+  const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:360000});
+  const workTerms={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:360000};
+  const terms={title:'Cancelamento horário fictício',description:'Emulador',requirements:'',paymentMinor:360000,paymentTerms,workTerms};
+  const expected={expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms};
+  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'hourly-cancel-'+suffix+'@example.invalid'}});
+  for(const started of [false,true]){
+   const id='hourly-cancel-'+started+'-'+suffix,ref=db.doc('freelanceOffersV1/'+id);
+   await act(owner,id,'publish',200,{terms});await act(worker,id,'apply',200,expected);await act(owner,id,'select',200,{applicantUid:worker.uid});await act(worker,id,'confirm',200,{confirmed:true,...expected});
+   const finance=async(a:Actor,status:number,action?:string,extra:Record<string,unknown>={},view='hourly_cancellation')=>{
+    const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view='+view+'&offerId='+id);
+    const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
+    const b=await res.json();assert.equal(res.status,status,JSON.stringify(b));return b;
+   };
+   if(started){
+    await finance(worker,200,'bind_pix',{expectedRevision:1});await finance(worker,200,'authorize_pix_share',{expectedRevision:1});
+    await act(owner,id,'propose_schedule',200,{proposalId:'schedule',scheduledStartAt:new Date(Date.now()+86400000).toISOString(),confirmed:true});
+    await act(worker,id,'accept_schedule',200,{proposalId:'schedule',confirmed:true});
+    await act(owner,id,'attendance_event',200,{kind:'authorize_early_start',eventId:'early',expectedSequence:0,confirmed:true});
+    await act(worker,id,'start',200,{confirmed:true});
+    await new Promise(resolve=>setTimeout(resolve,100));
+   }
+   const occurrenceId='cancel';
+   await act(worker,id,'report',200,{kind:'cancellation_requested',occurrenceId,confirmed:true});
+   const decision={offerId:id,occurrenceId,outcome:'cancel',reason:'Cancelamento fictício fundamentado',confirmed:true};
+   const result=await decideFreelanceReview('Bearer '+admin.token,decision);
+   assert.equal(result.replay,false);assert.equal((await decideFreelanceReview('Bearer '+admin.token,decision)).replay,true);
+   assert.equal((await ref.get()).get('status'),'cancelled');
+   const basis=(await ref.collection('financialBasis').doc('hourlyCancellation').get()).data()!;
+   assert.equal(basis.finalAmountMinor,null);assert.equal(basis.recognizedServiceMinor,null);assert.equal(basis.payable,false);
+   if(started){assert.ok(basis.accounting.workMs>0);assert.equal(basis.accounting.status,'requires_suspension_review');}
+   else assert.equal(basis.accounting,null);
+   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+   assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).exists,false);
+   await finance(other,403);const view=await finance(worker,200);assert.equal(view.finalAmountMinor,null);assert.equal(view.payable,false);
+   await finance(owner,409,'reveal_pix',{expectedRevision:1});
+   if(started){
+    await ref.collection('attendance').doc('timeline').delete();
+    await finance(worker,409);
+   }
+  }
+ }finally{t.mock.restoreAll();if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
+});
