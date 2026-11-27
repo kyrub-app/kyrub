@@ -1,3 +1,4 @@
+import {readOwnHourlyReviewNotes,submitHourlyReviewNote} from './freelanceHourlyReviewEvidenceService.js';
 import {readVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
 import {prepareCancellationRestriction,prepareExcessRestriction} from './freelanceEngagementRestrictionService.js';
 import {readHourlyExcessReview,changeHourlyExcessReview,changeHourlyExcessDispute} from './freelanceHourlyExcessReviewService.js';
@@ -73,6 +74,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
+   if(q.view==='hourly_review_notes'&&keys.length===3&&validFreelanceId(q.offerId)&&(q.kind==='cancellation'||q.kind==='excess')){res.status(200).json(await readOwnHourlyReviewNotes(uid,q.offerId,q.kind));return;}
    if(q.view==='hourly_excess_review'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyExcessReview(uid,q.offerId));return;}
    if(q.view==='hourly_cancellation_agreement'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellationAgreement(uid,q.offerId));return;}
    if(q.view==='hourly_cancellation'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellation(uid,q.offerId));return;}
@@ -94,8 +96,9 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const max=b.action==='submit_receipt'?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
-  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share','propose_cancellation_accounting','accept_cancellation_accounting','close_cancellation_accounting','propose_hourly_cancellation','accept_hourly_cancellation','decline_hourly_cancellation','withdraw_hourly_cancellation','dispute_hourly_cancellation','request_hourly_cancellation_review','propose_hourly_excess','accept_hourly_excess','decline_hourly_excess','withdraw_hourly_excess','dispute_hourly_excess','request_hourly_excess_review'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
+  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share','propose_cancellation_accounting','accept_cancellation_accounting','close_cancellation_accounting','propose_hourly_cancellation','accept_hourly_cancellation','decline_hourly_cancellation','withdraw_hourly_cancellation','dispute_hourly_cancellation','request_hourly_cancellation_review','propose_hourly_excess','accept_hourly_excess','decline_hourly_excess','withdraw_hourly_excess','dispute_hourly_excess','request_hourly_excess_review','submit_hourly_review_note'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
   switch(b.action){
+   case 'submit_hourly_review_note':exact(['kind','sourceDigest','evidenceId','note','confirmed']);if(b.kind!=='cancellation'&&b.kind!=='excess')throw Error('FREELANCE_INVALID');await submitHourlyReviewNote(uid,b.offerId,b.kind,{sourceDigest:b.sourceDigest,evidenceId:b.evidenceId,note:b.note,confirmed:b.confirmed});break;
    case 'dispute_hourly_excess':case 'request_hourly_excess_review':exact(['sourceDigest','confirmed']);await changeHourlyExcessDispute(uid,b.offerId,b.action==='dispute_hourly_excess'?'open':'request_review',{sourceDigest:b.sourceDigest,confirmed:b.confirmed});break;
    case 'propose_hourly_excess':exact(['proposalId','sourceDigest','recognizedExcessMs','confirmed']);await changeHourlyExcessReview(uid,b.offerId,'propose',{proposalId:b.proposalId,sourceDigest:b.sourceDigest,recognizedExcessMs:b.recognizedExcessMs,confirmed:b.confirmed});break;
    case 'accept_hourly_excess':case 'decline_hourly_excess':case 'withdraw_hourly_excess':exact(['proposalId','sourceDigest','confirmed']);await changeHourlyExcessReview(uid,b.offerId,b.action==='accept_hourly_excess'?'accept':b.action==='decline_hourly_excess'?'decline':'withdraw',{proposalId:b.proposalId,sourceDigest:b.sourceDigest,confirmed:b.confirmed});break;
