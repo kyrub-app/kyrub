@@ -337,7 +337,7 @@ test('financial administrative decision: protected, audited, no bank proof, one 
  }
  const id=ids[0],ref=db.doc('freelanceFinancialReviewsV1/'+id),history=db.doc('freelanceOffersV1/'+id+'/directPayment/externalStatements');
  const initial=(await history.get()).data(),requestedAt=(await ref.get()).get('requestedAt');
- const body={offerId:id,expectedRequestedAt:requestedAt,outcome:'inconclusive',reason:'Evidências fictícias insuficientes para conclusão bancária.',confirmed:true};
+ const body={offerId:id,expectedRequestedAt:requestedAt,expectedEvidenceRevision:0,outcome:'inconclusive',reason:'Evidências fictícias insuficientes para conclusão bancária.',confirmed:true};
  const call=async(a:Actor,status:number,input:Record<string,unknown>)=>{
   const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review',{method:'POST',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},body:JSON.stringify(input)});
   const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));return data;
@@ -354,7 +354,11 @@ test('financial administrative decision: protected, audited, no bank proof, one 
   await call(payer,403,body);await call(worker,403,body);
   await call(admin,400,{...body,reason:'curto'});await call(admin,400,{...body,confirmed:false});
   await call(admin,409,{...body,expectedRequestedAt:'2020-01-01T00:00:00Z'});
-  const results=await Promise.all([call(admin,200,body),call(admin,200,body)]);
+  const {submitFreelanceFinancialEvidence:submit}=await import('../server/freelance/freelanceFinancialEvidenceService.js');
+  await submit(payer.uid,id,{evidenceId:'note-a',note:'Declaração fictícia sobre o horário do pagamento.',confirmed:true});
+  await call(admin,409,body);
+  const current={...body,expectedEvidenceRevision:1};
+  const results=await Promise.all([call(admin,200,current),call(admin,200,current)]);
   assert.deepEqual(results.map(x=>x.replay).sort(),[false,true]);assert.ok(results.every(x=>x.bankVerified===false));
   assert.equal((await ref.get()).get('status'),'resolved_administratively');
   assert.equal((await ref.get()).get('decision.reason'),body.reason);
@@ -362,7 +366,8 @@ test('financial administrative decision: protected, audited, no bank proof, one 
   const audit=await db.collection('kyrub_admin/control_plane/audit_logs').where('targetId','==',id).get();
   assert.equal(audit.size,1);assert.equal(audit.docs[0].get('actorId'),admin.uid);assert.equal(audit.docs[0].get('bankVerified'),false);
   for(const a of [payer,worker])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[ids[1]]);
-  await call(admin,409,{...body,outcome:'payment_evidence_accepted'});
+  await call(admin,409,{...body,expectedEvidenceRevision:1,outcome:'payment_evidence_accepted'});
+  await assert.rejects(submit(worker.uid,id,{evidenceId:'late',note:'Manifestação posterior ao encerramento.',confirmed:true}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
   await record(worker.uid,id,{eventId:'received',statement:'received',confirmed:true});
   assert.equal((await history.get()).get('events').length,3);assert.equal((await ref.get()).get('status'),'resolved_administratively');
   await record(worker.uid,ids[1],{eventId:'received',statement:'received',confirmed:true});
