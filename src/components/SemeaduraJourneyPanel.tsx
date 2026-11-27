@@ -1,3 +1,4 @@
+import {formatCocarCompact,formatCocarCount} from '../../shared/cocarDisplay';
 import { useEffect, useState } from 'react';
 import { calculatePitangueiraJourney, SEEDS_PER_BROTO, SEEDS_PER_MUDA, SEEDS_PER_PITANGUEIRA, SEEDS_PER_BOSQUE } from '../../shared/pitangueiraJourney';
 import { requestSemeadura, SEMEADURA_UI_ENABLED } from './SemearButton';
@@ -94,12 +95,12 @@ export function SemeaduraJourneyPanel({
           </div>
         ))}
         {showCanonicalXp && (
-          <div className="min-w-0 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2" aria-label="Cocar, XP da conta de recompensas">
+          <div className="min-w-0 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2" aria-label={typeof xp==='number'&&Number.isSafeInteger(xp)&&xp>=0?formatCocarCount(xp):'Cocares indisponíveis'}>
             <CocarXpIcon />
             <strong className="block text-sm tabular-nums">
-              {xp === null ? '…' : (Number.isSafeInteger(xp) && xp >= 0 ? xp.toLocaleString('pt-BR') : '…')}
+              {xp === null ? '…' : (Number.isSafeInteger(xp) && xp >= 0 ? formatCocarCompact(xp) : '…')}
             </strong>
-            <span className="block text-[10px] text-amber-200">Cocar · XP</span>
+            <span className="block text-[10px] text-amber-200">Cocares</span>
           </div>
         )}
       </div>
