@@ -1,3 +1,4 @@
+import { prepareCocarProjectionForNewXp } from './cocarProjectionTransaction.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { kyrubXpTotal, type KyrubXpEntry } from '../../shared/gamification.js';
@@ -46,7 +47,9 @@ export const persistVerifiedKyrubXp = async (input: {
       }) !== JSON.stringify(entry)) throw new Error('XP_IDEMPOTENCY_CONFLICT');
       return entry;
     }
+    const updateProjection = await prepareCocarProjectionForNewXp(transaction, ref, { ...entry, economy: 'kyrub_xp' });
     transaction.create(ref, { ...entry, economy: 'kyrub_xp', persistedAt: FieldValue.serverTimestamp() });
+    updateProjection();
     return entry;
   });
 };
