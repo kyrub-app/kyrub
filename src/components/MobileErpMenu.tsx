@@ -1,3 +1,4 @@
+import {storeReputationCandidateEnabled} from '../utils/storeReputationCandidate';
 import { useRef, useState, type MouseEvent } from 'react';
 import {
   ArrowLeft,
@@ -15,6 +16,7 @@ import {
   ReceiptText,
   RefreshCw,
   Settings,
+  Star,
   Store as StoreIcon,
   UserCheck,
   Users,
@@ -35,6 +37,7 @@ export type ErpSubTab =
   | 'pedidos'
   | 'reservas'
   | 'ponto'
+  | 'reputacoes'
   | 'gerencial';
 
 export type MobileErpMenuItemId =
@@ -67,7 +70,7 @@ export const canStoreRoleAccessErpMenuItem = (
   if (itemId === 'clientes') return hasStorePermission(role, 'orders.create');
   if (itemId === 'caixa') return hasStorePermission(role, 'cash.read');
   if (itemId === 'pedidos') return hasStorePermission(role, 'orders.read');
-  if (itemId === 'ponto') return true;
+  if (itemId === 'ponto' || itemId === 'reputacoes') return true;
   if (itemId === 'reservas') return hasStorePermission(role, 'orders.create');
   if (itemId === 'assinaturas' || itemId === 'marketing' || itemId === 'integracoes' || itemId === 'vouchers') return role === 'manager';
   return false;
@@ -96,6 +99,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'pedidos', label: 'Pedidos', icon: ClipboardList, section: 'operacao' },
   { id: 'reservas', label: 'Reservas', icon: Calendar, section: 'operacao' },
   { id: 'ponto', label: 'Ponto', icon: Fingerprint, section: 'operacao' },
+  { id: 'reputacoes', label: 'Reputações', icon: Star, section: 'operacao' },
 ];
 
 const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
@@ -216,7 +220,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (item.id !== 'reputacoes' || storeReputationCandidateEnabled()) && (accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&
