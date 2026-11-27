@@ -1,3 +1,4 @@
+import {negotiatedFreelanceTerms,sameFreelanceCounterproposal} from './freelanceCounterproposal.js';
 import {sameFreelanceWorkTerms,assertFreelanceWorkExecutionReady} from './freelanceWorkTerms.js';
 import {validFreelanceId,readFreelancePaymentTerms,sameFreelancePaymentTerms,type FreelanceOffer,type FreelanceApplication} from './freelanceLifecycle.js';
 import type {DirectPaymentTerms} from './directPaymentTerms.js';
@@ -21,6 +22,11 @@ export function buildFreelancePaymentObligation(offer:FreelanceOffer,app:Freelan
  offer.completionRequestedAt||app.completionRequestedAt||offer.cancelledAt||app.cancelledAt||
  !sameFreelancePaymentTerms(offer.paymentTerms,app.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,app.workTerms,offer.paymentMinor))return conflict();
  assertFreelanceWorkExecutionReady(offer.workTerms);
+ if(offer.originalOfferTerms||offer.selectedCounterproposal||app.counterproposal){
+  if(!offer.originalOfferTerms||!offer.selectedCounterproposal||!app.counterproposal||!sameFreelanceCounterproposal(offer.selectedCounterproposal,app.counterproposal,offer.originalOfferTerms))return conflict();
+  const agreed=negotiatedFreelanceTerms(offer.originalOfferTerms,offer.selectedCounterproposal);
+  if(agreed.paymentMinor!==offer.paymentMinor||!sameFreelancePaymentTerms(agreed.paymentTerms,offer.paymentTerms,offer.paymentMinor)||!sameFreelanceWorkTerms(agreed.workTerms,offer.workTerms,offer.paymentMinor))return conflict();
+ }
  const terms=readFreelancePaymentTerms(offer.paymentTerms,offer.paymentMinor);
  if(!terms)return conflict();
  return {schemaVersion:1,offerId:offer.id,requesterUid:offer.ownerUid,beneficiaryUid:app.applicantUid,
