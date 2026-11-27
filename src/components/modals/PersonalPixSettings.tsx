@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import {normalizePersonalPixKey,type PersonalPixKeyType} from '../../../shared/personalPixDestination';
@@ -22,12 +22,17 @@ function valid(v:unknown):v is Snapshot{
 }
 const field='w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white';
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-cyan-300 disabled:opacity-50';
-export function PersonalPixSettings(){
+export function PersonalPixSettings({onActivity}:{onActivity?:(uid:string,active:boolean)=>void}){
  const [user,setUser]=useState<User|null>(null),[snapshot,setSnapshot]=useState<Snapshot|null>(null);
  const [type,setType]=useState<PersonalPixKeyType>('random'),[key,setKey]=useState(''),[confirmed,setConfirmed]=useState(false);
  const [revoke,setRevoke]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const [refresh,setRefresh]=useState(0);
  const generation=useRef(0),request=useRef<AbortController|null>(null),locked=useRef(false);
+ const activityUid=auth.currentUser?.uid;
+ useLayoutEffect(()=>{
+  if(!activityUid||!onActivity)return;
+  onActivity(activityUid,true);return()=>onActivity(activityUid,false);
+ },[activityUid,onActivity]);
  const clear=()=>{setKey('');setConfirmed(false);setRevoke(false);};
  useEffect(()=>{
   const unsubscribe=onAuthStateChanged(auth,u=>{

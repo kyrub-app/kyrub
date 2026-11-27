@@ -9,9 +9,9 @@ interface WalletModalProps {
 }
 
 /** Read-only financial surface. Never infer an available cash balance from legacy local history. */
-export const WalletMovementsPanel: React.FC<{ walletHistory: any[] }> = ({ walletHistory }) => (
+export const WalletMovementsPanel: React.FC<{ walletHistory: any[];onPersonalFinanceActivity?:(uid:string,active:boolean)=>void }> = ({ walletHistory,onPersonalFinanceActivity }) => (
   <div className="space-y-4" id="wallet-movements-panel">
-    {personalFinanceCandidateEnabled() && <PersonalPixSettings /> }
+    {personalFinanceCandidateEnabled() && <PersonalPixSettings onActivity={onPersonalFinanceActivity} /> }
     <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
       <span className="block text-xs font-bold uppercase text-amber-300">Movimentações reais em preparação</span>
       <p className="mt-2 text-sm leading-relaxed text-slate-300">

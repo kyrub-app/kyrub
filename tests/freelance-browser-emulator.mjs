@@ -193,6 +193,17 @@ try{
  assert.equal(await pix.getByLabel('Chave Pix de teste').inputValue(),'');
  assert.ok(!(await pix.innerText()).includes(key));
  await financialPage.screenshot({path:'freelance-browser-evidence/personal-pix-masked.png',fullPage:true});
+ const financeRefreshId='browser-finance-refresh-'+suffix;
+ const financeRefreshRef=db.doc('hub/renda/deliveries/'+financeRefreshId);
+ assert.equal(await financialPage.evaluate(()=>{
+  const panel=document.getElementById('personal-pix-settings'),card=document.getElementById('btn-fazer-freela');
+  if(!panel||!card)return false;window.__pixRefreshWitness={panel,card};return true;
+ }),true);
+ await financeRefreshRef.set({id:financeRefreshId,source:'kyrub-order',sourceOrderId:'fictional-'+suffix,status:'available',from:'Origem fictícia',to:'Destino fictício',distance:1,payment:1,requestedBy:'Teste isolado'});
+ await financialPage.waitForFunction(id=>(JSON.parse(localStorage.getItem('kyrub_deliveries')??'[]')).some(x=>x.id===id),financeRefreshId,{timeout:20000});
+ assert.equal(await financialPage.evaluate(()=>window.__pixRefreshWitness.panel===document.getElementById('personal-pix-settings')&&window.__pixRefreshWitness.card.isConnected),true);
+ await financeRefreshRef.delete();
+ await financialPage.waitForFunction(id=>!(JSON.parse(localStorage.getItem('kyrub_deliveries')??'[]')).some(x=>x.id===id),financeRefreshId,{timeout:20000});
  const second=await session(worker,1365);
  await second.locator('#header-user-profile-trigger').click();
  await second.getByRole('button',{name:/Movimentações/}).first().click();
@@ -203,6 +214,10 @@ try{
  await button(secondPix,'Confirmar revogação').click();
  await waitText(secondPix,'Revogação confirmada pelo servidor.');
  await button(pix,'Atualizar cadastro').click();await waitText(pix,'Chave revogada');
+ await financialPage.getByRole('button',{name:/Movimentações/}).first().click();
+ await financialPage.waitForFunction(()=>!window.__pixRefreshWitness.card.isConnected&&!!document.getElementById('btn-fazer-freela'),undefined,{timeout:20000});
+ await financialPage.evaluate(()=>{delete window.__pixRefreshWitness;});
+ console.log('PASS deferred cache refresh: original Pix panel retained while open, legacy refresh applied after close');
  assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),undefined);
  console.log('PASS personal Pix UI: Central Pessoal, masked declaration and revocation across two contexts');
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);

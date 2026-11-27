@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
@@ -191,6 +191,8 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
     if(uid)setFreelaWorkspace({uid,mode});
   }, []);
   const closeFreelaWorkspace = useCallback(()=>setFreelaWorkspace(null),[]);
+  const financePanelUid=useRef<string|null>(null);
+  const deferredLegacyRefresh=useRef(false);
   const [legacyCacheRevision, setLegacyCacheRevision] = useState(0);
   const [authResolved, setAuthResolved] = useState(false);
   const [legacyRefreshing, setLegacyRefreshing] = useState(true);
@@ -206,17 +208,33 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, user => {
       setFreelaWorkspace(previous=>previous?.uid===user?.uid?previous:null);
+      if(financePanelUid.current!==user?.uid){
+        financePanelUid.current=null;
+        if(deferredLegacyRefresh.current){deferredLegacyRefresh.current=false;setLegacyCacheRevision(n=>n+1);}
+      }
       setAuthResolved(true);
       settleVisualBootstrap();
     });
     return unsubscribe;
   }, [settleVisualBootstrap]);
 
-  const refreshLegacyCache = useCallback(() => {
+  const applyLegacyRefresh = useCallback(() => {
     setLegacyRefreshing(true);
     setLegacyCacheRevision(current => current + 1);
     settleVisualBootstrap();
   }, [settleVisualBootstrap]);
+  const refreshLegacyCache = useCallback(() => {
+    if(financePanelUid.current&&financePanelUid.current===auth.currentUser?.uid){
+      deferredLegacyRefresh.current=true;return;
+    }
+    applyLegacyRefresh();
+  }, [applyLegacyRefresh]);
+  const onPersonalFinanceActivity=useCallback((uid:string,active:boolean)=>{
+    if(active){if(uid===auth.currentUser?.uid)financePanelUid.current=uid;return;}
+    if(financePanelUid.current!==uid)return;
+    financePanelUid.current=null;
+    if(deferredLegacyRefresh.current){deferredLegacyRefresh.current=false;applyLegacyRefresh();}
+  },[applyLegacyRefresh]);
 
   if (!authResolved) return <KyrubBootstrapScreen />;
 
@@ -278,7 +296,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <CatalogCustomizationInheritanceBridge />
       {operational && <OperationalAppEntryBridge />}
       <StorefrontReturnBridge />
-      <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} onOpenCanonicalFreela={localFreelaCandidate?openFreelaWorkspace:undefined} />
+      <LegacyApp key={`legacy-cache-${legacyCacheRevision}`} onOpenCanonicalFreela={localFreelaCandidate?openFreelaWorkspace:undefined} onPersonalFinanceActivity={onPersonalFinanceActivity} />
       {localFreelaCandidate&&freelaWorkspace&&freelaWorkspace.uid===auth.currentUser?.uid&&
         <CanonicalFreelaWorkspace key={freelaWorkspace.uid+':'+freelaWorkspace.mode} mode={freelaWorkspace.mode} onClose={closeFreelaWorkspace}/>}
 
