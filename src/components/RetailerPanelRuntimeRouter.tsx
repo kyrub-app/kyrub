@@ -1,3 +1,4 @@
+import {StoreReputationManagementWorkspace} from './store/StoreReputationManagementWorkspace';
 import {storeReputationCandidateEnabled} from '../utils/storeReputationCandidate';
 import {StoreReputationWorkspace} from './store/StoreReputationWorkspace';
 import React, { lazy, Suspense, useEffect, useRef, useState } from 'react';
@@ -19,6 +20,7 @@ type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel> & { a
 type ModuleDefinition = { title: string; description: string; status: 'native' | 'migration' | 'development' };
 
 const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
+  reputacoes_gestao: { title: 'Reputações', description: 'Gestão de reputações profissionais e Momentos dos consumidores.', status: 'native' },
   produtos: { title: 'Produtos', description: 'Catálogo, publicação, composição e edição dos itens da loja.', status: 'native' },
   estoque: { title: 'Estoque', description: 'Posição física, reposição, movimentações e evolução operacional do estoque.', status: 'native' },
   vendas: { title: 'Vendas & Analytics', description: 'Indicadores e leitura operacional das vendas da loja.', status: 'native' },
@@ -59,7 +61,8 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
   const definition = MANAGEMENT_MODULES[moduleId];
   return <section id={`kyrub-management-module-${moduleId}`} data-kyrub-management-module={moduleId} className="space-y-5">
     {moduleId !== 'rh' && <header className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white"><div className="flex flex-wrap items-start justify-between gap-3"><div><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-orange-300">Módulo direto</span><h2 className="mt-1 text-lg font-black">{definition.title}</h2><p className="mt-1 max-w-2xl text-[10px] leading-relaxed text-slate-400">{definition.description}</p></div><button type="button" onClick={onBackToPdv} className="min-h-10 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></div></header>}
-    {moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
+    {moduleId === 'reputacoes_gestao' ? (storeReputationCandidateEnabled()?<StoreReputationManagementWorkspace key={retailerProps.activeRetailerId} legacyStoreId={retailerProps.activeRetailerId}/>:<p>Reputações indisponíveis.</p>)
+      : moduleId === 'integracoes' ? <Suspense fallback={<Loading>Carregando Integrações…</Loading>}><LazyIntegrationsRuntime triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'produtos' ? <Suspense fallback={<Loading>Carregando Produtos…</Loading>}><LazyProductInventoryRuntime activeRetailerId={retailerProps.activeRetailerId} activeStore={retailerProps.activeStore} products={retailerProps.products} setProducts={retailerProps.setProducts} triggerToast={retailerProps.triggerToast} /></Suspense>
       : moduleId === 'estoque' ? <Suspense fallback={<Loading>Carregando Estoque…</Loading>}><LazyStockRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'vendas' ? <Suspense fallback={<Loading>Carregando Vendas & Analytics…</Loading>}><LazySalesAnalyticsRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
@@ -118,10 +121,10 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   }, [props.activeSubTab]);
 
   const backToPdv = (): void => { requestErpManagementNavigation(null); props.setActiveSubTab('clientes'); };
-  if (props.activeSubTab === 'reputacoes') return storeReputationCandidateEnabled()&&props.accessRole&&canStoreRoleAccessErpMenuItem(props.accessRole,'reputacoes')?<StoreReputationWorkspace key={props.activeRetailerId} legacyStoreId={props.activeRetailerId}/>:<p>Reputações indisponíveis.</p>;
   if (managementModule && props.accessRole && canStoreRoleAccessErpMenuItem(props.accessRole, managementModule)) {
     return <DirectManagementModule moduleId={managementModule} retailerProps={props} onBackToPdv={backToPdv} />;
   }
+  if (props.activeSubTab === 'reputacoes') return storeReputationCandidateEnabled()&&props.accessRole&&canStoreRoleAccessErpMenuItem(props.accessRole,'reputacoes')?<StoreReputationWorkspace key={props.activeRetailerId} legacyStoreId={props.activeRetailerId}/>:<p>Reputações indisponíveis.</p>;
   if (props.activeSubTab === 'gerencial') return <section className="rounded-3xl border border-amber-500/25 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-amber-300">Rota desativada</span><h2 className="mt-2 text-base font-black">Gerencial foi removido.</h2><p className="mt-2 text-[11px] leading-relaxed text-slate-400">Os módulos de gestão agora são destinos diretos do menu. Esta rota antiga permanece apenas como proteção temporária para links legados e não monta o painel anterior.</p><button type="button" onClick={backToPdv} className="mt-4 min-h-10 rounded-xl bg-orange-500 px-4 text-[9px] font-black uppercase text-slate-950">Voltar ao PDV</button></section>;
   return <>
     <ModernRetailerPanel {...props} />

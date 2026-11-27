@@ -76,7 +76,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (item.id !== 'reputacoes' || storeReputationCandidateEnabled()) &&
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (!['reputacoes','reputacoes_gestao'].includes(item.id) || storeReputationCandidateEnabled()) &&
       accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id)).map(item => {
       const Icon = item.icon;
       const isSelected =

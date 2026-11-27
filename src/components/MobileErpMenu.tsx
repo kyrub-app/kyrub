@@ -60,6 +60,7 @@ export const canStoreRoleAccessErpMenuItem = (
   if (role === 'owner') return true;
   if (itemId === 'planos') return false;
   if (itemId === 'loja') return role === 'manager';
+  if (itemId === 'reputacoes_gestao') return role === 'manager';
   if (itemId === 'rh') return role === 'manager';
   if (itemId === 'central_staff') return role === 'manager';
   if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
@@ -89,6 +90,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
   { id: 'fiscal', label: 'Fiscal', icon: ReceiptText, section: 'gestao' },
   { id: 'rh', label: 'Equipe & Permissões', icon: Briefcase, section: 'gestao' },
+  { id: 'reputacoes_gestao', label: 'Reputações', icon: Star, section: 'gestao' },
   { id: 'central_staff', label: 'Central do Staff', icon: ClipboardCheck, section: 'gestao' },
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
   { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
@@ -115,6 +117,7 @@ const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'marketing',
   'integracoes',
   'vouchers',
+  'reputacoes_gestao',
 ]);
 
 export const isMobileErpManagementModule = (
@@ -220,7 +223,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (item.id !== 'reputacoes' || storeReputationCandidateEnabled()) && (accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (!['reputacoes','reputacoes_gestao'].includes(item.id) || storeReputationCandidateEnabled()) && (accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&

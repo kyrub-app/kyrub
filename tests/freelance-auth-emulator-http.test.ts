@@ -1324,6 +1324,14 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
    assert.equal(verified.state,'verified_snapshot');assert.equal(verified.projection?.completedContracts,1);assert.equal(verified.projection?.aggregate.mean,4);
    assert.equal((await auditOwnFreelanceReputationIndex(owner.uid,'personal_requester')).projection?.completedContracts,0);
    await assert.rejects(auditOwnFreelanceReputationIndex(manager.uid,'store_requester'),/FORBIDDEN/);
+   const management='?view=reputation_management&storeId='+owner.uid;
+   const momentRef=db.doc('store_reviews/'+storeId+'/reviews/'+worker.uid);
+   await momentRef.set({reviewId:worker.uid,authorId:worker.uid,storeId,authorName:'Consumidor fictício',content:'Momento fictício de teste.',rating:3,createdAtIso:'2026-11-27T10:00:00.000Z',status:'published'});
+   const manageOwner=await call(owner,management,200),manageManager=await call(manager,management,200);
+   assert.equal(manageOwner.owner,true);assert.equal(manageOwner.contracts[0].offerId,id);assert.equal(manageOwner.contracts[0].mean,4);
+   assert.equal(manageManager.owner,false);assert.deepEqual(manageManager.contracts,[]);assert.deepEqual(manageManager.moments,manageOwner.moments);
+   assert.equal(manageManager.moments[0].rating,3);await call(worker,management,403);await call(null,management,401);
+   await call(manager,management+'&offerId='+id,400);
    const query='?view=reputation_team&storeId='+owner.uid;
    const own=await call(owner,query,200),team=await call(manager,query,200);
    assert.deepEqual(team,own);assert.equal(team.projection.aggregate.mean,4);
@@ -1331,8 +1339,8 @@ test('store representation HTTP: owner only, no subscription, pinned identity an
    assert.ok(!JSON.stringify(team).includes(worker.uid));
    await call(worker,query,403);await call(null,query,401);await call(manager,query+'&offerId='+id,400);
    const staffRef=db.doc('stores/'+storeId+'/members/'+manager.uid);
-   for(const role of ['cashier','seller','production']){await staffRef.update({role});assert.deepEqual(await call(manager,query,200),own);}
-   for(const status of ['invited','suspended','removed']){await staffRef.update({status});await call(manager,query,403);}
+   for(const role of ['cashier','seller','production']){await staffRef.update({role});assert.deepEqual(await call(manager,query,200),own);await call(manager,management,403);}
+   for(const status of ['invited','suspended','removed']){await staffRef.update({status});await call(manager,query,403);await call(manager,management,403);}
    await staffRef.update({role:'manager',status:'active'});
    await call(manager,'?view=reputation_team&storeId='+manager.uid,403);
   }finally{if(oldIndex===undefined)delete process.env[ig];else process.env[ig]=oldIndex;}
