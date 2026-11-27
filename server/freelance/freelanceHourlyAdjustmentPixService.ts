@@ -18,7 +18,7 @@ async function context(tx:FirebaseFirestore.Transaction,uid:string,id:string){
  const c={direct:financial.x.x.c.ref.collection('directPayment'),obligation:commitment};
  // A recipient's isolated nonreceipt is not a declaration that payment was sent.
  // Any paid/received statement, review, or inconsistent financial source fails closed.
- const paymentBlocked=!['awaiting_payment','nonreceipt_reported'].includes(financial.projection.state);
+ const paymentBlocked=!!financial.queue||!['awaiting_payment','nonreceipt_reported'].includes(financial.projection.state);
  const consentRef=c.direct.doc('hourlyAdjustmentPixConsent'),accessRef=c.direct.doc('hourlyAdjustmentPixDisclosure');
  const replacementRef=c.direct.doc('hourlyAdjustmentPixReplacement');
  const [saved,access,replacementDoc]=await tx.getAll(consentRef,accessRef,replacementRef);

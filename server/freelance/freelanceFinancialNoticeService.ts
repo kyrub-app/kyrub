@@ -5,6 +5,10 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ hourly_adjustment_disputed:['Divergência na regularização da jornada','Novas contratações temporariamente restritas. Regularize ou solicite análise.'],
+ hourly_adjustment_released:['Regularização da jornada informada pelas partes','A restrição deste caso foi retirada. Não é confirmação bancária.'],
+ hourly_adjustment_statement:['Manifestação financeira da jornada registrada','Consulte o histórico da obrigação. Nenhuma transferência foi verificada.'],
+ hourly_adjustment_review_requested:['Análise de regularização da jornada solicitada','A restrição permanece até resolução. Consulte o protocolo.'],
  hourly_adjustment_pix_proposed:['Substituição Pix da jornada solicitada','Confira a obrigação e não aceite se já enviou o pagamento.'],
  hourly_adjustment_pix_replaced:['Substituição Pix da jornada aceita','Consulte somente o destino vigente.'],
  hourly_adjustment_pix_authorized:['Pix de regularização da jornada autorizado','Consulte somente a obrigação específica. Não repita transferências.'],
