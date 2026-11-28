@@ -1,3 +1,4 @@
+import {productionPersonalFinanceEnabled} from './PersonalPixSettings';
 import FreelaPixWithdrawal from './FreelaPixWithdrawal';
 import FreelaHourlyExcessReview from './FreelaHourlyExcessReview';
 import FreelaHourlyCancellationAgreement from './FreelaHourlyCancellationAgreement';
@@ -29,6 +30,7 @@ function valid(v:unknown,id:string,role:Case['role']):v is Case{
  Array.isArray(c.ownReceipts)&&c.ownReceipts.length<=1&&c.ownReceipts.every(r=>typeof r.id==='string'&&r.mimeType==='image/png'&&Number.isSafeInteger(r.size)&&r.size>0&&r.size<=262144);
 }
 export default function FreelaFinancialPanel({user,offerId,role,operationalStatus,workMode}:{user:User;offerId:string;role:Case['role'];operationalStatus?:string;workMode?:'fixed'|'hourly'}){
+ const production=productionPersonalFinanceEnabled();
  const [data,setData]=useState<Case|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [pending,setPending]=useState<{label:string;body:Action}|null>(null),[note,setNote]=useState(''),[file,setFile]=useState<File|null>(null);
  const ticket=useRef(0),lock=useRef(false),controller=useRef<AbortController|null>(null),fileInput=useRef<HTMLInputElement|null>(null);
@@ -76,7 +78,7 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
  if(auth.currentUser?.uid!==user.uid)return null;
  return <section aria-label="Financeiro do Freela" className="rounded-xl border border-slate-700 p-3 space-y-3 text-sm">
   <h4 className="text-base font-bold text-white">Financeiro do Freela</h4>
-  <p>Homologação: use somente dados e comprovantes fictícios. O Kyrub não realiza transferências nem confirma pagamentos bancários.</p>
+  <p>{production?'O Kyrub não realiza transferências nem confirma pagamentos bancários.':'Homologação: use somente dados e comprovantes fictícios. O Kyrub não realiza transferências nem confirma pagamentos bancários.'}</p>
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar situação financeira</button>
   {busy&&<p role="status">Consultando financeiro…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status" className="text-emerald-300">{message}</p>}
   {showPix&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role} hourly={workMode==='hourly'}/> }
@@ -98,12 +100,12 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
     <h5 className="font-bold">Minhas evidências privadas</h5>
     {data.ownNotes.map(n=><p key={n.id} className="whitespace-pre-wrap break-words">{n.note}</p>)}
     {data.ownNotes.length<2&&<><label className="block">Manifestação complementar<textarea className={field} maxLength={500} value={note} disabled={busy||!!pending} onChange={e=>setNote(e.target.value)}/></label><button type="button" className={btn} disabled={busy||!!pending||note.trim().length<10} onClick={()=>ask('Enviar manifestação privada',{action:'submit_note',evidenceId:crypto.randomUUID(),note:note.trim(),confirmed:true})}>Enviar manifestação</button></>}
-    {data.ownReceipts.length===0?<><label className="block">Comprovante fictício PNG (até 256 KiB)<input ref={fileInput} className={field} type="file" accept="image/png" disabled={busy||!!pending} onChange={e=>{const f=e.target.files?.[0];setError('');if(f&&(f.size>262144||f.type!=='image/png'||!f.size)){setFile(null);e.target.value='';setError('Selecione um PNG de até 256 KiB.');}else setFile(f??null);}}/></label><button type="button" className={btn} disabled={busy||!!pending||!file} onClick={()=>void prepareReceipt()}>Enviar comprovante</button></>:<p>Comprovante privado registrado.</p>}
+    {data.ownReceipts.length===0?<><label className="block">{production?'Comprovante PNG (até 256 KiB)':'Comprovante fictício PNG (até 256 KiB)'}<input ref={fileInput} className={field} type="file" accept="image/png" disabled={busy||!!pending} onChange={e=>{const f=e.target.files?.[0];setError('');if(f&&(f.size>262144||f.type!=='image/png'||!f.size)){setFile(null);e.target.value='';setError('Selecione um PNG de até 256 KiB.');}else setFile(f??null);}}/></label><button type="button" className={btn} disabled={busy||!!pending||!file} onClick={()=>void prepareReceipt()}>Enviar comprovante</button></>:<p>Comprovante privado registrado.</p>}
    </div>}
   </>}
   {workMode==='hourly'&&!busy&&!pending&&operationalStatus==='completed'&&!data&&<FreelaHourlyExcessReview key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {workMode==='hourly'&&!busy&&!pending&&operationalStatus==='cancelled'&&<FreelaHourlyCancellationAgreement key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
-  {workMode!=='hourly'&&!busy&&!pending&&(data?.operationalStatus??operationalStatus)==='cancelled'&&<FreelaCancellationAccounting key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
+  {!production&&workMode!=='hourly'&&!busy&&!pending&&(data?.operationalStatus??operationalStatus)==='cancelled'&&<FreelaCancellationAccounting key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {pending&&<div className="rounded-xl border border-teal-700 p-3 space-y-2"><p>Confirma: {pending.label}?</p>{pending.body.expectedAmountMinor!==undefined&&<p>Valor integral da apuração: {new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(pending.body.expectedAmountMinor/100)}</p>}<button type="button" className={btn} disabled={busy} onClick={()=>void run(pending.body)}>Confirmar manifestação</button>{' '}<button type="button" className={btn} disabled={busy} onClick={clear}>Voltar</button></div>}
  </section>;
 }
