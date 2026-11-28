@@ -133,3 +133,23 @@ test('read workspace excludes other participants private records',async()=>{
  const ownerList=await readFreelanceWorkspace(owner,'owner');
  assert.ok(ownerList.items?.some(i=>i.id===id));
 });
+
+test('personal earnings and alerts expose only authenticated participant records',async()=>{
+ const {readFreelancePersonalSummary}=await import('../server/freelance/freelancePersonalReadService.js');
+ const id='fixture-freelance-summary';
+ await s.publishFreelanceOffer(owner,id,input);await s.applyToFreelanceOffer(worker,id);
+ const initial=await readFreelancePersonalSummary(owner,'alerts');
+ assert.ok(initial.alerts?.some(a=>a.offerId===id&&a.state==='applications_pending'));
+ await s.selectFreelanceApplication(owner,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const projected=await readFreelancePersonalSummary(worker,'earnings');
+ assert.ok(projected.entries?.some(e=>e.offerId===id&&e.state==='projected'&&e.receivedMinor===null));
+ await funding.confirmSimulatedFreelanceFunding(id,'fixture-summary-payment',15000,owner,worker);
+ await s.recordFreelanceExecution(worker,id,'start',true);await s.recordFreelanceExecution(worker,id,'request_completion',true);await s.recordFreelanceExecution(owner,id,'confirm_completion',true);
+ const earned=await readFreelancePersonalSummary(worker,'earnings');
+ assert.ok(earned.entries?.some(e=>e.offerId===id&&e.confirmedServiceMinor===15000&&e.receivedMinor===null));
+ assert.equal(earned.receivedMinor,null);
+ const unrelated=await readFreelancePersonalSummary('unrelated','earnings');
+ assert.deepEqual(unrelated.entries,[]);assert.equal(unrelated.receivedMinor,null);
+ const own=await readFreelancePersonalSummary(owner,'earnings');
+ assert.ok(!own.entries?.some(e=>e.offerId===id));
+});

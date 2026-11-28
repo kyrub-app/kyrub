@@ -1,6 +1,7 @@
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {readFreelanceWorkspace} from './freelanceWorkspaceReadService.js';
+import {readFreelancePersonalSummary} from './freelancePersonalReadService.js';
 import * as lifecycle from './freelanceLifecycleService.js';
 
 export function freelanceWorkspaceEnabled(){
@@ -31,8 +32,8 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
 }
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
-type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:typeof readFreelanceWorkspace;mutate:(uid:string,input:unknown)=>Promise<unknown>};
-const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:readFreelanceWorkspace,mutate:executeFreelanceWorkspaceAction};
+type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:(uid:string,view:unknown,offerId?:unknown)=>Promise<unknown>;mutate:(uid:string,input:unknown)=>Promise<unknown>};
+const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId)=>view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId),mutate:executeFreelanceWorkspaceAction};
 export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dependencies=defaults){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
  try{if(!deps.enabled()){res.status(503).json({code:'FREELANCE_DISABLED'});return;}}catch{res.status(503).json({code:'FREELANCE_DISABLED'});return;}

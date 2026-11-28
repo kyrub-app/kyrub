@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { Bell, RefreshCw, X } from 'lucide-react';
 import { auth } from '../../utils/firebase';
+import { useLocalFreelaCandidate } from '../modals/CanonicalFreelaWorkspace';
+import { FreelancePersonalSummary } from './FreelancePersonalSummary';
 import type { CourierActivityAlert } from '../../../shared/rendaActivityAlerts';
 type Kind = 'delivery' | 'freelance';
 const labels = { accepted: 'Corrida aceita', delivering: 'Entrega em andamento', done: 'Entrega concluída' };
@@ -16,6 +18,7 @@ export function RendaActivityAlertsBell({ kind, guestReadOnly, onLoginRequired }
   const [loading,setLoading] = useState(false);
   const [refreshKey,setRefreshKey] = useState(0);
   const generation = useRef(0);
+  const candidate = useLocalFreelaCandidate();
   const name = kind === 'delivery' ? 'Entregas' : 'Freelas';
   useEffect(() => {
     let previous = auth.currentUser?.uid;
@@ -89,7 +92,7 @@ export function RendaActivityAlertsBell({ kind, guestReadOnly, onLoginRequired }
               <p>Estados confirmados de corridas; não são avisos não lidos nem comprovação de pagamento.</p>
               <h3 className="font-bold text-white">Como solicitante</h3>
               <p>Avisos do solicitante ainda não integrados.</p>
-            </> : <>
+            </> : candidate ? <FreelancePersonalSummary view="alerts"/> : <>
               <h3 className="font-bold text-white">Como contratante e prestador</h3>
               <p>Os avisos confirmados de candidaturas, contratações e serviços ainda não estão disponíveis.</p>
               <p>Registros locais não são usados como confirmação de eventos de outras pessoas.</p>
