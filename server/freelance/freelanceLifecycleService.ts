@@ -1,4 +1,5 @@
-import {assertEngagementPilotAuthority,assertEngagementPilotTerms,assertEngagementPilotParticipants} from './freelanceEngagementPilotAuthority.js';
+import {readPersonalPixReadiness} from '../payments/personalPixDestinationService.js';
+import {assertEngagementPilotAuthority,assertEngagementPilotTerms,assertEngagementPilotParticipants,freelanceContractPilotEnabled,assertContractPilotTerms} from './freelanceEngagementPilotAuthority.js';
 import {reputationCoverageLocal,invalidateUnindexedCoverage} from './freelanceReputationCoverage.js';
 import {prepareFreelanceReputationIndex,reputationIndexEnabled,reputationContractContext} from './freelanceReputationIndexPreparation.js';
 import {assertHourlyLifecycleCandidate} from './freelanceHourlyLifecycleGate.js';
@@ -123,8 +124,9 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
   });
 }
 /** The selected worker must explicitly confirm; the owner cannot confirm for them. */
-export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown}): Promise<FreelanceSelectionResult> {
+export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown},pilot=false): Promise<FreelanceSelectionResult> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
+  if(pilot){assertEngagementPilotAuthority(actorUid);if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');}
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
   return adminDb.runTransaction(async tx => {
@@ -141,7 +143,12 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     if(!sameFreelanceCounterproposal(offer.selectedCounterproposal,proposal,original)||(!proposal&&offer.originalOfferTerms))throw Error('FREELANCE_CONFLICT');
     const agreed=negotiatedFreelanceTerms(original,proposal);
     if(offer.status==='contracted'&&(!sameFreelancePaymentTerms(offer.paymentTerms,agreed.paymentTerms,agreed.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,agreed.workTerms,agreed.paymentMinor)||offer.paymentMinor!==agreed.paymentMinor))throw Error('FREELANCE_CONFLICT');
-    assertAcceptedPaymentTerms({...offer,...agreed},acceptance);
+    if(pilot){
+      assertContractPilotTerms({...offer,...agreed});
+      await assertEngagementPilotParticipants(tx,[{uid:offer.ownerUid,role:'requester'},{uid:actorUid,role:'freelancer'}]);
+      if((await readPersonalPixReadiness(tx,actorUid)).status!=='declared')throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
+    }
+    assertAcceptedPaymentTerms({...offer,...agreed},acceptance,pilot);
     const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
     if(proposal&&result.changed){
       result.offer={...result.offer,...agreed,originalOfferTerms:negotiatedFreelanceTerms(offer,undefined)};
@@ -153,10 +160,10 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
       const writeCommitment=await prepareHourlyContract(tx,offerRef,result);writeCommitment();
     }else if(result.offer.paymentTerms!==undefined){
       // No new financial obligations outside the disposable local candidate.
-      if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
+      if(!pilot&&(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
          process.env.GOOGLE_APPLICATION_CREDENTIALS||
          !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
-         getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+         getFirebaseAdminProjectId()!=='kyrub-security-test'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
       const obligation=buildFreelancePaymentObligation(result.offer,result.application);
       const obligationRef=offerRef.collection('directPayment').doc('obligation');
       const existing=await tx.get(obligationRef);
