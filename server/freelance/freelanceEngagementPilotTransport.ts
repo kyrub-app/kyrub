@@ -1,17 +1,21 @@
 import {adminAuth} from '../firebaseAdmin.js';
 import {validFreelanceId,normalizeFreelanceOffer} from '../../shared/freelanceLifecycle.js';
-import {assertEngagementPilotAuthority,freelanceEngagementPilotEnabled,freelanceEngagementPilotAllows,assertEngagementPilotTerms} from './freelanceEngagementPilotAuthority.js';
+import {assertEngagementPilotAuthority,freelanceEngagementPilotEnabled,freelanceEngagementPilotAllows,assertEngagementPilotTerms,freelanceContractPilotEnabled} from './freelanceEngagementPilotAuthority.js';
 import * as lifecycle from './freelanceLifecycleService.js';
 
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
+const contractActions=['confirm','start','request_completion','confirm_completion'];
 export async function executeEngagementPilotAction(uid:string,input:unknown){
  assertEngagementPilotAuthority(uid);
  const b=validateEngagementPilotAction(input);
+ if(contractActions.includes(String(b.action))&&!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  switch(b.action){
  case 'publish':{const terms=normalizeFreelanceOffer(b.terms);assertEngagementPilotTerms(terms);await lifecycle.publishFreelanceOffer(uid,b.offerId,terms,undefined,true);break;}
  case 'apply':await lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms,counterproposal:b.counterproposal},true);break;
  case 'select':await lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid as string,b.expectedCounterproposal,true);break;
+ case 'confirm':await lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms},true);break;
+ case 'start':case 'request_completion':case 'confirm_completion':await lifecycle.recordFreelanceExecution(uid,b.offerId,b.action,b.confirmed,true);break;
  case 'release':await lifecycle.releaseFreelanceReservation(uid,b.offerId,b.applicantUid as string,b.confirmed,true);break;
  case 'withdraw':await lifecycle.withdrawPendingFreelanceApplication(uid,b.offerId,b.confirmed,true);break;
  case 'cancel_open':await lifecycle.cancelUncontractedFreelanceOffer(uid,b.offerId,b.confirmed,true);break;
@@ -22,11 +26,11 @@ export function validateEngagementPilotAction(input:unknown):Record<string,unkno
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
- const allowed=b.action==='publish'?['terms']:b.action==='apply'?['expectedPaymentTerms','expectedWorkTerms','counterproposal']:b.action==='select'?['applicantUid','expectedCounterproposal']:b.action==='release'?['applicantUid','confirmed']:b.action==='withdraw'||b.action==='cancel_open'?['confirmed']:null;
+ const allowed=b.action==='publish'?['terms']:b.action==='apply'?['expectedPaymentTerms','expectedWorkTerms','counterproposal']:b.action==='select'?['applicantUid','expectedCounterproposal']:b.action==='release'?['applicantUid','confirmed']:b.action==='confirm'?['confirmed','expectedPaymentTerms','expectedWorkTerms']:b.action==='withdraw'||b.action==='cancel_open'||contractActions.includes(String(b.action))?['confirmed']:null;
  if(!allowed||Object.keys(b).some(k=>!['action','offerId',...allowed].includes(k)))throw Error('FREELANCE_INVALID');
  if(b.action==='publish')assertEngagementPilotTerms(normalizeFreelanceOffer(b.terms));
- if(b.action==='apply'&&(!b.expectedPaymentTerms||!b.expectedWorkTerms))throw Error('FREELANCE_INVALID');
- if((b.action==='release'||b.action==='withdraw'||b.action==='cancel_open')&&b.confirmed!==true)throw Error('FREELANCE_INVALID');
+ if((b.action==='apply'||b.action==='confirm')&&(!b.expectedPaymentTerms||!b.expectedWorkTerms))throw Error('FREELANCE_INVALID');
+ if((b.action==='release'||b.action==='withdraw'||b.action==='cancel_open'||contractActions.includes(String(b.action)))&&b.confirmed!==true)throw Error('FREELANCE_INVALID');
  if((b.action==='select'||b.action==='release')&&!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');
  return {...b,offerId:b.offerId};
 }
@@ -47,7 +51,8 @@ export async function handleFreelanceEngagementPilot(req:Request,res:Response,de
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>16384){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
-  validateEngagementPilotAction(req.body);
+  const action=validateEngagementPilotAction(req.body);
+  if(contractActions.includes(String(action.action))&&!freelanceContractPilotEnabled(deps.env)){res.status(503).json({code:'FREELANCE_DISABLED'});return;}
   await deps.execute(uid,req.body);
   res.status(200).json({confirmed:true});
  }catch(e){
