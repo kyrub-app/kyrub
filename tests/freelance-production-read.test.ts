@@ -34,3 +34,25 @@ test('read-only pilot requires correct project, revoked-token verifier, verified
  await handleFreelanceProductionRead(req,response,deps);
  assert.equal(status,200);assert.equal(reads,1);assert.equal(eligibilityChecks,1);assert.deepEqual(body,{items:[],nextCursor:null});
 });
+
+test('engagement preflight is private, parameterless and never dispatches a mutation',async()=>{
+ let status=0,body:unknown,calls=0;
+ const response={setHeader(){},status(n:number){status=n;return{json(v:unknown){body=v;}}}};
+ const deps={
+  env,projectReady:()=>true,verify:async()=>({uid:'pilot',aud:'kyrub-b8d0e',email_verified:true}),
+  accountEligible:async()=>true,
+  read:async(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>{
+   calls++;assert.equal(uid,'pilot');assert.equal(view,'engagement_preflight');assert.equal(offerId,undefined);assert.equal(cursor,undefined);
+   return {requesterEligible:true,freelancerEligible:false,restricted:true,mutationsEnabled:false};
+  }
+ };
+ const req={method:'GET',headers:{authorization:'Bearer fixture'},query:{view:'engagement_preflight'}};
+ for(const query of [{...req.query,uid:'other'},{...req.query,offerId:'offer'},{...req.query,cursor:'page'}]){
+  await handleFreelanceProductionRead({...req,query},response,deps);assert.equal(status,400);
+ }
+ await handleFreelanceProductionRead({...req,method:'POST'},response,deps);assert.equal(status,405);
+ await handleFreelanceProductionRead(req,response,{...deps,accountEligible:async()=>false});assert.equal(status,403);
+ assert.equal(calls,0);
+ await handleFreelanceProductionRead(req,response,deps);assert.equal(status,200);assert.equal(calls,1);
+ assert.deepEqual(body,{requesterEligible:true,freelancerEligible:false,restricted:true,mutationsEnabled:false});
+});

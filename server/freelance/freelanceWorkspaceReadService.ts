@@ -1,3 +1,4 @@
+import {assertFreelanceEngagementAllowed} from './freelanceEngagementRestrictionService.js';
 import {readOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
 import {readFreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
 import {readFreelanceCounterproposal} from '../../shared/freelanceCounterproposal.js';
@@ -31,6 +32,16 @@ export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:un
  const after=validFreelanceId(cursor)?cursor:undefined;
  if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
+  if(view==='engagement_preflight'){
+   if(offerId!==undefined||cursor!==undefined)throw Error('FREELANCE_INVALID');
+   const identity=await tx.get(adminDb.doc('identity_verifications/'+uid));
+   const roles=identity.get('approvedProfiles');
+   const approved=identity.get('status')==='approved'&&Array.isArray(roles);
+   let restricted=false;
+   try{await assertFreelanceEngagementAllowed(tx,uid);}
+   catch(error){if(!(error instanceof Error)||error.message!=='FREELANCE_FINANCIAL_RESTRICTION')throw error;restricted=true;}
+   return {requesterEligible:approved&&roles.includes('requester'),freelancerEligible:approved&&roles.includes('freelancer'),restricted,mutationsEnabled:false};
+  }
   if(view==='requester_stores'){if(offerId||cursor)throw Error('FREELANCE_INVALID');const store=await readOwnedFreelanceStore(tx,uid);return {items:store?[store]:[]};}
   if(view==='open'||view==='owner'){
    let query=(view==='open'?offers().where('status','==','open'):offers().where('ownerUid','==',uid)).orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
