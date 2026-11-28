@@ -193,3 +193,85 @@ test('variable payment basis never treats a zero result or unconfirmed excess as
  const {startedAt:sa,completionRequestedAt:ca,completedAt:co,...preApp}=application;
  assert.throws(()=>buildFreelancePaymentObligation({...preOffer,status:'contracted'},{...preApp,status:'contracted'}),/NOT_ENABLED/);
 });
+
+test('reputation eligibility follows completed contract and separates professional, personal and store subjects',async()=>{
+ const {createFreelanceOffer,createFreelanceApplication,selectFreelanceApplicant,confirmFreelanceSelection,advanceFreelanceExecution}=await import('../shared/freelanceLifecycle.js');
+ const {freelanceReputationSlot,freelanceReputationParties}=await import('../shared/freelanceReputation.js');
+ const at=(n:number)=>new Date(Date.UTC(2026,10,27,12,n)).toISOString();
+ for(const corporate of [false,true]){
+  const o=createFreelanceOffer('offer','owner',{title:'Serviço fictício',description:'Teste',requirements:'',paymentMinor:15000},at(0));
+  if(corporate)o.requesterStore={storeId:'shop',displayName:'Loja fictícia',representativeRole:'owner'};
+  const a=createFreelanceApplication(o,'worker',at(1));
+  const s=selectFreelanceApplicant(o,a,'owner',at(2));
+  const c=confirmFreelanceSelection(s.offer,s.application,'worker',true,at(3));
+  assert.throws(()=>freelanceReputationSlot(c.offer,c.application,'worker'),/CONFLICT/);
+  const running=advanceFreelanceExecution(c.offer,c.application,'worker','start',true,at(4));
+  const pending=advanceFreelanceExecution(running.offer,running.application,'worker','request_completion',true,at(5));
+  assert.throws(()=>freelanceReputationParties(pending.offer,pending.application),/CONFLICT/);
+  const done=advanceFreelanceExecution(pending.offer,pending.application,'owner','confirm_completion',true,at(6));
+  const {offer,application}=done;
+  assert.deepEqual(freelanceReputationSlot(offer,application,'owner'),{offerId:'offer',role:'requester',subject:{kind:'professional',id:'worker'},completedAt:at(6)});
+  assert.deepEqual(freelanceReputationSlot(offer,application,'worker'),{offerId:'offer',role:'worker',subject:{kind:corporate?'store_requester':'personal_requester',id:corporate?'shop':'owner'},completedAt:at(6)});
+  assert.throws(()=>freelanceReputationSlot(offer,application,'outsider'),/FORBIDDEN/);
+  for(const patch of [{status:'cancelled' as const},{selectedApplicantUid:'outsider'},{completedAt:at(4)},{ownerUid:'worker'},{requesterStore:{storeId:'wrong',displayName:'Outra loja',representativeRole:'owner' as const}}])
+   assert.throws(()=>freelanceReputationParties({...offer,...patch},application),/CONFLICT/);
+  assert.throws(()=>freelanceReputationParties(offer,{...application,completedAt:at(7)}),/CONFLICT/);
+ }
+});
+
+test('reputation contest workspace is read-only, validates minimal payload and binds current admin session',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {validReputationContestPage}=await import('../src/components/admin/reputationContestPage');
+ const item={caseId:'a'.repeat(64),offerId:'offer',subjectKind:'professional',ratingRole:'requester',scores:{punctuality:4,courtesy:4,commitment:4,quality:4,communication:4,cooperation:null,organization:4},mean:4,applicableCount:6,submittedAt:'2026-11-27T10:00:00.000Z',requestedAt:'2026-11-27T11:00:00.000Z',reason:'Contestação fictícia.',ratingDigest:'b'.repeat(64),status:'pending'};
+ const page={items:[item],nextCursor:null,readOnly:true};
+ assert.equal(validReputationContestPage(page),true);
+ assert.equal(validReputationContestPage({...page,readOnly:false}),false);
+ assert.equal(validReputationContestPage({...page,items:[item,item]}),false);
+ assert.equal(validReputationContestPage({...page,items:[{...item,subjectKind:'store_requester'}]}),false);
+ assert.equal(validReputationContestPage({...page,items:[{...item,challengerUid:'private'}]}),false);
+ assert.equal(validReputationContestPage({...page,nextCursor:'invalid'}),false);
+ const ui=readFileSync('src/components/admin/AdminFreelanceReputationContests.tsx','utf8');
+ assert.match(ui,/method:'GET'/);assert.match(ui,/cache:'no-store'/);assert.match(ui,/auth.currentUser\?\.uid===user.uid/);
+ assert.match(ui,/abort\(\)/);assert.doesNotMatch(ui,/method:'POST'|dangerouslySetInnerHTML|localStorage/);
+ const parent=readFileSync('src/components/admin/AdminFreelanceFinancialReviewWorkspace.tsx','utf8');
+ assert.match(parent,/AdminFreelanceReputationContests key=/);
+});
+
+test('approved reputation criteria separate the parties and exclude explicit non-applicable values',async()=>{
+ const {reputationCriteria,normalizeReputationScores,projectReputationRating,projectReputationAggregate}=await import('../shared/freelanceReputationCriteria.js');
+ const professional={punctuality:5,courtesy:5,commitment:4,quality:5,communication:4,cooperation:null,organization:4};
+ const requester={payment_punctuality:5,courtesy:2,agreement:4,communication:5,organization:4,working_conditions:null,resources:null};
+ assert.equal(projectReputationRating('professional',professional).mean,4.5);
+ assert.equal(projectReputationRating('professional',professional).applicableCount,6);
+ assert.equal(projectReputationRating('store_requester',requester).mean,4);
+ assert.deepEqual(reputationCriteria('personal_requester'),reputationCriteria('store_requester'));
+ for(const bad of [{...professional,appearance:5},{...professional,courtesy:0},{...professional,courtesy:2.5},{...professional,courtesy:undefined},Object.fromEntries(Object.keys(professional).map(k=>[k,null])),requester])
+  assert.throws(()=>normalizeReputationScores('professional',bad),/CRITERIA_INVALID/);
+ const agg=projectReputationAggregate('professional',[professional,{...professional,punctuality:1,courtesy:null,commitment:null,quality:null,communication:null,cooperation:null,organization:null}]);
+ assert.equal(agg.ratingCount,2);assert.equal(agg.mean,2.75);assert.deepEqual(agg.criteria.punctuality,{count:2,mean:3});
+ assert.deepEqual(agg.criteria.courtesy,{count:1,mean:5});assert.deepEqual(agg.criteria.cooperation,{count:0,mean:null});
+ assert.equal(projectReputationAggregate('professional',[]).mean,null);
+});
+
+test('reputation criterion guidance covers both roles and accessible stars start unanswered',async()=>{
+ const {reputationCriteria,reputationCriterionDescriptions}=await import('../shared/freelanceReputationCriteria.js');
+ for(const kind of ['professional','personal_requester','store_requester'] as const){
+  const descriptions=reputationCriterionDescriptions(kind);
+  assert.deepEqual(Object.keys(descriptions),Object.keys(reputationCriteria(kind)));
+  assert.ok(Object.values(descriptions).every(v=>typeof v==='string'&&v.length>10));
+ }
+ assert.equal(reputationCriterionDescriptions('professional').punctuality,'Cumprimento dos horários acordados.');
+ assert.equal(reputationCriterionDescriptions('professional').courtesy,'Educação, respeito e bom trato com as pessoas.');
+ assert.deepEqual(reputationCriterionDescriptions('personal_requester'),reputationCriterionDescriptions('store_requester'));
+ const {readFileSync}=await import('node:fs');
+ const ui=readFileSync('src/components/modals/FreelaReputationPanel.tsx','utf8');
+ assert.match(ui,/reputationCriterionDescriptions\(targetKind\)/);
+ assert.match(ui,/aria-describedby=/);
+ assert.match(ui,/\{descriptions\[k\]\}/);
+ assert.match(ui,/type="radio"/);
+ assert.match(ui,/checked=\{scores\[k\]===String\(n\)\}/);
+ assert.match(ui,/checked=\{scores\[k\]==='na'\}/);
+ assert.match(ui,/useState<Record<string,string>>\(\{\}\)/);
+ assert.match(ui,/!complete/);
+ assert.match(ui,/Média da avaliação/);
+});

@@ -1,3 +1,4 @@
+import AdminFreelanceReputationContests from './AdminFreelanceReputationContests';
 import AdminFreelanceFixedAdjustmentReview from './AdminFreelanceFixedAdjustmentReview';
 import AdminFreelanceFixedCancellationReview from './AdminFreelanceFixedCancellationReview';
 import AdminFreelanceExcessReview from './AdminFreelanceExcessReview';
@@ -109,5 +110,6 @@ export default function AdminFreelanceFinancialReviewWorkspace({user}:{user:User
   <AdminFreelanceExcessReview key={'excess:'+user.uid} user={user}/>
   <AdminFreelanceFixedCancellationReview key={'fixed:'+user.uid} user={user}/>
   <AdminFreelanceFixedAdjustmentReview key={'adjustment:'+user.uid} user={user}/>
+  <AdminFreelanceReputationContests key={'reputation:'+user.uid} user={user}/>
  </section>;
 }

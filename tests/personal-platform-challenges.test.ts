@@ -68,7 +68,7 @@ test('legacy reward units are read-only and cannot be awarded from the profile',
   assert.match(profile, /card\.id === 'challenges' \? 'col-span-2'/);
   assert.match(profile, /personalPanel === 'challenges' && <PlatformChallengesPanel/);
   assert.ok(profile.indexOf("id: 'challenges'") > profile.indexOf("id: 'xp'"),
-    'Challenge card is below XP and conquistas');
+    'Challenge card is below Cocares and conquistas');
 });
 
 test('personal panel includes loading, retry, empty state and no action claiming grants', () => {
@@ -98,4 +98,13 @@ test('permanent planting challenge is exact, private and non-published until rew
  const repository=read('server/gamification/globalChallengeAdminRepository.ts');
  assert.match(repository,/assertPlantPitangueiraDraft\(draft\)/);
  assert.ok(repository.indexOf('assertPlantPitangueiraPublicationReady(challengeId)')<repository.indexOf('tx.update(ref, { status: planned.challenge.status'));
+});
+
+test('challenge rewards use public Cocar terminology, preserving rewardXp',()=>{
+ const profile=read('src/components/modals/UserProfileModal.tsx'),ui=read('src/components/PlatformChallengesPanel.tsx'),admin=read('src/components/admin/AdminGlobalChallengesWorkspace.tsx');
+ assert.match(profile,/Cocares, Pitangas e recompensas/);
+ assert.match(ui,/formatCocarCount\(challenge.rewardXp\)/);
+ assert.match(ui,/Cocares e Pitangas só são creditados/);
+ assert.match(admin,/rewardXp: 'Cocares previstos'/);
+ assert.doesNotMatch(ui,/\bXP\b/);
 });

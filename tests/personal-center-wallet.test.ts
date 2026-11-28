@@ -100,14 +100,14 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(wallet, /Open Finance permanecerão indisponíveis/);
   });
 
-  test('XP, real Pitangas balance, conversion and statement share the existing canonical account', () => {
+  test('Cocares, real Pitangas balance, conversion and statement share the existing canonical account', () => {
     assert.match(pitangas, /mode = 'all'/);
     assert.match(pitangas, /mode === 'xp'/);
     assert.match(pitangas, /Pitangas disponíveis/);
     assert.match(pitangas, /account\.pitangas\.toLocaleString\('pt-BR'\)/);
     assert.match(pitangas, /fetch\('\/api\/pitangas'/);
     assert.match(pitangas, /requestId: requestId\.current/);
-    assert.match(pitangas, /1\.000 Pitangas = 1 XP/);
+    assert.match(pitangas, /1\.000 Pitangas = 1 Cocar/);
     assert.match(pitangas, /<SemeaduraJourneyPanel/);
     assert.match(pitangas, /xp=\{mode === 'xp' \? \(account\?\.xp \?\? null\) : undefined\}/);
     assert.match(pitangas, /Extrato de recompensas/);

@@ -1,3 +1,4 @@
+import {formatCocarCompact,formatCocarCount} from '../../shared/cocarDisplay';
 import {KAIRUBIDO_EQUIPMENT,projectKairubidoEvolution,type KairubidoMilestone,type KairubidoEquipment} from '../../shared/kairubidoEvolution';
 /** Explicit preview only. Values are illustrative and must not become a
  * production unlock policy without a separate approved configuration. */
@@ -23,8 +24,8 @@ export function KairubidoEvolutionPanel({xp}:{xp:number|null}){
     {has('cocar_parcial')&&<path d="M42 32 L34 13 L47 24 L48 7 L57 24 L60 4 L67 24 L76 9 L78 32" fill="#D4A76A" stroke="#8C603E" strokeLinejoin="round"/>}
     {has('cocar')&&<path d="M42 32 L25 19 L32 35 M78 32 L95 19 L88 35" fill="none" stroke="#F27429" strokeWidth="5" strokeLinecap="round"/>}
    </svg>
-   <div className="min-w-0 flex-1 space-y-1"><p className="font-bold">{progress?'Nível '+progress.level:'Experiência indisponível'}</p>
-    {progress&&<><p>{progress.xp.toLocaleString('pt-BR')} XP</p><p>{progress.next?'Próximo: '+labels[progress.next.equipment]+' · '+progress.next.remainingXp+' XP':'Todos os acessórios da prévia desbloqueados'}</p></>}
+   <div className="min-w-0 flex-1 space-y-1"><p className="font-bold">{progress?'Kairubido '+formatCocarCompact(progress.xp):'Evolução indisponível'}</p>
+    {progress&&<><p>{formatCocarCount(progress.xp)}</p><p>{progress.next?'Próximo: '+labels[progress.next.equipment]+' · '+formatCocarCount(progress.next.remainingXp):'Todos os acessórios da prévia desbloqueados'}</p></>}
    </div>
   </div>
   {progress&&<ul className="grid grid-cols-2 gap-2">{KAIRUBIDO_EQUIPMENT.map(item=><li key={item} className="rounded-lg border border-slate-800 p-2"><span>{labels[item]}</span><span className="block text-xs text-slate-400">{has(item)?'Desbloqueado na prévia':'Bloqueado na prévia'}</span></li>)}</ul>}

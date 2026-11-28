@@ -95,7 +95,7 @@ test('list, filters, cursor navigation and details use authenticated GETs', asyn
 test('creates a draft with stable ID; confirmation precedes one publication and preserves reward definitions', async () => {
   await render(); await click('Novo rascunho');
   await change('Identificador', 'new-global'); await change('Título', 'Nova comunidade'); await change('Descrição', 'Crie uma comunidade');
-  await change('XP previsto', '25'); await submit();
+  await change('Cocares previstos', '25'); await submit();
   const create = calls.find(c => c.url.searchParams.get('operation') === 'create')!;
   const body = JSON.parse(create.init.body as string);
   assert.equal(body.id, 'new-global'); assert.equal(body.status, 'draft'); assert.equal(body.sponsorType, 'kyrub'); assert.equal(body.rewardXp, 25);
@@ -128,7 +128,7 @@ test('pending publication suppresses duplicate clicks and keeps the confirmation
 
 test('validation keeps form data and never sends invalid dates or quantities', async () => {
   await render(); await click('Novo rascunho'); await change('Título', 'Draft válido'); await change('Descrição', 'Detalhe');
-  await change('XP previsto', '-1'); await submit(); assert.match(container.querySelector('[role="alert"]')!.textContent!, /Revise/);
+  await change('Cocares previstos', '-1'); await submit(); assert.match(container.querySelector('[role="alert"]')!.textContent!, /Revise/);
   assert.equal(calls.filter(c => c.init.method === 'POST').length, 0);
   assert.equal((container.querySelector('textarea') as HTMLTextAreaElement).value, 'Detalhe');
 });

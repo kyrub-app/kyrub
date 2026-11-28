@@ -1,3 +1,4 @@
+import {formatCocarCount} from '../../shared/cocarDisplay';
 import { useState } from 'react';
 import { BadgeCheck, CalendarDays, Gift, RefreshCw, Target } from 'lucide-react';
 import type { PlatformChallengeCatalog, PlatformChallengeView } from '../../shared/platformChallengeCatalog';
@@ -10,7 +11,7 @@ type CatalogProps = {
 
 const rewardLabel = (challenge: PlatformChallengeView): string => {
   const rewards = [
-    challenge.rewardXp > 0 ? `${challenge.rewardXp} XP` : '',
+    challenge.rewardXp > 0 ? formatCocarCount(challenge.rewardXp) : '',
     challenge.rewardPitangas > 0 ? `${challenge.rewardPitangas.toLocaleString('pt-BR')} Pitangas` : '',
   ].filter(Boolean);
   return rewards.length ? rewards.join(' + ') : 'Sem recompensa cadastrada';
@@ -121,7 +122,7 @@ export function PlatformChallengesPanel({
         </li>)}
       </ul>}
       <p className="text-[9px] leading-relaxed text-slate-400">
-        Abrir desafios não concede recompensas. XP e Pitangas só são creditados por eventos confirmados pelo sistema.
+        Abrir desafios não concede recompensas. Cocares e Pitangas só são creditados por eventos confirmados pelo sistema.
       </p>
     </>}
   </div>;
