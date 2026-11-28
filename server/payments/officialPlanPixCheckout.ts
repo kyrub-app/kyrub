@@ -63,8 +63,25 @@ const promotionReservationRef = (d: any) => adminDb.doc(
 // Fail closed whenever live creation is enabled. A distinct, default-off switch
 // restricts the discounted Business pilot to one authenticated buyer/coupon.
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
+// Commercial issuance uses the same canonical quote, buyer lock, provider binding
+// and payment materialization as the existing pilot. Promotions remain pilot-only.
+const commercialMode = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_COMMERCIAL_ENABLED === 'true' &&
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true' &&
+  process.env.VERCEL === '1' && process.env.VERCEL_ENV === 'production' &&
+  process.env.NODE_ENV === 'production' && !process.env.FIRESTORE_EMULATOR_HOST &&
+  !process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const allowPilotOffer = (d: any, uid: string) => {
   gate();
+  if (commercialMode()) {
+    if (!valid(uid) || d.buyerId !== uid || d.promotionAcceptedTerms ||
+        !['pro','business'].includes(d.offer.plan) ||
+        ![1,3,6,12].includes(d.offer.quote.months) ||
+        !Number.isSafeInteger(d.offer.priceMinor) || d.offer.priceMinor <= 0 ||
+        !Number.isSafeInteger(d.offer.quote.totalMinor) || d.offer.quote.totalMinor <= 0) {
+      throw Error('OFFICIAL_PIX_COMMERCIAL_OFFER_FORBIDDEN');
+    }
+    return;
+  }
   if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
   if (d.promotionAcceptedTerms) {
@@ -310,7 +327,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true' &&
     process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID === buyer.uid;
   if ((d.buyerStoreProvisioningRequired || !d.buyerStoreId) &&
-      !isolatedPreStoreTest && !explicitlyAuthorizedPreStorePilot) {
+      !isolatedPreStoreTest && !explicitlyAuthorizedPreStorePilot && !commercialMode()) {
     throw Error('OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY');
   }
   if (!buyer.email || buyer.emailVerified === false || !d.acceptedAt || d.acceptedBy !== buyer.uid ||
@@ -332,7 +349,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
       tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
-      tx.get(pilotRef()),
+      commercialMode() ? Promise.resolve(null) : tx.get(pilotRef()),
       d.promotionAcceptedTerms ? tx.get(promotionReservationRef(d)) : Promise.resolve(null),
       d.promotionAcceptedTerms ? tx.get(adminDb.doc(
         `stores/${d.offer.storeId}/promotions/${d.promotionAcceptedTerms.promotionId}`
@@ -354,7 +371,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
          Date.parse(couponReservation.get('expiresAt')) <= Date.now())) {
       throw Error('OFFICIAL_PIX_PROMOTION_RESERVATION_REQUIRED');
     }
-    if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
+    if (pilot?.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
     if (d.promotionAcceptedTerms && !isolatedOfficialPromotionEnabled()) {
       if (!pilotCoupon?.exists) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN');
       assertLiveBusinessCouponPilot({
@@ -372,7 +389,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       (product.get('storePointsPerUnit') ?? 0) !== d.offer.points || digest(product.get('saleModality')) !== digest(d.offer.saleModality) ||
       digest(resolveSubscriptionContractQuote({ persistedSaleModality: product.get('saleModality'), authoritativeMonthlyPriceMinor: d.offer.priceMinor,
         persistedOffers: product.get('contractDiscounts'), selectedMonths: d.offer.quote.months, paymentTerms: { collectionMode: 'prepaid', installments: 1 } })) !== digest(d.offer.quote)) throw Error('OFFICIAL_PIX_OFFER_CHANGED');
-    tx.create(pilotRef(), { checkoutId: d.checkoutId, buyerId: buyer.uid, consumedAt: now() });
+    if (!commercialMode()) tx.create(pilotRef(), { checkoutId: d.checkoutId, buyerId: buyer.uid, consumedAt: now() });
     tx.set(slot, { checkoutReservationStatus: 'pending', officialPixCheckoutId: d.checkoutId, collectionMode: 'prepaid', updatedAt: now() }, { merge: true });
     tx.update(r, { status: 'in_flight', collectorId, requestBody: body, requestDigest: hash(body), buyerEmail: buyer.email });
   });
