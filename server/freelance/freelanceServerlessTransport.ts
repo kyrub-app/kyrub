@@ -17,6 +17,9 @@ export async function handleFreelanceServerlessRequest(surface: Surface, request
   try {
     switch (surface) {
       case 'freelance-workspace':
+        if (process.env.VERCEL || process.env.VERCEL_ENV) {
+          return await (await import('./freelanceProductionReadTransport.js')).handleFreelanceProductionRead(forwarded, response);
+        }
         return await (await import('./freelanceWorkspaceTransport.js')).handleFreelanceWorkspace(forwarded, response);
       case 'freelance-finance':
         return await (await import('./freelanceFinanceTransport.js')).handleFreelanceFinance(forwarded, response);
