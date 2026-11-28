@@ -1,3 +1,4 @@
+import {storeOrderDistributionEnabled} from '../../shared/storeOrderDistributionPolicy.js';
 import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { OFFICIAL_STORE_CANONICAL_ID } from '../../shared/officialPlanCanonicalDisplay.js';
 import { Router } from 'express';
@@ -133,6 +134,8 @@ const parseCheckout = (value: unknown): MarketplaceCheckoutInput => {
     : {};
   const fulfillmentType = candidate.fulfillmentType;
   const method = candidate.method;
+  // Checkout does not choose the courier. Reject an explicit integrated routing request rather than silently accepting it.
+  if(candidate.deliveryProvider==='kyrub'&&!storeOrderDistributionEnabled())throw Error('STORE_ORDER_DISTRIBUTION_DISABLED');
   if (fulfillmentType !== 'delivery' && fulfillmentType !== 'pickup') {
     throw new Error('CHECKOUT_FULFILLMENT_INVALID');
   }
@@ -454,6 +457,7 @@ export const mapMarketplaceCheckoutError = (
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     return { status: 401, body: { error: 'Faça login novamente.' } };
   }
+  if(message==='STORE_ORDER_DISTRIBUTION_DISABLED')return {status:409,body:{error:'A entrega integrada Kyrub está indisponível. A loja deve confirmar a entrega própria.'}};
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
     return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
   }

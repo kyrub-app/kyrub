@@ -238,6 +238,7 @@ service cloud.firestore {
 
         allow create: if signedIn()
           && incoming().id == orderId
+          && (!incoming().keys().hasAny(['deliveryProvider']) || incoming().deliveryProvider != 'kyrub')
           && (
             validCustomerOrderCreate(storeId)
             || validStaffOrderCreate(storeId)

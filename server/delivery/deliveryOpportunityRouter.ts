@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import {storeOrderDistributionEnabled,mayAcceptNewDelivery} from '../../shared/storeOrderDistributionPolicy.js';
 import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
@@ -114,6 +115,9 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if (message === 'STORE_ORDER_DISTRIBUTION_DISABLED') {
+    response.status(409).json({error:message,code:message});return;
+  }
   if (message === 'DELIVERY_PICKUP_FORBIDDEN') {
     response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
     return;
@@ -147,6 +151,7 @@ export const publishKyrubDeliveryOpportunity = async (
   tenantId: string,
   orderId: string
 ): Promise<Record<string, unknown>> => {
+  if(!storeOrderDistributionEnabled())throw Error('STORE_ORDER_DISTRIBUTION_DISABLED');
   const orderSnapshot = await adminDb.doc(orderPath(tenantId, orderId)).get();
   const order = orderSnapshot.data() as Record<string, unknown> | undefined;
   if (!orderSnapshot.exists || !order) throw new Error('Pedido não encontrado.');
@@ -312,6 +317,7 @@ export const updateKyrubDeliveryStatus = async (
         if (courierId === actor.uid) return;
         throw new Error('Outro entregador já aceitou esta oportunidade.');
       }
+      if(!mayAcceptNewDelivery({id:normalizedId,source:delivery.source}))throw Error('STORE_ORDER_DISTRIBUTION_DISABLED');
       if (currentStatus !== 'available') {
         throw new Error('Esta entrega já foi aceita.');
       }
@@ -395,6 +401,8 @@ export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
   escalated: number;
   cancelled: number;
 }> => {
+  // This queue belongs to integrated store orders. Keep existing records intact.
+  if(!storeOrderDistributionEnabled())return {checked:0,escalated:0,cancelled:0};
   const snapshot = await adminDb
     .collection(DELIVERY_ESCALATION_QUEUE)
     .where('availableAt', '<=', Timestamp.now())

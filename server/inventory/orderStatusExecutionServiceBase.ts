@@ -1,4 +1,5 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
+import {storeOrderDistributionEnabled} from '../../shared/storeOrderDistributionPolicy.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
@@ -316,6 +317,7 @@ export const mapOrderStatusExecutionError = (
   if (/não encontrado/i.test(message)) {
     return { status: 404, body: { error: message } };
   }
+  if(message==='STORE_ORDER_DISTRIBUTION_DISABLED')return {status:409,body:{error:'A entrega integrada Kyrub está indisponível. Utilize entregador próprio.',code:message}};
   if (/modalidade de entrega já foi definida/i.test(message)) {
     return { status: 409, body: { error: message, code: 'DELIVERY_PROVIDER_ALREADY_CHOSEN' } };
   }
@@ -393,7 +395,7 @@ export const executeAuthorizedOrderStatusTransition = async (
         data?.fulfillmentType === 'delivery' &&
         !input.decision.deliveryProvider
       ) {
-        throw new Error('Escolha como a entrega será realizada: Kyrub ou entregador próprio.');
+        throw new Error(storeOrderDistributionEnabled()?'Escolha como a entrega será realizada: Kyrub ou entregador próprio.':'Escolha como a entrega será realizada: confirme o entregador próprio.');
       }
     }
 

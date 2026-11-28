@@ -421,3 +421,44 @@ test('commercial candidate: actual Free provisioning and first publication join 
   assert.equal((await db.collection('users/seller/rewardLedger').get()).size,0);
   assert.equal((await inventoryRef.get()).get('catalog')[0].currentQuantity,875);
 });
+
+test('V1 suspended integrated routing: real transaction blocks new Kyrub choice without mutations, merchant acceptance remains available',async()=>{
+ await db.doc(path).update({fulfillmentType:'delivery'});
+ const before=await read();
+ const paymentBefore=(await db.doc(paymentPath).get()).data();
+ const jobsBefore=(await db.collection('hub/renda/deliveries').get()).size;
+ const queueBefore=(await db.collection('deliveryEscalationQueue').get()).size;
+ await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'kyrub'}),/STORE_ORDER_DISTRIBUTION_DISABLED/);
+ assert.deepEqual(await read(),before);
+ assert.deepEqual((await db.doc(paymentPath).get()).data(),paymentBefore);
+ await service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'merchant'});
+ const accepted=await read();
+ assert.equal(accepted.status,'accepted');
+ assert.equal(accepted.deliveryProvider,'merchant');
+ assert.ok(Number.isFinite(Date.parse(accepted.deliveryProviderChosenAt)));
+ await service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'merchant'});
+ assert.equal((await read()).deliveryProviderChosenAt,accepted.deliveryProviderChosenAt);
+ await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'kyrub'}),/modalidade de entrega já foi definida/);
+ assert.equal((await read()).deliveryProvider,'merchant');
+ assert.equal((await db.collection('hub/renda/deliveries').get()).size,jobsBefore);
+ assert.equal((await db.collection('deliveryEscalationQueue').get()).size,queueBefore);
+ assert.deepEqual((await db.doc(paymentPath).get()).data(),paymentBefore);
+});
+
+test('checkout cannot request suspended integrated routing, normal delivery request reaches merchant approval without creating courier jobs',async()=>{
+ await mappedStore();
+ const input={...checkoutBody,fulfillmentType:'delivery',deliveryAddress:'Endereço fictício de teste',idempotencyKey:'merchant-only-checkout'};
+ const before=(await db.collection('stores/seller/paymentIntents').get()).size;
+ await assert.rejects(service.createMarketplacePaymentIntent('Bearer isolated-test',{...input,deliveryProvider:'kyrub'}),/STORE_ORDER_DISTRIBUTION_DISABLED/);
+ assert.equal((await db.collection('stores/seller/paymentIntents').get()).size,before);
+ const result=await service.createMarketplacePaymentIntent('Bearer isolated-test',input);
+ assert.equal(result.status,201);
+ const legacy=db.doc('artifacts/seller/public/data/customerOrders/'+result.body.orderId);
+ const canonical=db.doc('stores/canonical/orders/'+result.body.orderId);
+ assert.equal((await legacy.get()).get('status'),'pending');
+ assert.equal((await legacy.get()).get('fulfillmentType'),'delivery');
+ assert.notEqual((await legacy.get()).get('deliveryProvider'),'kyrub');
+ assert.notEqual((await canonical.get()).get('deliveryProvider'),'kyrub');
+ assert.equal((await db.collection('hub/renda/deliveries').get()).empty,true);
+ assert.equal((await db.collection('deliveryEscalationQueue').get()).empty,true);
+});

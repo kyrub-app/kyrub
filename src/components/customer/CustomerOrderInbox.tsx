@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import {storeOrderDistributionEnabled} from '../../../shared/storeOrderDistributionPolicy';
 import { onAuthStateChanged } from 'firebase/auth';
 import {showOrderInCurrentPhase} from '../../../shared/officialOperationalPhase';
 import type { KyrubCommerceChannel } from '../../../shared/storeConnections';
@@ -458,6 +459,7 @@ export const CustomerOrderInbox = ({
     provider: OrderDeliveryProvider
   ): Promise<void> => {
     if (!routingOrder || routingBusy) return;
+    if(provider==='kyrub'&&!storeOrderDistributionEnabled()){setRoutingError('A entrega integrada Kyrub está indisponível. Utilize entregador próprio.');return;}
     setRoutingBusy(true);
     setRoutingError('');
     try {
@@ -712,12 +714,12 @@ export const CustomerOrderInbox = ({
         <div className="fixed inset-0 z-[146] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-5">
           <section className="w-full max-w-lg rounded-t-3xl border border-cyan-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
             <div className="flex items-start justify-between gap-3">
-              <div><span className="font-mono text-[9px] font-black uppercase tracking-wide text-cyan-300">Logística do pedido</span><h3 className="mt-1 text-lg font-black text-white">Como deseja realizar a entrega?</h3><p className="mt-2 text-[11px] leading-relaxed text-slate-400">A escolha é feita agora. Se você escolher Kyrub, a oportunidade será publicada para os entregadores quando clicar em “Iniciar preparo”.</p></div>
+              <div><span className="font-mono text-[9px] font-black uppercase tracking-wide text-cyan-300">Logística do pedido</span><h3 className="mt-1 text-lg font-black text-white">Como deseja realizar a entrega?</h3><p className="mt-2 text-[11px] leading-relaxed text-slate-400">{storeOrderDistributionEnabled()?'A escolha é feita agora. Se você escolher Kyrub, a oportunidade será publicada para os entregadores quando clicar em “Iniciar preparo”.':'Confirme que a loja dispõe de entregador próprio. A logística integrada do Kyrub está indisponível nesta etapa.'}</p></div>
               <button type="button" disabled={routingBusy} onClick={() => setRoutingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"><X className="h-4 w-4" /></button>
             </div>
             {routingError && <p role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">{routingError}</p>}
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <button type="button" disabled={routingBusy || busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('kyrub')} className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-left transition hover:bg-orange-500/20 disabled:opacity-40"><Truck className="h-5 w-5 text-orange-400" /><strong className="mt-2 block text-sm text-white">Solicitar entregador Kyrub</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">Vai para o mural de entregas ao iniciar o preparo.</span></button>
+              {storeOrderDistributionEnabled() && <button type="button" disabled={routingBusy || busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('kyrub')} className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-left transition hover:bg-orange-500/20 disabled:opacity-40"><Truck className="h-5 w-5 text-orange-400" /><strong className="mt-2 block text-sm text-white">Solicitar entregador Kyrub</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">Vai para o mural de entregas ao iniciar o preparo.</span></button>}
               <button type="button" disabled={routingBusy || busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('merchant')} className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-slate-500 disabled:opacity-40"><UserRound className="h-5 w-5 text-cyan-300" /><strong className="mt-2 block text-sm text-white">Usar entregador próprio</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">O pedido continua no KDS, sem publicar corrida no Kyrub.</span></button>
             </div>
           </section>

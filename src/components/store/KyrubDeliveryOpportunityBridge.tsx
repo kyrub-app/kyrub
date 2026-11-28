@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import {storeOrderDistributionEnabled} from '../../../shared/storeOrderDistributionPolicy';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { DeliveryJob } from '../../types';
@@ -24,6 +25,7 @@ const finite = (value: unknown): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : 0;
 
 const publishOpportunity = async (orderId: string): Promise<void> => {
+  if(!storeOrderDistributionEnabled())return;
   const user = auth.currentUser;
   if (!user) return;
   const token = await user.getIdToken();
@@ -61,7 +63,7 @@ export function KyrubDeliveryOpportunityBridge({
       publicationAttempts.current.clear();
       if (!user) return;
 
-      unsubscribeOrders = onSnapshot(
+      if(storeOrderDistributionEnabled())unsubscribeOrders = onSnapshot(
         collection(db, `artifacts/${user.uid}/public/data/customerOrders`),
         snapshot => {
           for (const document of snapshot.docs) {
