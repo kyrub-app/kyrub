@@ -80,6 +80,12 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'freelance-workspace' || transport === 'freelance-finance' || transport === 'personal-finance-pix') {
+    const { handleFreelanceServerlessRequest } = await import('../server/freelance/freelanceServerlessTransport.js');
+    await handleFreelanceServerlessRequest(transport, request, response);
+    return;
+  }
+
   if (transport === 'private-identity-directory') {
     response.setHeader('Cache-Control', 'private, no-store, max-age=0');
     if (process.env.KYRUB_PRIVATE_DIRECTORY_RELEASE_ENABLED !== 'true') {

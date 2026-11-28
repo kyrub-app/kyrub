@@ -28,6 +28,22 @@
   },
   "rewrites": [
     {
+      "source": "/api/freelance/workspace",
+      "destination": "/api/health?transport=freelance-workspace"
+    },
+    {
+      "source": "/api/freelance/finance",
+      "destination": "/api/health?transport=freelance-finance"
+    },
+    {
+      "source": "/api/personal-finance/pix",
+      "destination": "/api/health?transport=personal-finance-pix"
+    },
+    {
+      "source": "/api/admin/freelance-financial-review",
+      "destination": "/api/admin/operations/health?transport=freelance-financial-review"
+    },
+    {
       "source": "/api/admin/freelance-review",
       "destination": "/api/admin/operations/health?transport=freelance-review"
     },

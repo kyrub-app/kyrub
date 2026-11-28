@@ -1,3 +1,4 @@
+import {assertEngagementPilotAuthority,assertContractPilotTerms,freelanceContractPilotEnabled} from './freelanceEngagementPilotAuthority.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
@@ -7,6 +8,12 @@ import {assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionS
 type EvidenceNote={id:string;actorUid:string;note:string;recordedAt:string};
 const ref=(id:string)=>adminDb.doc('freelanceFinancialReviewsV1/'+id+'/evidence/notes');
 const fail=():never=>{throw Error('FREELANCE_FINANCIAL_EVIDENCE_CONFLICT');};
+function evidenceAuthority(obligation:FreelancePaymentObligation,pilot:boolean){
+ if(!pilot){local();return;}
+ if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+ assertEngagementPilotAuthority(obligation.requesterUid);
+ assertEngagementPilotAuthority(obligation.beneficiaryUid);
+}
 function local(){
  if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
  !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
@@ -20,8 +27,8 @@ function normalizeNote(v:unknown):string{
  /https?:\/\/|data:|www\./i.test(text))throw Error('FREELANCE_INVALID');
  return text;
 }
-export async function readFinancialEvidence(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,requestedAt:string){
- local();
+export async function readFinancialEvidence(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,requestedAt:string,pilot=false){
+ evidenceAuthority(obligation,pilot);
  const raw=(await tx.get(ref(obligation.offerId))).data();
  if(!raw)return {revision:0,notes:[] as EvidenceNote[]};
  if(Object.keys(raw).length!==4||raw.schemaVersion!==1||raw.offerId!==obligation.offerId||
@@ -41,19 +48,20 @@ export async function readFinancialEvidence(tx:FirebaseFirestore.Transaction,obl
 /** Participant may add private context after escalation. No raw receipt bytes,
  * external URLs, client-generated actor/time, or access for the counterparty yet.
  */
-export async function submitFreelanceFinancialEvidence(uid:string,offerId:string,input:unknown){
- local();
+export async function submitFreelanceFinancialEvidence(uid:string,offerId:string,input:unknown,pilot=false){
+ if(pilot){assertEngagementPilotAuthority(uid);if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');}else local();
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(Object.keys(b).length!==3||!validFreelanceId(b.evidenceId)||b.confirmed!==true)throw Error('FREELANCE_INVALID');
  const note=normalizeNote(b.note),id=b.evidenceId;
  return adminDb.runTransaction(async tx=>{
   const queue=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
-  const {obligation,projection}=await readFinancialContext(tx,uid,offerId);
+  const {offer,obligation,projection}=await readFinancialContext(tx,uid,offerId);
+  if(pilot){assertContractPilotTerms(offer);evidenceAuthority(obligation,true);}
   const review=checkedReview(queue.data(),obligation);
   if(!review||review.status!=='pending'||projection.state!=='disputed')return fail();
   await assertFinancialCaseRestrictions(tx,obligation);
-  const saved=await readFinancialEvidence(tx,obligation,review.requestedAt),existing=saved.notes.find(n=>n.id===id);
+  const saved=await readFinancialEvidence(tx,obligation,review.requestedAt,pilot),existing=saved.notes.find(n=>n.id===id);
   if(existing){
    if(existing.actorUid!==uid||existing.note!==note)return fail();
    return {created:false,revision:saved.revision};

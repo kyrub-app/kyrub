@@ -1,4 +1,4 @@
-import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
+import {adminDb,adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {createKyrubFinancialProfile} from './financialProfileOnboarding.js';
 import {normalizeCidPersonalPixCandidate,projectCidPersonalPixCandidate} from '../../shared/cidPersonalPixCandidate.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
@@ -31,7 +31,9 @@ export async function readPersonalPixDestination(uid:string){
  return projectPersonalPixDestination(checked((await ref.get()).data(),uid));
 }
 export async function changePersonalPixDestination(uid:string,input:unknown){
- const parent=profileRef(uid);
+ return changeDestination(profileRef(uid),uid,input,false);
+}
+async function changeDestination(parent:FirebaseFirestore.DocumentReference,uid:string,input:unknown,pilot:boolean){
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('PERSONAL_PIX_INVALID');
  const b=input as Record<string,unknown>;
  if(!Number.isSafeInteger(b.expectedRevision)||Number(b.expectedRevision)<0||b.confirmed!==true)throw Error('PERSONAL_PIX_INVALID');
@@ -41,6 +43,13 @@ export async function changePersonalPixDestination(uid:string,input:unknown){
  const ref=parent.collection('receiving').doc('externalPix');
  return adminDb.runTransaction(async tx=>{
   const [p,d]=await tx.getAll(parent,ref);
+  if(pilot){
+   const [account,marker,age,identity]=await tx.getAll(adminDb.doc('users/'+uid),adminDb.doc('kyrub_tag_minimal_identities/'+uid),adminDb.doc('age_eligibility_private/'+uid),adminDb.doc('identity_verifications/'+uid));
+   assertRealAccount(uid,account,marker);
+   const roles=identity.get('approvedProfiles');
+   if(!revoke&&(age.get('uid')!==uid||age.get('status')!=='verified_adult'||identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.some(r=>r==='requester'||r==='freelancer')))throw Error('IDENTITY_VERIFICATION_REQUIRED');
+   if(!p.exists&&d.exists)throw Error('PERSONAL_PIX_CONFLICT');
+  }
   if(p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))throw Error('PERSONAL_PIX_CONFLICT');
   const current=checked(d.data(),uid);
   const revision=current?.revision??0;
@@ -114,8 +123,8 @@ export async function importPersonalCidPixDestination(uid:string,input:unknown){
 }
 
 /** Internal only: never expose outside the explicit contract disclosure service. */
-export async function readPersonalPixSecretForContract(tx:FirebaseFirestore.Transaction,uid:string){
- const parent=profileRef(uid);
+export async function readPersonalPixSecretForContract(tx:FirebaseFirestore.Transaction,uid:string,pilot=false){
+ const parent=pilot?pilotProfileRef(uid):profileRef(uid);
  const [p,d]=await tx.getAll(parent,parent.collection('receiving').doc('externalPix'));
  if(p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))throw Error('PERSONAL_PIX_CONFLICT');
  const destination=checked(d.data(),uid);
@@ -124,7 +133,50 @@ export async function readPersonalPixSecretForContract(tx:FirebaseFirestore.Tran
 }
 
 /** Ordinary contract binding never returns a raw key. */
-export async function readPersonalPixForContract(tx:FirebaseFirestore.Transaction,uid:string){
- const {key,...masked}=await readPersonalPixSecretForContract(tx,uid);
+export async function readPersonalPixForContract(tx:FirebaseFirestore.Transaction,uid:string,pilot=false){
+ const {key,...masked}=await readPersonalPixSecretForContract(tx,uid,pilot);
  return masked;
+}
+
+/** Internal read-only pilot preflight; caller authenticates and binds the UID.
+ * No key, masked key, revision or bank ownership assertion crosses this boundary.
+ * Does not relax the local-only gate for declaration or contractual disclosure. */
+export async function readPersonalPixReadiness(tx:FirebaseFirestore.Transaction,uid:string){
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid)||uid.startsWith('tagpk_'))throw Error('PERSONAL_PIX_INVALID');
+ const parent=adminDb.doc('financialProfilesV1/'+uid);
+ const [p,d]=await tx.getAll(parent,parent.collection('receiving').doc('externalPix'));
+ if((p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))||(!p.exists&&d.exists))throw Error('PERSONAL_PIX_CONFLICT');
+ const current=checked(d.data(),uid);
+ return {status:current?.status??'not_configured',ownershipVerified:false as const};
+}
+
+/** Separate production authority; never enables CID imports or contract disclosure. */
+export function personalPixPilotEnabled(env:NodeJS.ProcessEnv=process.env){
+ return env.KYRUB_PERSONAL_PIX_PILOT_ENABLED==='true'&&env.VERCEL==='1'&&env.VERCEL_ENV==='production'&&env.NODE_ENV==='production'&&
+ !env.FIRESTORE_EMULATOR_HOST&&!env.FIREBASE_AUTH_EMULATOR_HOST&&!env.GOOGLE_APPLICATION_CREDENTIALS&&
+ env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'&&env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true';
+}
+export function personalPixPilotAllowed(uid:string,env:NodeJS.ProcessEnv=process.env){
+ const ids=(env.KYRUB_FREELANCE_PILOT_UIDS??'').split(',').map(s=>s.trim()).filter(Boolean);
+ return !uid.startsWith('tagpk_')&&ids.length>0&&ids.length<=20&&ids.every(id=>/^[A-Za-z0-9_-]{1,128}$/.test(id))&&ids.includes(uid);
+}
+export function personalPixPilotProjectReady(){
+ return getFirebaseAdminProjectId()==='kyrub-b8d0e'&&adminAuth.app.options.projectId==='kyrub-b8d0e'&&
+ (adminDb as typeof adminDb&{projectId?:string}).projectId==='kyrub-b8d0e';
+}
+function pilotProfileRef(uid:string){
+ if(!personalPixPilotEnabled()||!personalPixPilotAllowed(uid)||!personalPixPilotProjectReady())throw Error('PERSONAL_FINANCE_DISABLED');
+ return adminDb.doc('financialProfilesV1/'+uid);
+}
+export async function readPersonalPixPilot(uid:string){
+ const parent=pilotProfileRef(uid);
+ return adminDb.runTransaction(async tx=>{
+  const [p,d,account,marker]=await tx.getAll(parent,parent.collection('receiving').doc('externalPix'),adminDb.doc('users/'+uid),adminDb.doc('kyrub_tag_minimal_identities/'+uid));
+  assertRealAccount(uid,account,marker);
+  if((p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))||(!p.exists&&d.exists))throw Error('PERSONAL_PIX_CONFLICT');
+  return projectPersonalPixDestination(checked(d.data(),uid));
+ },{readOnly:true});
+}
+export async function changePersonalPixPilot(uid:string,input:unknown){
+ return changeDestination(pilotProfileRef(uid),uid,input,true);
 }

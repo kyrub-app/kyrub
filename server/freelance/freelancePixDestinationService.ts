@@ -1,3 +1,4 @@
+import {assertEngagementPilotAuthority,assertContractPilotTerms,freelanceContractPilotEnabled} from './freelanceEngagementPilotAuthority.js';
 import {buildFreelanceHourlyCommitment} from '../../shared/freelanceVariablePaymentBasis.js';
 import {canonicalVariablePaymentRecord} from './freelanceVariablePaymentBasisService.js';
 import {readHourlyPixPreparation} from './freelanceHourlyPixPreparationService.js';
@@ -16,6 +17,17 @@ function assertLocal(){
  !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
  getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
 }
+function assertContractAccess(uid:string,pilot:boolean){
+ if(!pilot){assertLocal();return;}
+ assertEngagementPilotAuthority(uid);
+ if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+}
+function assertContractPair(offer:FreelanceOffer){
+ assertContractPilotTerms(offer);
+ if(!validFreelanceId(offer.selectedApplicantUid))throw Error('FREELANCE_FORBIDDEN');
+ assertEngagementPilotAuthority(offer.ownerUid);
+ assertEngagementPilotAuthority(offer.selectedApplicantUid);
+}
 function matches(raw:unknown,offerId:string,uid:string,contractedAt:string):raw is Binding{
  if(!raw||typeof raw!=='object'||Array.isArray(raw))return false;
  const b=raw as Binding;
@@ -27,8 +39,8 @@ function matches(raw:unknown,offerId:string,uid:string,contractedAt:string):raw 
  * Only a revision pointer is stored. Replacement/revocation blocks use instead
  * of silently changing the recipient. Future rebind needs a separately agreed flow.
  */
-export async function bindFreelancePixDestination(uid:string,offerId:string,input:unknown){
- assertLocal();
+export async function bindFreelancePixDestination(uid:string,offerId:string,input:unknown,pilot=false){
+ assertContractAccess(uid,pilot);
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const data=input as Record<string,unknown>;
  if(Object.keys(data).length!==2||data.confirmed!==true||!Number.isSafeInteger(data.expectedRevision)||Number(data.expectedRevision)<1)throw Error('FREELANCE_INVALID');
@@ -37,13 +49,14 @@ export async function bindFreelancePixDestination(uid:string,offerId:string,inpu
   const [o,a,ob,existing,identity]=await tx.getAll(ref,ref.collection('applications').doc(uid),ref.collection('directPayment').doc('obligation'),bindingRef,adminDb.doc('identity_verifications/'+uid));
   const offer=o.data() as FreelanceOffer|undefined,app=a.data() as FreelanceApplication|undefined;
   if(!offer||!app||offer.id!==offerId||offer.selectedApplicantUid!==uid||app.applicantUid!==uid)throw Error('FREELANCE_FORBIDDEN');
+  if(pilot)assertContractPair(offer);
   const hourly=offer.workTerms?.mode==='hourly';
   if(hourly&&!['contracted','cancelled'].includes(offer.status))throw Error('FREELANCE_PIX_DISCLOSURE_UNAVAILABLE');
   const obligation=hourly?(offer.status==='cancelled'?(await readFinancialContext(tx,uid,offerId)).obligation:(await readHourlyPixPreparation(tx,uid,offerId)).obligation):buildFreelancePaymentObligation(offer,app);
   if(obligation.terms.method!=='external_pix'||(!hourly&&!matchesFreelancePaymentObligation(ob.data(),obligation)))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
   const roles=identity.get('approvedProfiles');
   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
-  const destination=await readPersonalPixForContract(tx,uid);
+  const destination=await readPersonalPixForContract(tx,uid,pilot);
   if(destination.revision!==data.expectedRevision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   if(existing.exists){
    const saved=existing.data();
@@ -83,10 +96,11 @@ function sharingActive(sharing:Sharing|undefined,control:SharingControl|undefine
 /** Withdrawal of consent is not a payment action. Validate the original
  * contracted pair and binding, independently of current key, attendance,
  * settlement, eligibility for new work or review. Never read a raw key. */
-async function readWithdrawalContext(tx:FirebaseFirestore.Transaction,uid:string,id:string){
+async function readWithdrawalContext(tx:FirebaseFirestore.Transaction,uid:string,id:string,pilot=false){
  const ref=adminDb.doc('freelanceOffersV1/'+id),direct=ref.collection('directPayment');
  const offer=(await tx.get(ref)).data() as FreelanceOffer|undefined;
  if(!offer||offer.id!==id||offer.selectedApplicantUid!==uid||!validFreelanceId(offer.ownerUid)||offer.ownerUid===uid)throw Error('FREELANCE_FORBIDDEN');
+ if(pilot)assertContractPair(offer);
  const [a,fixed,hourly,bindingDoc,sharingDoc]=await tx.getAll(ref.collection('applications').doc(uid),direct.doc('obligation'),direct.doc('hourlyCommitment'),direct.doc('receivingDestination'),direct.doc('pixSharing'));
  const app=a.data() as FreelanceApplication|undefined;
  if(!app||offer.status!==app.status||!['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(offer.status))throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
@@ -109,10 +123,10 @@ async function readWithdrawalContext(tx:FirebaseFirestore.Transaction,uid:string
  const consent=sharing as Sharing|undefined,control=await readSharingControl(tx,direct,binding,consent);
  return {obligation,binding,sharing:consent,control,direct};
 }
-export async function readFreelancePixWithdrawal(uid:string,id:string){
- assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+export async function readFreelancePixWithdrawal(uid:string,id:string,pilot=false){
+ assertContractAccess(uid,pilot);if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
-  const c=await readWithdrawalContext(tx,uid,id);
+  const c=await readWithdrawalContext(tx,uid,id,pilot);
   return {revision:c.binding.destinationRevision,sharingAuthorized:sharingActive(c.sharing,c.control),sharingRevoked:c.control?.state==='revoked',sharingSequence:c.control?.sequence??0};
  },{readOnly:true});
 }
@@ -120,8 +134,8 @@ export async function readFreelancePixWithdrawal(uid:string,id:string){
 /** A beneficiary may stop future disclosures for this contract only.
  * Restoring requires a new explicit action with the exact consent sequence.
  * Initial authorization and every prior change remain in the private audit. */
-export async function changeFreelancePixSharingConsent(uid:string,id:string,action:'revoke'|'restore',input:unknown){
- assertLocal();
+export async function changeFreelancePixSharingConsent(uid:string,id:string,action:'revoke'|'restore',input:unknown,pilot=false){
+ assertContractAccess(uid,pilot);
  if(!validFreelanceId(uid)||!validFreelanceId(id)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(!['revoke','restore'].includes(action)||Object.keys(b).length!==3||b.confirmed!==true||
@@ -129,7 +143,7 @@ export async function changeFreelancePixSharingConsent(uid:string,id:string,acti
  !Number.isSafeInteger(b.expectedSequence)||Number(b.expectedSequence)<0||Number(b.expectedSequence)>=Number.MAX_SAFE_INTEGER)throw Error('FREELANCE_INVALID');
  const revision=Number(b.expectedRevision),expected=Number(b.expectedSequence);
  return adminDb.runTransaction(async tx=>{
-  const c=action==='revoke'?await readWithdrawalContext(tx,uid,id):await readDisclosureContext(tx,uid,id);
+  const c=action==='revoke'?await readWithdrawalContext(tx,uid,id,pilot):await readDisclosureContext(tx,uid,id,pilot);
   if(uid!==c.obligation.beneficiaryUid)throw Error('FREELANCE_FORBIDDEN');
   if(!c.sharing||c.binding.destinationRevision!==revision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   const seq=c.control?.sequence??0,state=action==='revoke'?'revoked':'active';
@@ -138,7 +152,7 @@ export async function changeFreelancePixSharingConsent(uid:string,id:string,acti
   if(action==='restore'){
    const identity=await tx.get(adminDb.doc('identity_verifications/'+uid)),roles=identity.get('approvedProfiles');
    if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
-   const destination=await readPersonalPixForContract(tx,uid);
+   const destination=await readPersonalPixForContract(tx,uid,pilot);
    if(destination.revision!==revision||destination.keyType!==c.binding.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   }
   const changedAt=new Date().toISOString();
@@ -158,11 +172,12 @@ function explicitRevision(input:unknown){
  if(Object.keys(b).length!==2||b.confirmed!==true||!Number.isSafeInteger(b.expectedRevision)||Number(b.expectedRevision)<1)throw Error('FREELANCE_INVALID');
  return Number(b.expectedRevision);
 }
-async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string,id:string){
+async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string,id:string,pilot=false){
  const direct=adminDb.doc('freelanceOffersV1/'+id).collection('directPayment');
  const reviewDoc=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+id));
  const offerDoc=await tx.get(direct.parent!);
  const offer=offerDoc.data() as FreelanceOffer|undefined;
+ if(pilot){if(!offer)throw Error('FREELANCE_FORBIDDEN');assertContractPair(offer);}
  const preparing=offer?.workTerms?.mode==='hourly'&&['contracted','in_progress','completion_requested'].includes(offer.status);
  const context=preparing?await readHourlyPixPreparation(tx,uid,id):await readFinancialContext(tx,uid,id,true);
  const {obligation,events}=context;
@@ -181,15 +196,15 @@ async function readDisclosureContext(tx:FirebaseFirestore.Transaction,uid:string
 }
 /** Separate from binding: explicit permission to share this revision with this
  * specific contractual requester. A new destination never silently inherits it. */
-export async function authorizeFreelancePixSharing(uid:string,id:string,input:unknown){
- assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+export async function authorizeFreelancePixSharing(uid:string,id:string,input:unknown,pilot=false){
+ assertContractAccess(uid,pilot);if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
  const revision=explicitRevision(input);
  return adminDb.runTransaction(async tx=>{
-  const c=await readDisclosureContext(tx,uid,id);
+  const c=await readDisclosureContext(tx,uid,id,pilot);
   if(uid!==c.obligation.beneficiaryUid)throw Error('FREELANCE_FORBIDDEN');
   const identity=await tx.get(adminDb.doc('identity_verifications/'+uid)),roles=identity.get('approvedProfiles');
   if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes('freelancer'))throw Error('IDENTITY_VERIFICATION_REQUIRED');
-  const destination=await readPersonalPixForContract(tx,uid);
+  const destination=await readPersonalPixForContract(tx,uid,pilot);
   if(revision!==c.binding.destinationRevision||revision!==destination.revision||c.binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   if(c.sharing){if(!sharingActive(c.sharing,c.control))return blocked();return {created:false,revision};}
   const authorizedAt=new Date().toISOString();
@@ -200,11 +215,11 @@ export async function authorizeFreelancePixSharing(uid:string,id:string,input:un
  });
 }
 /** Metadata for either participant; never reveal a raw key in ordinary reads. */
-export async function readFreelancePixSharing(uid:string,id:string){
- assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+export async function readFreelancePixSharing(uid:string,id:string,pilot=false){
+ assertContractAccess(uid,pilot);if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
-  const c=await readDisclosureContext(tx,uid,id);
-  const destination=await readPersonalPixForContract(tx,c.obligation.beneficiaryUid);
+  const c=await readDisclosureContext(tx,uid,id,pilot);
+  const destination=await readPersonalPixForContract(tx,c.obligation.beneficiaryUid,pilot);
   if(c.binding.destinationRevision!==destination.revision||c.binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   return {revision:destination.revision,keyType:destination.keyType,maskedKey:destination.maskedKey,sharingAuthorized:sharingActive(c.sharing,c.control),sharingSequence:c.control?.sequence??0,sharingRevoked:c.control?.state==='revoked',due:c.due,ownershipVerified:false as const};
  },{readOnly:true});
@@ -212,11 +227,11 @@ export async function readFreelancePixSharing(uid:string,id:string){
 /** Raw key is returned only to the authenticated contractual payer, on an
  * explicit recent-login request, due and not already declared paid/received.
  * First access is recorded without storing a second copy of the key. */
-export async function revealFreelancePixDestination(uid:string,id:string,input:unknown){
- assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+export async function revealFreelancePixDestination(uid:string,id:string,input:unknown,pilot=false){
+ assertContractAccess(uid,pilot);if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
  const revision=explicitRevision(input);
  return adminDb.runTransaction(async tx=>{
-  const c=await readDisclosureContext(tx,uid,id);
+  const c=await readDisclosureContext(tx,uid,id,pilot);
   if(uid!==c.obligation.requesterUid)throw Error('FREELANCE_FORBIDDEN');
   if(!c.due)throw Error('FREELANCE_PAYMENT_NOT_DUE');
   if(!c.sharing||!sharingActive(c.sharing,c.control))return blocked();
@@ -225,7 +240,7 @@ export async function revealFreelancePixDestination(uid:string,id:string,input:u
    const roles=identity.get('approvedProfiles');
    if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes(role))throw Error('IDENTITY_VERIFICATION_REQUIRED');
   }
-  const destination=await readPersonalPixSecretForContract(tx,c.obligation.beneficiaryUid);
+  const destination=await readPersonalPixSecretForContract(tx,c.obligation.beneficiaryUid,pilot);
   if(revision!==c.binding.destinationRevision||revision!==destination.revision||c.binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   const firstAccessAt=new Date().toISOString();
   if(Date.parse(firstAccessAt)<Date.parse(c.sharing.authorizedAt))return blocked();
@@ -245,10 +260,10 @@ export async function revealFreelancePixDestination(uid:string,id:string,input:u
  * Only this contract's restriction is relevant; do not block existing work
  * because another engagement is disputed.
  */
-export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offer:FreelanceOffer,application:FreelanceApplication){
- assertLocal();
- if(process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||
- !['127.0.0.1:9099','localhost:9099'].includes(process.env.FIREBASE_AUTH_EMULATOR_HOST??'')||
+export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offer:FreelanceOffer,application:FreelanceApplication,pilot=false){
+ if(pilot){assertContractPair(offer);assertContractAccess(offer.selectedApplicantUid!,true);}else assertLocal();
+ if((!pilot&&(process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION!=='true'||process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||
+ !['127.0.0.1:9099','localhost:9099'].includes(process.env.FIREBASE_AUTH_EMULATOR_HOST??'')))||
  offer.paymentTerms?.method!=='external_pix'||application.paymentTerms?.method!=='external_pix')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!['contracted','in_progress'].includes(offer.status)||!validFreelanceId(offer.selectedApplicantUid))throw Error('FREELANCE_CONFLICT');
  const id=offer.id,worker=offer.selectedApplicantUid;
@@ -271,7 +286,7 @@ export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offe
  }else{
   if(!sharingActive(sharing,control))throw Error('FREELANCE_PIX_SHARING_REQUIRED');
   if(review||projection.state!=='awaiting_payment')throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
-  const destination=await readPersonalPixForContract(tx,worker);
+  const destination=await readPersonalPixForContract(tx,worker,pilot);
   if(binding.destinationRevision!==destination.revision||binding.keyType!==destination.keyType)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
  }
  await assertFinancialCaseRestrictions(tx,obligation,false);
@@ -283,8 +298,8 @@ export async function assertDirectPixStart(tx:FirebaseFirestore.Transaction,offe
  * attests no transfer has been sent. Existing declarations always remain valid
  * evidence and take precedence over replacement. No bank verification is implied.
  * The old pointer, consent and disclosure audit are archived without raw keys. */
-export async function changeFreelancePixBinding(uid:string,id:string,action:'propose'|'accept',input:unknown){
- assertLocal();
+export async function changeFreelancePixBinding(uid:string,id:string,action:'propose'|'accept',input:unknown,pilot=false){
+ assertContractAccess(uid,pilot);
  if(!validFreelanceId(uid)||!validFreelanceId(id)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(!['propose','accept'].includes(action)||Object.keys(b).length!==(action==='accept'?4:3)||b.confirmed!==true||
@@ -292,7 +307,7 @@ export async function changeFreelancePixBinding(uid:string,id:string,action:'pro
  Number(b.newRevision)<=Number(b.oldRevision)||(action==='accept'&&b.paymentNotSent!==true))throw Error('FREELANCE_INVALID');
  const oldRevision=Number(b.oldRevision),newRevision=Number(b.newRevision);
  return adminDb.runTransaction(async tx=>{
-  const c=await readDisclosureContext(tx,uid,id);
+  const c=await readDisclosureContext(tx,uid,id,pilot);
   const o=c.obligation;
   if(uid!==(action==='propose'?o.beneficiaryUid:o.requesterUid))throw Error('FREELANCE_FORBIDDEN');
   if(c.events.length)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
@@ -302,7 +317,7 @@ export async function changeFreelancePixBinding(uid:string,id:string,action:'pro
    const roles=identity.get('approvedProfiles');
    if(identity.get('status')!=='approved'||!Array.isArray(roles)||!roles.includes(role))throw Error('IDENTITY_VERIFICATION_REQUIRED');
   }
-  const destination=await readPersonalPixForContract(tx,o.beneficiaryUid);
+  const destination=await readPersonalPixForContract(tx,o.beneficiaryUid,pilot);
   if(destination.revision!==newRevision)throw Error('FREELANCE_PIX_DESTINATION_CHANGED');
   const saved=proposal.data();
   const base={schemaVersion:1,offerId:id,requesterUid:o.requesterUid,beneficiaryUid:o.beneficiaryUid,oldRevision,newRevision,keyType:destination.keyType};
@@ -342,12 +357,12 @@ export async function changeFreelancePixBinding(uid:string,id:string,action:'pro
 
 /** Participants may inspect only the current candidate revision and whether a
  * matching proposal exists. Raw keys are never exposed by replacement reads. */
-export async function readFreelancePixRebind(uid:string,id:string){
- assertLocal();if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+export async function readFreelancePixRebind(uid:string,id:string,pilot=false){
+ assertContractAccess(uid,pilot);if(!validFreelanceId(uid)||!validFreelanceId(id))throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
-  const c=await readDisclosureContext(tx,uid,id);
+  const c=await readDisclosureContext(tx,uid,id,pilot);
   if(c.events.length)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
-  const d=await readPersonalPixForContract(tx,c.obligation.beneficiaryUid);
+  const d=await readPersonalPixForContract(tx,c.obligation.beneficiaryUid,pilot);
   if(d.revision<=c.binding.destinationRevision)return {replacementRequired:false,oldRevision:c.binding.destinationRevision,newRevision:c.binding.destinationRevision,pending:false};
   const p=(await tx.get(c.direct.doc('pixRebind-'+d.revision))).data();
   return {replacementRequired:true,oldRevision:c.binding.destinationRevision,newRevision:d.revision,

@@ -1,3 +1,5 @@
+import {readPersonalPixReadiness} from '../payments/personalPixDestinationService.js';
+import {assertEngagementPilotAuthority,assertEngagementPilotTerms,assertEngagementPilotParticipants,freelanceContractPilotEnabled,assertContractPilotTerms} from './freelanceEngagementPilotAuthority.js';
 import {reputationCoverageLocal,invalidateUnindexedCoverage} from './freelanceReputationCoverage.js';
 import {prepareFreelanceReputationIndex,reputationIndexEnabled,reputationContractContext} from './freelanceReputationIndexPreparation.js';
 import {assertHourlyLifecycleCandidate} from './freelanceHourlyLifecycleGate.js';
@@ -26,27 +28,31 @@ const assertApproved = (data: Record<string, unknown> | undefined, profile: 'req
 
 /** Transport always supplies acceptance, including undefined for legacy.
  * Internal fixture callers retain their existing service contract. */
-function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown}){
+function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown},pilot=false){
+ if(pilot){assertEngagementPilotTerms(offer);if(!acceptance)throw Error('FREELANCE_INVALID');}
  if(!assertHourlyLifecycleCandidate(offer))assertFreelanceWorkExecutionReady(offer.workTerms);
  if(!sameFreelanceStoreRepresentation(offer.requesterStore,acceptance?.expectedRequesterStore))throw Error('FREELANCE_CONFLICT');
  if(!sameFreelanceWorkTerms(offer.workTerms,acceptance?.expectedWorkTerms,offer.paymentMinor))throw Error('FREELANCE_CONFLICT');
  if(!acceptance)return;
- if(offer.paymentTerms!==undefined&&(!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||
+ if(!pilot&&offer.paymentTerms!==undefined&&(!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||
  process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
  process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||getFirebaseAdminProjectId()!=='kyrub-security-test'||offer.paymentTerms.method!=='external_pix'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!sameFreelancePaymentTerms(offer.paymentTerms,acceptance.expected,offer.paymentMinor))throw Error('FREELANCE_CONFLICT');
 }
 /** Service-only candidate: no client writes and no migration of legacy records. */
-export async function publishFreelanceOffer(actorUid: string, offerId: string, input: unknown,requesterStoreId?:unknown): Promise<{offer:FreelanceOffer;created:boolean}> {
+export async function publishFreelanceOffer(actorUid: string, offerId: string, input: unknown,requesterStoreId?:unknown,pilot=false): Promise<{offer:FreelanceOffer;created:boolean}> {
+  if(pilot){assertEngagementPilotAuthority(actorUid);if(requesterStoreId!==undefined)throw Error('FREELANCE_STORE_FORBIDDEN');}
   if(requesterStoreId!==undefined&&!validFreelanceId(requesterStoreId))throw Error('FREELANCE_INVALID');
   const proposed = createFreelanceOffer(offerId, actorUid, input, new Date().toISOString());
   if(!assertHourlyLifecycleCandidate(proposed))assertFreelanceWorkExecutionReady(proposed.workTerms);
   if(proposed.workTerms&&!proposed.paymentTerms)throw Error('FREELANCE_INVALID');
-  if(proposed.paymentTerms!==undefined&&(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+  if(pilot)assertEngagementPilotTerms(proposed);
+  if(!pilot&&proposed.paymentTerms!==undefined&&(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
   const ref = adminDb.doc(offers + '/' + offerId);
   return adminDb.runTransaction(async tx => {
     const [identity, existing] = await tx.getAll(eligibility(actorUid), ref);
     assertApproved(identity.data(), 'requester');
+    if(pilot)await assertEngagementPilotParticipants(tx,[{uid:actorUid,role:'requester'}]);
     if(requesterStoreId!==undefined){if(!validFreelanceId(requesterStoreId)||!proposed.paymentTerms)throw Error('FREELANCE_INVALID');proposed.requesterStore=await requireOwnedFreelanceStore(tx,actorUid,requesterStoreId);}
     if (existing.exists) {
       const saved = existing.data() as FreelanceOffer;
@@ -61,16 +67,18 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
     return {offer:proposed,created:true};
   });
 }
-export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown;counterproposal?:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
+export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown;counterproposal?:unknown},pilot=false): Promise<{application:FreelanceApplication;created:boolean}> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId)) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
+  if(pilot)assertEngagementPilotAuthority(actorUid);
   return adminDb.runTransaction(async tx => {
     const [identity, offerSnap, applicationSnap] = await tx.getAll(eligibility(actorUid),offerRef,applicationRef);
     assertApproved(identity.data(),'freelancer');
     const offer = offerSnap.data() as FreelanceOffer | undefined;
     if (!offerSnap.exists || !offer || offer.id !== offerId) throw new Error('FREELANCE_FORBIDDEN');
-    assertAcceptedPaymentTerms(offer,acceptance);
+    assertAcceptedPaymentTerms(offer,acceptance,pilot);
+    if(pilot)await assertEngagementPilotParticipants(tx,[{uid:actorUid,role:'freelancer'},{uid:offer.ownerUid,role:'requester'}]);
     const proposal=readFreelanceCounterproposal(acceptance?.counterproposal,offer);
     const proposed = {...createFreelanceApplication(offer,actorUid,new Date().toISOString(),assertHourlyLifecycleCandidate(offer)),...(proposal?{counterproposal:proposal}:{})};
     if (applicationSnap.exists) {
@@ -87,10 +95,11 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string, a
 }
 
 /** Both actors are revalidated in the same transaction as the selection. */
-export async function selectFreelanceApplication(actorUid: string, offerId: string, applicantUid: string,expectedCounterproposal?:unknown): Promise<FreelanceSelectionResult> {
+export async function selectFreelanceApplication(actorUid: string, offerId: string, applicantUid: string,expectedCounterproposal?:unknown,pilot=false): Promise<FreelanceSelectionResult> {
   if (![actorUid,offerId,applicantUid].every(validFreelanceId) || actorUid === applicantUid) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(applicantUid);
+  if(pilot)assertEngagementPilotAuthority(actorUid);
   return adminDb.runTransaction(async tx => {
     const [ownerIdentity,workerIdentity,offerSnap,applicationSnap] = await tx.getAll(eligibility(actorUid),eligibility(applicantUid),offerRef,applicationRef);
     const offer = offerSnap.data() as FreelanceOffer | undefined;
@@ -98,6 +107,7 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
     if (!offer || !application || offer.id !== offerId || offer.ownerUid !== actorUid || application.applicantUid !== applicantUid) throw new Error('FREELANCE_FORBIDDEN');
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
+    if(pilot){assertEngagementPilotTerms(offer);await assertEngagementPilotParticipants(tx,[{uid:actorUid,role:'requester'},{uid:applicantUid,role:'freelancer'}]);}
     assertHourlyLifecycleCandidate(offer);
     const proposal=readFreelanceCounterproposal(application.counterproposal,offer);
     if(!sameFreelanceCounterproposal(proposal,expectedCounterproposal,offer))throw Error('FREELANCE_CONFLICT');
@@ -114,8 +124,9 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
   });
 }
 /** The selected worker must explicitly confirm; the owner cannot confirm for them. */
-export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown}): Promise<FreelanceSelectionResult> {
+export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown;expectedWorkTerms?:unknown;expectedRequesterStore?:unknown},pilot=false): Promise<FreelanceSelectionResult> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
+  if(pilot){assertEngagementPilotAuthority(actorUid);if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');}
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
   return adminDb.runTransaction(async tx => {
@@ -132,7 +143,12 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     if(!sameFreelanceCounterproposal(offer.selectedCounterproposal,proposal,original)||(!proposal&&offer.originalOfferTerms))throw Error('FREELANCE_CONFLICT');
     const agreed=negotiatedFreelanceTerms(original,proposal);
     if(offer.status==='contracted'&&(!sameFreelancePaymentTerms(offer.paymentTerms,agreed.paymentTerms,agreed.paymentMinor)||!sameFreelanceWorkTerms(offer.workTerms,agreed.workTerms,agreed.paymentMinor)||offer.paymentMinor!==agreed.paymentMinor))throw Error('FREELANCE_CONFLICT');
-    assertAcceptedPaymentTerms({...offer,...agreed},acceptance);
+    if(pilot){
+      assertContractPilotTerms({...offer,...agreed});
+      await assertEngagementPilotParticipants(tx,[{uid:offer.ownerUid,role:'requester'},{uid:actorUid,role:'freelancer'}]);
+      if((await readPersonalPixReadiness(tx,actorUid)).status!=='declared')throw Error('FREELANCE_PIX_DESTINATION_REQUIRED');
+    }
+    assertAcceptedPaymentTerms({...offer,...agreed},acceptance,pilot);
     const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
     if(proposal&&result.changed){
       result.offer={...result.offer,...agreed,originalOfferTerms:negotiatedFreelanceTerms(offer,undefined)};
@@ -144,10 +160,10 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
       const writeCommitment=await prepareHourlyContract(tx,offerRef,result);writeCommitment();
     }else if(result.offer.paymentTerms!==undefined){
       // No new financial obligations outside the disposable local candidate.
-      if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
+      if(!pilot&&(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||
          process.env.GOOGLE_APPLICATION_CREDENTIALS||
          !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
-         getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+         getFirebaseAdminProjectId()!=='kyrub-security-test'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
       const obligation=buildFreelancePaymentObligation(result.offer,result.application);
       const obligationRef=offerRef.collection('directPayment').doc('obligation');
       const existing=await tx.get(obligationRef);
@@ -165,7 +181,7 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
 }
 
 /** Release a reservation before contracting; no cancellation of an executed contract here. */
-export async function releaseFreelanceReservation(actorUid:string, offerId:string, applicantUid:string, confirmed:unknown):Promise<FreelanceSelectionResult> {
+export async function releaseFreelanceReservation(actorUid:string, offerId:string, applicantUid:string, confirmed:unknown,pilot=false):Promise<FreelanceSelectionResult> {
   if (![actorUid,offerId,applicantUid].every(validFreelanceId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
   const offerRef=adminDb.doc(offers+'/'+offerId);
   const applicationRef=offerRef.collection('applications').doc(applicantUid);
@@ -174,6 +190,7 @@ export async function releaseFreelanceReservation(actorUid:string, offerId:strin
     const offer=o.data() as FreelanceOffer|undefined;
     const application=a.data() as FreelanceApplication|undefined;
     if(!offer || !application || offer.id!==offerId || application.applicantUid!==applicantUid) throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertEngagementPilotAuthority(actorUid);assertEngagementPilotTerms(offer);}
     const result=releaseFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
     if(result.changed){
       tx.update(offerRef,{status:'open',selectedApplicantUid:FieldValue.delete(),selectedAt:FieldValue.delete(),selectedCounterproposal:FieldValue.delete()});
@@ -182,7 +199,7 @@ export async function releaseFreelanceReservation(actorUid:string, offerId:strin
     return result;
   });
 }
-export async function withdrawPendingFreelanceApplication(actorUid:string,offerId:string,confirmed:unknown):Promise<FreelanceSelectionResult>{
+export async function withdrawPendingFreelanceApplication(actorUid:string,offerId:string,confirmed:unknown,pilot=false):Promise<FreelanceSelectionResult>{
   if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
   const offerRef=adminDb.doc(offers+'/'+offerId);
   const applicationRef=offerRef.collection('applications').doc(actorUid);
@@ -191,31 +208,35 @@ export async function withdrawPendingFreelanceApplication(actorUid:string,offerI
     const offer=o.data() as FreelanceOffer|undefined;
     const application=a.data() as FreelanceApplication|undefined;
     if(!offer||!application||offer.id!==offerId||application.applicantUid!==actorUid)throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertEngagementPilotAuthority(actorUid);assertEngagementPilotTerms(offer);}
     const result=withdrawFreelanceApplication(offer,application,actorUid,confirmed,new Date().toISOString());
     if(result.changed)tx.update(applicationRef,{status:'withdrawn',withdrawnAt:result.application.withdrawnAt!});
     return result;
   });
 }
-export async function cancelUncontractedFreelanceOffer(actorUid:string,offerId:string,confirmed:unknown):Promise<FreelanceOffer>{
+export async function cancelUncontractedFreelanceOffer(actorUid:string,offerId:string,confirmed:unknown,pilot=false):Promise<FreelanceOffer>{
   if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
   const ref=adminDb.doc(offers+'/'+offerId);
   return adminDb.runTransaction(async tx=>{
     const snap=await tx.get(ref);
     const offer=snap.data() as FreelanceOffer|undefined;
     if(!offer||offer.id!==offerId)throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertEngagementPilotAuthority(actorUid);assertEngagementPilotTerms(offer);}
     const result=cancelOpenFreelanceOffer(offer,actorUid,confirmed,new Date().toISOString());
     if(result!==offer)tx.update(ref,{status:'cancelled',cancelledAt:result.cancelledAt!});
     return result;
   });
 }
 /** Operational completion is not payment evidence. All reads precede state changes. */
-export async function recordFreelanceExecution(actorUid:string,offerId:string,action:FreelanceExecutionAction,confirmed:unknown):Promise<FreelanceSelectionResult>{
+export async function recordFreelanceExecution(actorUid:string,offerId:string,action:FreelanceExecutionAction,confirmed:unknown,pilot=false):Promise<FreelanceSelectionResult>{
   if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  if(pilot){assertEngagementPilotAuthority(actorUid);if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');}
   const offerRef=adminDb.doc(offers+'/'+offerId);
   return adminDb.runTransaction(async tx=>{
     const offer=(await tx.get(offerRef)).data() as FreelanceOffer|undefined;
     if(!offer||offer.id!==offerId||!validFreelanceId(offer.ownerUid)||!validFreelanceId(offer.selectedApplicantUid)||
        (actorUid!==offer.ownerUid&&actorUid!==offer.selectedApplicantUid))throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertContractPilotTerms(offer);assertEngagementPilotAuthority(offer.ownerUid);assertEngagementPilotAuthority(offer.selectedApplicantUid);}
     const applicationRef=offerRef.collection('applications').doc(offer.selectedApplicantUid);
     const snap=await tx.get(applicationRef);
     const application=snap.data() as FreelanceApplication|undefined;
@@ -229,7 +250,7 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       assertApproved(worker.data(),'freelancer');
       if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined){
         if(actorUid!==offer.selectedApplicantUid)throw Error('FREELANCE_FORBIDDEN');
-        await assertDirectPixStart(tx,offer,application);
+        await assertDirectPixStart(tx,offer,application,pilot);
       }else await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString(),hourly);

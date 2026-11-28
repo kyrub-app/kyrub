@@ -1,3 +1,4 @@
+import {assertEngagementPilotAuthority,assertContractPilotTerms,freelanceContractPilotEnabled} from './freelanceEngagementPilotAuthority.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
@@ -10,12 +11,18 @@ type Receipt={id:string;actorUid:string;recordedAt:string;size:number;width:numb
 const fail=():never=>{throw Error('FREELANCE_FINANCIAL_EVIDENCE_CONFLICT');};
 const manifest=(id:string)=>adminDb.doc('freelanceFinancialReviewsV1/'+id+'/evidence/receipts');
 const fileRef=(id:string,receiptId:string)=>manifest(id).collection('files').doc(receiptId);
+function evidenceAuthority(obligation:FreelancePaymentObligation,pilot:boolean){
+ if(!pilot){local();return;}
+ if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+ assertEngagementPilotAuthority(obligation.requesterUid);
+ assertEngagementPilotAuthority(obligation.beneficiaryUid);
+}
 function local(){
  if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
  !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
 }
-export async function readFinancialReceiptManifest(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,requestedAt:string){
- local();
+export async function readFinancialReceiptManifest(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,requestedAt:string,pilot=false){
+ evidenceAuthority(obligation,pilot);
  const raw=(await tx.get(manifest(obligation.offerId))).data();
  if(!raw)return {revision:0,receipts:[] as Receipt[]};
  if(Object.keys(raw).length!==4||raw.schemaVersion!==1||raw.offerId!==obligation.offerId||!Array.isArray(raw.receipts)||
@@ -36,19 +43,20 @@ export async function readFinancialReceiptManifest(tx:FirebaseFirestore.Transact
 /** Emulator-only prototype: private bytes in a separate server-only Firestore
  * document. No Storage bucket, public URL, filename, or real user data.
  */
-export async function submitFreelanceFinancialReceipt(uid:string,offerId:string,input:unknown){
- local();
+export async function submitFreelanceFinancialReceipt(uid:string,offerId:string,input:unknown,pilot=false){
+ if(pilot){assertEngagementPilotAuthority(uid);if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');}else local();
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(Object.keys(b).length!==3||!validFreelanceId(b.receiptId)||b.confirmed!==true)throw Error('FREELANCE_INVALID');
  const id=b.receiptId,clean=sanitizeReceiptPng(b.pngBase64);
  return adminDb.runTransaction(async tx=>{
   const queue=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
-  const {obligation,projection}=await readFinancialContext(tx,uid,offerId);
+  const {offer,obligation,projection}=await readFinancialContext(tx,uid,offerId);
+  if(pilot){assertContractPilotTerms(offer);evidenceAuthority(obligation,true);}
   const review=checkedReview(queue.data(),obligation);
   if(!review||review.status!=='pending'||projection.state!=='disputed')return fail();
   await assertFinancialCaseRestrictions(tx,obligation);
-  const saved=await readFinancialReceiptManifest(tx,obligation,review.requestedAt);
+  const saved=await readFinancialReceiptManifest(tx,obligation,review.requestedAt,pilot);
   const existing=saved.receipts.find(r=>r.id===id);
   const file=await tx.get(fileRef(offerId,id));
   if(existing){
@@ -74,9 +82,9 @@ async function verifyReceiptBytes(raw:FirebaseFirestore.DocumentData|undefined,i
  return raw.pngBase64 as string;
 }
 /** Call only inside authorized administrator read transaction. */
-export async function readFinancialReceiptBytes(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,requestedAt:string,id:string){
- local();if(!validFreelanceId(id))throw Error('FREELANCE_INVALID');
- const {receipts}=await readFinancialReceiptManifest(tx,obligation,requestedAt),item=receipts.find(r=>r.id===id);
+export async function readFinancialReceiptBytes(tx:FirebaseFirestore.Transaction,obligation:FreelancePaymentObligation,requestedAt:string,id:string,pilot=false){
+ evidenceAuthority(obligation,pilot);if(!validFreelanceId(id))throw Error('FREELANCE_INVALID');
+ const {receipts}=await readFinancialReceiptManifest(tx,obligation,requestedAt,pilot),item=receipts.find(r=>r.id===id);
  if(!item)throw Error('FREELANCE_FORBIDDEN');
  return {id,mimeType:'image/png' as const,pngBase64:await verifyReceiptBytes((await tx.get(fileRef(obligation.offerId,id))).data(),item),bankVerified:false as const};
 }
