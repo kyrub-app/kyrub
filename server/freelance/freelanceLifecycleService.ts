@@ -174,7 +174,7 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
 }
 
 /** Release a reservation before contracting; no cancellation of an executed contract here. */
-export async function releaseFreelanceReservation(actorUid:string, offerId:string, applicantUid:string, confirmed:unknown):Promise<FreelanceSelectionResult> {
+export async function releaseFreelanceReservation(actorUid:string, offerId:string, applicantUid:string, confirmed:unknown,pilot=false):Promise<FreelanceSelectionResult> {
   if (![actorUid,offerId,applicantUid].every(validFreelanceId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
   const offerRef=adminDb.doc(offers+'/'+offerId);
   const applicationRef=offerRef.collection('applications').doc(applicantUid);
@@ -183,6 +183,7 @@ export async function releaseFreelanceReservation(actorUid:string, offerId:strin
     const offer=o.data() as FreelanceOffer|undefined;
     const application=a.data() as FreelanceApplication|undefined;
     if(!offer || !application || offer.id!==offerId || application.applicantUid!==applicantUid) throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertEngagementPilotAuthority(actorUid);assertEngagementPilotTerms(offer);}
     const result=releaseFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
     if(result.changed){
       tx.update(offerRef,{status:'open',selectedApplicantUid:FieldValue.delete(),selectedAt:FieldValue.delete(),selectedCounterproposal:FieldValue.delete()});
@@ -191,7 +192,7 @@ export async function releaseFreelanceReservation(actorUid:string, offerId:strin
     return result;
   });
 }
-export async function withdrawPendingFreelanceApplication(actorUid:string,offerId:string,confirmed:unknown):Promise<FreelanceSelectionResult>{
+export async function withdrawPendingFreelanceApplication(actorUid:string,offerId:string,confirmed:unknown,pilot=false):Promise<FreelanceSelectionResult>{
   if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
   const offerRef=adminDb.doc(offers+'/'+offerId);
   const applicationRef=offerRef.collection('applications').doc(actorUid);
@@ -200,18 +201,20 @@ export async function withdrawPendingFreelanceApplication(actorUid:string,offerI
     const offer=o.data() as FreelanceOffer|undefined;
     const application=a.data() as FreelanceApplication|undefined;
     if(!offer||!application||offer.id!==offerId||application.applicantUid!==actorUid)throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertEngagementPilotAuthority(actorUid);assertEngagementPilotTerms(offer);}
     const result=withdrawFreelanceApplication(offer,application,actorUid,confirmed,new Date().toISOString());
     if(result.changed)tx.update(applicationRef,{status:'withdrawn',withdrawnAt:result.application.withdrawnAt!});
     return result;
   });
 }
-export async function cancelUncontractedFreelanceOffer(actorUid:string,offerId:string,confirmed:unknown):Promise<FreelanceOffer>{
+export async function cancelUncontractedFreelanceOffer(actorUid:string,offerId:string,confirmed:unknown,pilot=false):Promise<FreelanceOffer>{
   if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
   const ref=adminDb.doc(offers+'/'+offerId);
   return adminDb.runTransaction(async tx=>{
     const snap=await tx.get(ref);
     const offer=snap.data() as FreelanceOffer|undefined;
     if(!offer||offer.id!==offerId)throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertEngagementPilotAuthority(actorUid);assertEngagementPilotTerms(offer);}
     const result=cancelOpenFreelanceOffer(offer,actorUid,confirmed,new Date().toISOString());
     if(result!==offer)tx.update(ref,{status:'cancelled',cancelledAt:result.cancelledAt!});
     return result;
