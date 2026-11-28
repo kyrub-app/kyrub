@@ -1,5 +1,7 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
+import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
 
 const offers = 'freelanceOffersV1';
@@ -153,8 +155,18 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       const [owner,worker]=await tx.getAll(eligibility(offer.ownerUid),eligibility(offer.selectedApplicantUid));
       assertApproved(owner.data(),'requester');
       assertApproved(worker.data(),'freelancer');
+      await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
+    if(action==='confirm_completion'){
+      const basis=buildFreelanceRemunerationBasis(result.offer,result.application);
+      const basisRef=offerRef.collection('financialBasis').doc('remuneration');
+      const saved=await tx.get(basisRef);
+      if(result.changed){
+        if(saved.exists)throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+        tx.create(basisRef,basis);
+      }else if(!matchesFreelanceRemunerationBasis(saved.data(),basis))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+    }
     if(result.changed){
       const at=action==='start'?'startedAt':action==='request_completion'?'completionRequestedAt':'completedAt';
       tx.update(offerRef,{status:result.offer.status,[at]:result.offer[at]!});

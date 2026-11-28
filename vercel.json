@@ -28,6 +28,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/admin/freelance-review",
+      "destination": "/api/admin/operations/health?transport=freelance-review"
+    },
+    {
       "source": "/api/admin/global-challenges",
       "destination": "/api/admin/operations/health?transport=global-challenges"
     },

@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
-import {FieldValue} from 'firebase-admin/firestore';
+import {FieldPath,FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
+import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {resolveFreelanceOccurrence,validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
 
@@ -33,6 +34,15 @@ export async function decideFreelanceReview(authorization:string,input:unknown){
     const application=(await tx.get(applicationRef)).data() as FreelanceApplication|undefined;
     if(!application||application.applicantUid!==offer.selectedApplicantUid)throw Error('FREELANCE_CONFLICT');
     const result=resolveFreelanceOccurrence(offer,application,occurrence,uid,b.outcome,b.reason,b.confirmed,new Date().toISOString());
+    if(result.occurrence.decision?.outcome==='cancel'){
+      const basis=buildFreelanceRemunerationBasis(result.offer,result.application,result.occurrence);
+      const basisRef=offerRef.collection('financialBasis').doc('remuneration');
+      const saved=await tx.get(basisRef);
+      if(result.changed){
+        if(saved.exists||audit.exists)throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+        tx.create(basisRef,basis);
+      }else if(!matchesFreelanceRemunerationBasis(saved.data(),basis))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+    }
     if(!result.changed){
       if(!audit.exists||audit.get('actorId')!==uid||audit.get('targetId')!==b.offerId||audit.get('occurrenceId')!==b.occurrenceId)throw Error('FREELANCE_CONFLICT');
       return {decision:result.occurrence.decision,replay:true};
@@ -48,4 +58,34 @@ export async function decideFreelanceReview(authorization:string,input:unknown){
       financialReview:decision.financialReview,source:'server',createdAt:FieldValue.serverTimestamp()});
     return {decision,replay:false};
   });
+}
+
+/** Query the root offers, not arbitrary collection-group occurrences. Bounded cursor pages. */
+export async function listFreelanceReviews(authorization:string,cursor:unknown){
+  if(cursor!==undefined&&cursor!==''&&!validFreelanceId(cursor))throw Error('FREELANCE_INVALID');
+  const identity=await requireKyrubSessionMfa(authorization,'administrative',300);
+  const uid=identity.uid;
+  if(identity.email_verified!==true||!validFreelanceId(uid))throw Error('FORBIDDEN');
+  return adminDb.runTransaction(async tx=>{
+    const role=await tx.get(adminDb.doc(rolePath(uid)));assertRole(uid,role.data());
+    let query=adminDb.collection('freelanceOffersV1').where('status','==','under_review').orderBy(FieldPath.documentId()).limit(21);
+    if(typeof cursor==='string'&&cursor)query=query.startAfter(cursor);
+    const result=await tx.get(query);
+    const page=result.docs.slice(0,20);
+    const items=[];
+    for(const doc of page){
+      const offer=doc.data() as FreelanceOffer;
+      if(offer.id!==doc.id||offer.status!=='under_review'||!validFreelanceId(offer.occurrenceId)||
+         !validFreelanceId(offer.ownerUid)||!validFreelanceId(offer.selectedApplicantUid))throw Error('FREELANCE_CONFLICT');
+      const occurrence=(await tx.get(doc.ref.collection('occurrences').doc(offer.occurrenceId))).data() as FreelanceOccurrence|undefined;
+      if(!occurrence||occurrence.id!==offer.occurrenceId||occurrence.offerId!==doc.id||occurrence.ownerUid!==offer.ownerUid||
+        occurrence.applicantUid!==offer.selectedApplicantUid||occurrence.status!=='awaiting_review'||
+        (occurrence.openedBy!==offer.ownerUid&&occurrence.openedBy!==offer.selectedApplicantUid))throw Error('FREELANCE_CONFLICT');
+      items.push({offerId:doc.id,occurrenceId:occurrence.id,title:offer.title,kind:occurrence.kind,priorStatus:occurrence.priorStatus,
+        openedAt:occurrence.openedAt,openedByRole:occurrence.openedBy===offer.ownerUid?'requester':'freelancer',
+        response:occurrence.response?.position??null,canResume:occurrence.kind==='service_disputed'&&occurrence.response?.position==='agree',
+        canDecide:uid!==offer.ownerUid&&uid!==offer.selectedApplicantUid});
+    }
+    return {items,nextCursor:result.size>20?page[page.length-1].id:null};
+  },{readOnly:true});
 }

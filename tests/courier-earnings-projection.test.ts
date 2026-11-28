@@ -374,3 +374,58 @@ test('freelance administrative decision preserves evidence, separates finance an
  assert.match(source,/tx.create\(auditRef/);
  assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
 });
+
+test('freelance review administrative queue is bounded and gated before server access', async()=>{
+ const service=readFileSync('server/admin/freelanceReviewService.ts','utf8');
+ assert.match(service,/where\('status','==','under_review'\).orderBy\(FieldPath.documentId\(\)\).limit\(21\)/);
+ assert.match(service,/assertRole\(uid,role.data\(\)\)/);
+ assert.match(service,/readOnly:true/);
+ const transport=readFileSync('server/admin/freelanceReviewTransport.ts','utf8');
+ assert.match(transport,/KYRUB_FREELANCE_ADMIN_REVIEW_ENABLED==='true'/);
+ assert.match(transport,/VERCEL_ENV==='production'/);
+ const {handleFreelanceReview}=await import('../server/admin/freelanceReviewTransport');
+ let status=0;let calls=0;
+ const response={setHeader(){},status(code:number){status=code;return {json(){}};}};
+ const deps={enabled:()=>false,list:async()=>{calls++;return {items:[],nextCursor:null};},decide:async()=>{calls++;return {decision:undefined,replay:false};}};
+ await handleFreelanceReview({method:'GET',headers:{}},response,deps);assert.equal(status,503);
+ await handleFreelanceReview({method:'GET',headers:{}},response,{...deps,enabled:()=>true});assert.equal(status,401);
+ assert.equal(calls,0);
+ await handleFreelanceReview({method:'GET',headers:{authorization:'Bearer fixture'}},response,{...deps,enabled:()=>true});assert.equal(status,200);assert.equal(calls,1);
+ const ui=readFileSync('src/components/admin/AdminFreelanceReviewWorkspace.tsx','utf8');
+ assert.match(ui,/confirmed&&reason.trim\(\).length>=10/);
+ assert.match(ui,/auth.currentUser\?\.uid===user.uid/);
+ assert.doesNotMatch(ui,/localStorage|setDoc\(|updateDoc\(/);
+});
+
+test('freelance remuneration basis distinguishes confirmed service from cancellation review and never infers settlement',async()=>{
+ const m=await import('../shared/freelanceLifecycle');
+ const f=await import('../shared/freelanceRemuneration');
+ const now='2026-11-27T10:00:00.000Z',later='2026-11-27T10:01:00.000Z';
+ const o=m.createFreelanceOffer('offer-1','owner',{title:'Serviço',description:'Descrição',requirements:'',paymentMinor:12345},now);
+ const s=m.selectFreelanceApplicant(o,m.createFreelanceApplication(o,'worker',now),'owner',now);
+ const c=m.confirmFreelanceSelection(s.offer,s.application,'worker',true,later);
+ assert.throws(()=>f.buildFreelanceRemunerationBasis(c.offer,c.application),/FREELANCE_FINANCIAL_BASIS_CONFLICT/);
+ const started=m.advanceFreelanceExecution(c.offer,c.application,'worker','start',true,later);
+ const requested=m.advanceFreelanceExecution(started.offer,started.application,'worker','request_completion',true,later);
+ const done=m.advanceFreelanceExecution(requested.offer,requested.application,'owner','confirm_completion',true,later);
+ const basis=f.buildFreelanceRemunerationBasis(done.offer,done.application);
+ assert.equal(basis.agreedMinor,12345);assert.equal(basis.confirmedServiceMinor,12345);
+ assert.equal(basis.beneficiaryUid,'worker');assert.equal(basis.requesterUid,'owner');
+ assert.equal(basis.responsibility,'not_determined');assert.equal(basis.settlement,'not_verified');
+ assert.equal(f.matchesFreelanceRemunerationBasis({...basis},basis),true);
+ assert.equal(f.matchesFreelanceRemunerationBasis({...basis,confirmedServiceMinor:1},basis),false);
+ assert.throws(()=>f.buildFreelanceRemunerationBasis(done.offer,{...done.application,applicantUid:'other'}),/FREELANCE_FINANCIAL_BASIS_CONFLICT/);
+ const incident=m.openFreelanceOccurrence(started.offer,started.application,'worker','cancellation_requested',true,later,'review-1');
+ const cancelled=m.resolveFreelanceOccurrence({...started.offer,status:'under_review',occurrenceId:incident.id},{...started.application,status:'under_review',occurrenceId:incident.id},incident,'admin','cancel','Motivo fundamentado',true,later);
+ const pending=f.buildFreelanceRemunerationBasis(cancelled.offer,cancelled.application,cancelled.occurrence);
+ assert.equal(pending.agreedMinor,12345);assert.equal(pending.confirmedServiceMinor,null);
+ assert.equal(pending.sourceOccurrenceId,'review-1');assert.equal(pending.settlement,'not_verified');
+ assert.throws(()=>f.buildFreelanceRemunerationBasis(cancelled.offer,cancelled.application),/FREELANCE_FINANCIAL_BASIS_CONFLICT/);
+ for(const path of ['server/freelance/freelanceLifecycleService.ts','server/admin/freelanceReviewService.ts']){
+   const source=readFileSync(path,'utf8');
+   assert.match(source,/collection\('financialBasis'\).doc\('remuneration'\)/);
+   assert.match(source,/tx.create\(basisRef,basis\)/);
+   assert.match(source,/matchesFreelanceRemunerationBasis\(saved.data\(\),basis\)/);
+   assert.doesNotMatch(source,/economicObligations|economicSettlements|wallet|payout/);
+ }
+});

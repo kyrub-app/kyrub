@@ -1,5 +1,6 @@
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
+import {handleFreelanceWorkspace} from "./server/freelance/freelanceWorkspaceTransport.js";
 import path from "path";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
@@ -283,6 +284,10 @@ app.use(
   integrationRateLimiter,
   createUserCommunicationPreferenceRouter()
 );
+
+app.all("/api/freelance/workspace", integrationRateLimiter, (request,response) => {
+  void handleFreelanceWorkspace(request,response);
+});
 
 app.use(
   "/api/delivery-opportunities",
