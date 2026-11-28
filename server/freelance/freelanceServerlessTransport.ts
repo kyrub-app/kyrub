@@ -18,6 +18,9 @@ export async function handleFreelanceServerlessRequest(surface: Surface, request
     switch (surface) {
       case 'freelance-workspace':
         if (process.env.VERCEL || process.env.VERCEL_ENV) {
+          if (request.method === 'POST') {
+            return await (await import('./freelanceEngagementPilotTransport.js')).handleFreelanceEngagementPilot(forwarded, response);
+          }
           return await (await import('./freelanceProductionReadTransport.js')).handleFreelanceProductionRead(forwarded, response);
         }
         return await (await import('./freelanceWorkspaceTransport.js')).handleFreelanceWorkspace(forwarded, response);
