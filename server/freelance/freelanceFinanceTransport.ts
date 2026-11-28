@@ -17,7 +17,7 @@ export function freelanceFinanceEnabled(){
 async function readCase(uid:string,offerId:string,receiptId?:string){
  return adminDb.runTransaction(async tx=>{
   const reviewSnapshot=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
-  const {offer,obligation,events,projection,due}=await readFinancialContext(tx,uid,offerId,true);
+  const {offer,obligation,events,projection,due,hourlyFinal}=await readFinancialContext(tx,uid,offerId,true);
   const review=checkedReview(reviewSnapshot.data(),obligation);
   const role=uid===obligation.requesterUid?'requester':'freelancer';
   const restricted=projection.state==='disputed'&&review?.status!=='resolved_administratively';
@@ -29,7 +29,7 @@ async function readCase(uid:string,offerId:string,receiptId?:string){
    if(!pending||!receipts.receipts.some(r=>r.id===receiptId&&r.actorUid===uid))throw Error('FREELANCE_FORBIDDEN');
    return readFinancialReceiptBytes(tx,obligation,review!.requestedAt,receiptId);
   }
-  return {offerId,role,amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
+  return {offerId,role,...(hourlyFinal?{amountMode:'hourly_final',sourceDigest:hourlyFinal.sourceDigest}:{}),amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
    operationalStatus:offer.status,due,financialState:due?projection.state:'not_due',hadDisagreement:projection.hadDisagreement,bankVerified:false,
    restrictionActive:restricted,reviewStatus:review?.status??null,
    reviewOutcome:review?.decision?.outcome??null,requestedAt:review?.requestedAt??null,
@@ -83,7 +83,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
    case 'bind_pix':exact(['expectedRevision','confirmed']);await bindFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
    case 'authorize_pix_share':exact(['expectedRevision','confirmed']);await authorizeFreelancePixSharing(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
    case 'reveal_pix':exact(['expectedRevision','confirmed']);res.status(200).json(await revealFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed}));return;
-   case 'statement':exact(['eventId','statement','confirmed']);await recordFreelanceExternalPaymentStatement(uid,b.offerId,{eventId:b.eventId,statement:b.statement,confirmed:b.confirmed});break;
+   case 'statement':{const hourly='expectedAmountMinor' in b||'sourceDigest' in b;exact(hourly?['eventId','statement','confirmed','expectedAmountMinor','sourceDigest']:['eventId','statement','confirmed']);await recordFreelanceExternalPaymentStatement(uid,b.offerId,{eventId:b.eventId,statement:b.statement,confirmed:b.confirmed,...(hourly?{expectedAmountMinor:b.expectedAmountMinor,sourceDigest:b.sourceDigest}:{})});break;}
    case 'request_review':exact(['confirmed']);await requestFreelanceFinancialReview(uid,b.offerId,{confirmed:b.confirmed});break;
    case 'submit_note':exact(['evidenceId','note','confirmed']);await submitFreelanceFinancialEvidence(uid,b.offerId,{evidenceId:b.evidenceId,note:b.note,confirmed:b.confirmed});break;
    case 'submit_receipt':exact(['receiptId','pngBase64','confirmed']);await submitFreelanceFinancialReceipt(uid,b.offerId,{receiptId:b.receiptId,pngBase64:b.pngBase64,confirmed:b.confirmed});break;
@@ -94,7 +94,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const code=e instanceof Error?e.message:'';
   const status=['FREELANCE_INVALID','FREELANCE_RECEIPT_INVALID'].includes(code)?400:
    ['FREELANCE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_CANCELLATION_ACCOUNTING_CONFLICT','FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_VARIABLE_PAYMENT_CONFLICT','FREELANCE_CANCELLATION_ACCOUNTING_CONFLICT','FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_FINANCE_UNAVAILABLE':code});
  }
 }

@@ -1,3 +1,6 @@
+import {readOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
+import {readFreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
+import {readFreelanceCounterproposal} from '../../shared/freelanceCounterproposal.js';
 import {adminDb} from '../firebaseAdmin.js';
 import {FieldPath} from 'firebase-admin/firestore';
 import {projectVisibleDirectoryEntry} from '../identity/socialDiscoveryDirectoryService.js';
@@ -7,15 +10,20 @@ const offers=()=>adminDb.collection('freelanceOffersV1');
 function project(id:string,raw:unknown,uid:string){
  const o=raw as FreelanceOffer;
  if(!o||o.id!==id||!validFreelanceId(o.ownerUid)||!['open','selected','contracted','in_progress','completion_requested','completed','cancelled','under_review'].includes(o.status))throw Error('FREELANCE_CONFLICT');
- const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:o.paymentMinor,...(o.paymentTerms!==undefined?{paymentTerms:o.paymentTerms}:{})});
- return {id,...terms,status:o.status,isOwner:o.ownerUid===uid,isSelected:o.selectedApplicantUid===uid,createdAt:o.createdAt};
+ const participant=o.ownerUid===uid||o.selectedApplicantUid===uid;
+ const visibleTerms=!participant&&o.originalOfferTerms?o.originalOfferTerms:o;
+ const terms=normalizeFreelanceOffer({title:o.title,description:o.description,requirements:o.requirements,paymentMinor:visibleTerms.paymentMinor,...(visibleTerms.paymentTerms!==undefined?{paymentTerms:visibleTerms.paymentTerms}:{}),...(visibleTerms.workTerms!==undefined?{workTerms:visibleTerms.workTerms}:{})});
+ const proposal=participant?readFreelanceCounterproposal(o.selectedCounterproposal,o.originalOfferTerms??o):undefined;
+ const requesterStore=readFreelanceStoreRepresentation(o.requesterStore);
+ return {id,...terms,...(requesterStore?{requesterStore}:{}),...(proposal?{selectedCounterproposal:proposal}:{}),status:o.status,isOwner:o.ownerUid===uid,isSelected:o.selectedApplicantUid===uid,createdAt:o.createdAt};
 }
 function projectApplication(raw:unknown,offer:FreelanceOffer,uid:string){
  const a=raw as FreelanceApplication;
  if(!a||a.offerId!==offer.id||a.ownerUid!==offer.ownerUid||!validFreelanceId(a.applicantUid)||
    (offer.ownerUid!==uid&&a.applicantUid!==uid))throw Error('FREELANCE_CONFLICT');
  const effectiveStatus=a.status==='pending'&&offer.status!=='open'&&offer.status!=='selected'?'not_selected':a.status;
- return {applicantUid:a.applicantUid,status:effectiveStatus,createdAt:a.createdAt};
+ const proposal=readFreelanceCounterproposal(a.counterproposal,offer.originalOfferTerms??offer);
+ return {applicantUid:a.applicantUid,status:effectiveStatus,createdAt:a.createdAt,...(proposal?{counterproposal:proposal}:{})};
 }
 const PAGE_SIZE=20;
 export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:unknown,cursor?:unknown){
@@ -23,6 +31,7 @@ export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:un
  const after=validFreelanceId(cursor)?cursor:undefined;
  if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
+  if(view==='requester_stores'){if(offerId||cursor)throw Error('FREELANCE_INVALID');const store=await readOwnedFreelanceStore(tx,uid);return {items:store?[store]:[]};}
   if(view==='open'||view==='owner'){
    let query=(view==='open'?offers().where('status','==','open'):offers().where('ownerUid','==',uid)).orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
    if(after)query=query.startAfter(after);
