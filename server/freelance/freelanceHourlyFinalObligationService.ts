@@ -1,3 +1,6 @@
+import {readHourlyExcessContext} from './freelanceHourlyExcessReviewService.js';
+import {readHourlyCancellationAgreementContext} from './freelanceHourlyCancellationAgreementService.js';
+import type {FreelanceOffer} from '../../shared/freelanceLifecycle.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {createDirectPaymentTerms} from '../../shared/directPaymentTerms.js';
@@ -29,8 +32,21 @@ export async function issueFreelanceHourlyFinalObligation(uid:string,offerId:str
  });
 }
 export async function readFreelanceHourlyFinalContext(tx:Transaction,uid:string,offerId:string){
+ const offer=(await tx.get(adminDb.doc('freelanceOffersV1/'+offerId))).data() as FreelanceOffer|undefined;
+ if(offer?.status==='cancelled'){
+  const c=await readHourlyCancellationAgreementContext(tx,uid,offerId),final=c.resolved?.final;
+  if(!final)return fail();
+  const obligation:FreelancePaymentObligation={schemaVersion:1,offerId,requesterUid:final.requesterUid,beneficiaryUid:final.beneficiaryUid,...(final.requesterStoreId?{requesterStoreId:final.requesterStoreId}:{}),contractedAt:final.contractedAt,terms:createDirectPaymentTerms({method:'external_pix',amountMinor:final.amountMinor}),dueTrigger:'bilateral_service_completion',custody:'none'};
+  return {offer:c.c.offer,obligation,final,dueAt:final.dueAt,statementRef:c.resolutionRecords.statementRef,history:c.resolutionRecords.history};
+ }
  const s=await readVariablePaymentSources(tx,uid,offerId);
  if(!s.savedCommitment.exists||!s.savedBasis.exists)return fail();
+ if(s.record.disposition==='requires_review'){
+  const c=await readHourlyExcessContext(tx,uid,offerId),final=c.obligation;
+  if(!final)return fail();
+  const obligation:FreelancePaymentObligation={schemaVersion:1,offerId,requesterUid:final.requesterUid,beneficiaryUid:final.beneficiaryUid,...(final.requesterStoreId?{requesterStoreId:final.requesterStoreId}:{}),contractedAt:final.contractedAt,terms:createDirectPaymentTerms({method:'external_pix',amountMinor:final.amountMinor}),dueTrigger:'bilateral_service_completion',custody:'none'};
+  return {offer:c.c.offer,obligation,final,dueAt:final.dueAt,statementRef:c.statementRef,history:c.history};
+ }
  const final=buildFinal(s.record);
  const direct=s.c.ref.collection('directPayment'),statementRef=direct.doc('hourlyStatements');
  const [saved,history]=await tx.getAll(direct.doc('hourlyFinalObligation'),statementRef);
@@ -39,5 +55,5 @@ export async function readFreelanceHourlyFinalContext(tx:Transaction,uid:string,
  const obligation:FreelancePaymentObligation={schemaVersion:1,offerId,requesterUid:final.requesterUid,beneficiaryUid:final.beneficiaryUid,
  ...(final.requesterStoreId?{requesterStoreId:final.requesterStoreId}:{}),contractedAt:final.contractedAt,terms:createDirectPaymentTerms({method:'external_pix',amountMinor:final.amountMinor}),
  dueTrigger:'bilateral_service_completion',custody:'none'};
- return {offer:s.c.offer,obligation,final,statementRef,history};
+ return {offer:s.c.offer,obligation,final,dueAt:final.completedAt,statementRef,history};
 }

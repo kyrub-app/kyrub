@@ -39,7 +39,7 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
    const raw=h.history.data();
    if(raw&&(Object.keys(raw).length!==5||raw.sourceDigest!==h.final.sourceDigest||raw.amountMinor!==h.final.amountMinor))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
    const events=readEvents(raw?{schemaVersion:raw.schemaVersion,offerId:raw.offerId,events:raw.events}:undefined,offerId);
-   if(events.some(e=>Date.parse(e.recordedAt)<Date.parse(h.final.completedAt)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
+   if(events.some(e=>Date.parse(e.recordedAt)<Date.parse(h.dueAt)))throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
    return {offer:h.offer,obligation:h.obligation,events,projection:projectExternalPixStatements(h.obligation,events),statementRef:h.statementRef,due:true,hourlyFinal:h.final};
   }
   const obligation=buildFreelancePaymentObligation(contractSnapshot(offer),contractSnapshot(app));

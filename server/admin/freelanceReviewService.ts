@@ -1,3 +1,4 @@
+import {prepareHourlyCancellation} from '../freelance/freelanceHourlyCancellationService.js';
 import {prepareFreelanceAttendanceReview} from '../freelance/freelanceAttendanceService.js';
 import {createHash} from 'node:crypto';
 import {FieldPath,FieldValue} from 'firebase-admin/firestore';
@@ -35,7 +36,10 @@ export async function decideFreelanceReview(authorization:string,input:unknown){
     const application=(await tx.get(applicationRef)).data() as FreelanceApplication|undefined;
     if(!application||application.applicantUid!==offer.selectedApplicantUid)throw Error('FREELANCE_CONFLICT');
     const result=resolveFreelanceOccurrence(offer,application,occurrence,uid,b.outcome,b.reason,b.confirmed,new Date().toISOString());
-    if(result.occurrence.decision?.outcome==='cancel'){
+    if(result.occurrence.decision?.outcome==='cancel'&&offer.workTerms?.mode==='hourly'){
+      if(result.changed&&audit.exists)throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+      const writeCancellation=await prepareHourlyCancellation(tx,offer.ownerUid,offer.id,result);writeCancellation();
+    }else if(result.occurrence.decision?.outcome==='cancel'){
       const basis=buildFreelanceRemunerationBasis(result.offer,result.application,result.occurrence);
       const basisRef=offerRef.collection('financialBasis').doc('remuneration');
       const saved=await tx.get(basisRef);

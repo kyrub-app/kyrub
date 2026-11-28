@@ -1,3 +1,9 @@
+import {readOwnHourlyReviewNotes,submitHourlyReviewNote} from './freelanceHourlyReviewEvidenceService.js';
+import {readVariablePaymentSources} from './freelanceVariablePaymentBasisService.js';
+import {prepareCancellationRestriction,prepareExcessRestriction} from './freelanceEngagementRestrictionService.js';
+import {readHourlyExcessReview,changeHourlyExcessReview,changeHourlyExcessDispute} from './freelanceHourlyExcessReviewService.js';
+import {readHourlyCancellationAgreement,changeHourlyCancellationAgreement,changeHourlyCancellationDispute} from './freelanceHourlyCancellationAgreementService.js';
+import {readHourlyCancellation} from './freelanceHourlyCancellationService.js';
 import {readCancellationAccounting,changeCancellationAccounting} from './freelanceCancellationAccountingService.js';
 import {adminAuth} from '../firebaseAdmin.js';
 import {readOwnFreelanceMovements} from './freelanceMovementsService.js';
@@ -7,7 +13,7 @@ import {readFinancialContext,checkedReview,recordFreelanceExternalPaymentStateme
 import {submitFreelanceFinancialEvidence,readFinancialEvidence} from './freelanceFinancialEvidenceService.js';
 import {submitFreelanceFinancialReceipt,readFinancialReceiptManifest,readFinancialReceiptBytes} from './freelanceFinancialReceiptService.js';
 import {personalPixRecentLogin} from '../payments/personalPixTransport.js';
-import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination,changeFreelancePixBinding,readFreelancePixRebind,changeFreelancePixSharingConsent} from './freelancePixDestinationService.js';
+import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination,changeFreelancePixBinding,readFreelancePixRebind,changeFreelancePixSharingConsent,readFreelancePixWithdrawal} from './freelancePixDestinationService.js';
 import {readOwnFreelanceRestrictions,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 import {adminDb} from '../firebaseAdmin.js';
 
@@ -17,6 +23,20 @@ export function freelanceFinanceEnabled(){
 async function readCase(uid:string,offerId:string,receiptId?:string){
  return adminDb.runTransaction(async tx=>{
   const reviewSnapshot=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
+  const offerDoc=await tx.get(adminDb.doc('freelanceOffersV1/'+offerId));
+  if(offerDoc.get('status')==='completed'&&offerDoc.get('workTerms.mode')==='hourly'){
+   const s=await readVariablePaymentSources(tx,uid,offerId);
+   if(s.record.disposition==='no_payment_required'){
+    if(receiptId!==undefined)throw Error('FREELANCE_FORBIDDEN');
+    const direct=s.c.ref.collection('directPayment'),financial=s.c.ref.collection('financialBasis');
+    const incompatible=await tx.getAll(direct.doc('hourlyFinalObligation'),direct.doc('hourlyStatements'),direct.doc('hourlyExcessAgreement'),direct.doc('hourlyExcessResolution'),direct.doc('hourlyExcessDispute'),direct.doc('hourlyCancellationAgreement'),direct.doc('hourlyCancellationResolution'),direct.doc('hourlyCancellationDispute'),financial.doc('hourlyCancellation'),adminDb.doc('freelanceHourlyExcessReviewsV1/'+offerId),adminDb.doc('freelanceHourlyCancellationReviewsV1/'+offerId));
+    if(!s.savedBasis.exists||!s.savedCommitment.exists||s.record.finalAmountMinor!==0||s.record.accounting.status!=='calculated'||reviewSnapshot.exists||incompatible.some(x=>x.exists))throw Error('FREELANCE_VARIABLE_PAYMENT_CONFLICT');
+    await assertFinancialCaseRestrictions(tx,s.commitment,false);
+    await prepareCancellationRestriction(tx,s.commitment,false,false);
+    await prepareExcessRestriction(tx,s.commitment,false,false);
+    return {offerId,role:uid===s.commitment.requesterUid?'requester':'freelancer',amountMode:'hourly_zero',sourceDigest:s.record.sourceDigest,amountMinor:0,currency:'BRL',timing:'on_completion',operationalStatus:'completed',due:false,financialState:'no_payment_required',hadDisagreement:false,bankVerified:false,restrictionActive:false,reviewStatus:null,reviewOutcome:null,requestedAt:null,statements:[],ownNotes:[],ownReceipts:[],canRequestReview:false,canSubmitEvidence:false};
+   }
+  }
   const {offer,obligation,events,projection,due,hourlyFinal}=await readFinancialContext(tx,uid,offerId,true);
   const review=checkedReview(reviewSnapshot.data(),obligation);
   const role=uid===obligation.requesterUid?'requester':'freelancer';
@@ -54,9 +74,14 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
+   if(q.view==='hourly_review_notes'&&keys.length===3&&validFreelanceId(q.offerId)&&(q.kind==='cancellation'||q.kind==='excess')){res.status(200).json(await readOwnHourlyReviewNotes(uid,q.offerId,q.kind));return;}
+   if(q.view==='hourly_excess_review'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyExcessReview(uid,q.offerId));return;}
+   if(q.view==='hourly_cancellation_agreement'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellationAgreement(uid,q.offerId));return;}
+   if(q.view==='hourly_cancellation'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readHourlyCancellation(uid,q.offerId));return;}
    if(q.view==='cancellation_accounting'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCancellationAccounting(uid,q.offerId));return;}
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
    if(q.view==='pix_rebind'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixRebind(uid,q.offerId));return;}
+   if(q.view==='pix_withdrawal'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixWithdrawal(uid,q.offerId));return;}
    if(q.view==='pix_sharing'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixSharing(uid,q.offerId));return;}
    if(q.view==='restrictions'&&keys.length===1){res.status(200).json(await readOwnFreelanceRestrictions(uid));return;}
    if(q.view==='case'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCase(uid,q.offerId));return;}
@@ -71,8 +96,15 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const max=b.action==='submit_receipt'?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
-  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share','propose_cancellation_accounting','accept_cancellation_accounting','close_cancellation_accounting'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
+  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share','propose_cancellation_accounting','accept_cancellation_accounting','close_cancellation_accounting','propose_hourly_cancellation','accept_hourly_cancellation','decline_hourly_cancellation','withdraw_hourly_cancellation','dispute_hourly_cancellation','request_hourly_cancellation_review','propose_hourly_excess','accept_hourly_excess','decline_hourly_excess','withdraw_hourly_excess','dispute_hourly_excess','request_hourly_excess_review','submit_hourly_review_note'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
   switch(b.action){
+   case 'submit_hourly_review_note':exact(['kind','sourceDigest','evidenceId','note','confirmed']);if(b.kind!=='cancellation'&&b.kind!=='excess')throw Error('FREELANCE_INVALID');await submitHourlyReviewNote(uid,b.offerId,b.kind,{sourceDigest:b.sourceDigest,evidenceId:b.evidenceId,note:b.note,confirmed:b.confirmed});break;
+   case 'dispute_hourly_excess':case 'request_hourly_excess_review':exact(['sourceDigest','confirmed']);await changeHourlyExcessDispute(uid,b.offerId,b.action==='dispute_hourly_excess'?'open':'request_review',{sourceDigest:b.sourceDigest,confirmed:b.confirmed});break;
+   case 'propose_hourly_excess':exact(['proposalId','sourceDigest','recognizedExcessMs','confirmed']);await changeHourlyExcessReview(uid,b.offerId,'propose',{proposalId:b.proposalId,sourceDigest:b.sourceDigest,recognizedExcessMs:b.recognizedExcessMs,confirmed:b.confirmed});break;
+   case 'accept_hourly_excess':case 'decline_hourly_excess':case 'withdraw_hourly_excess':exact(['proposalId','sourceDigest','confirmed']);await changeHourlyExcessReview(uid,b.offerId,b.action==='accept_hourly_excess'?'accept':b.action==='decline_hourly_excess'?'decline':'withdraw',{proposalId:b.proposalId,sourceDigest:b.sourceDigest,confirmed:b.confirmed});break;
+   case 'dispute_hourly_cancellation':case 'request_hourly_cancellation_review':exact(['sourceDigest','confirmed']);await changeHourlyCancellationDispute(uid,b.offerId,b.action==='dispute_hourly_cancellation'?'open':'request_review',{sourceDigest:b.sourceDigest,confirmed:b.confirmed});break;
+   case 'propose_hourly_cancellation':exact(['proposalId','sourceDigest','recognizedServiceMinor','confirmed']);await changeHourlyCancellationAgreement(uid,b.offerId,'propose',{proposalId:b.proposalId,sourceDigest:b.sourceDigest,recognizedServiceMinor:b.recognizedServiceMinor,confirmed:b.confirmed});break;
+   case 'accept_hourly_cancellation':case 'decline_hourly_cancellation':case 'withdraw_hourly_cancellation':exact(['proposalId','sourceDigest','confirmed']);await changeHourlyCancellationAgreement(uid,b.offerId,b.action==='accept_hourly_cancellation'?'accept':b.action==='decline_hourly_cancellation'?'decline':'withdraw',{proposalId:b.proposalId,sourceDigest:b.sourceDigest,confirmed:b.confirmed});break;
    case 'propose_cancellation_accounting':exact(['proposalId','recognizedServiceMinor','reportedReceivedMinor','confirmed']);await changeCancellationAccounting(uid,b.offerId,'propose',{proposalId:b.proposalId,recognizedServiceMinor:b.recognizedServiceMinor,reportedReceivedMinor:b.reportedReceivedMinor,confirmed:b.confirmed});break;
    case 'accept_cancellation_accounting':
    case 'close_cancellation_accounting':exact(['proposalId','confirmed']);await changeCancellationAccounting(uid,b.offerId,b.action==='accept_cancellation_accounting'?'accept':'close',{proposalId:b.proposalId,confirmed:b.confirmed});break;

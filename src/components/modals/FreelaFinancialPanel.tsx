@@ -1,12 +1,15 @@
+import FreelaPixWithdrawal from './FreelaPixWithdrawal';
+import FreelaHourlyExcessReview from './FreelaHourlyExcessReview';
+import FreelaHourlyCancellationAgreement from './FreelaHourlyCancellationAgreement';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import FreelaPixSharing from './FreelaPixSharing';
 import FreelaCancellationAccounting from './FreelaCancellationAccounting';
 type Statement={role:'requester'|'freelancer';statement:'paid'|'received'|'not_received';recordedAt:string};
-type Case={amountMode?:'hourly_final';sourceDigest?:string;offerId:string;role:'requester'|'freelancer';amountMinor:number;currency:'BRL';timing:'advance'|'on_completion';due:boolean;operationalStatus:string;financialState:string;restrictionActive:boolean;reviewStatus:string|null;reviewOutcome:string|null;bankVerified:false;statements:Statement[];ownNotes:{id:string;note:string;recordedAt:string}[];ownReceipts:{id:string;size:number;recordedAt:string;mimeType:'image/png'}[];canRequestReview:boolean;canSubmitEvidence:boolean};
+type Case={amountMode?:'hourly_final'|'hourly_zero';sourceDigest?:string;offerId:string;role:'requester'|'freelancer';amountMinor:number;currency:'BRL';timing:'advance'|'on_completion';due:boolean;operationalStatus:string;financialState:string;restrictionActive:boolean;reviewStatus:string|null;reviewOutcome:string|null;bankVerified:false;statements:Statement[];ownNotes:{id:string;note:string;recordedAt:string}[];ownReceipts:{id:string;size:number;recordedAt:string;mimeType:'image/png'}[];canRequestReview:boolean;canSubmitEvidence:boolean};
 type Action={expectedAmountMinor?:number;sourceDigest?:string;action:string;confirmed:true;eventId?:string;statement?:Statement['statement'];evidenceId?:string;note?:string;receiptId?:string;pngBase64?:string};
-const states:Record<string,string>={not_due:'Pagamento previsto para a conclusão',awaiting_payment:'Aguardando pagamento',awaiting_receipt:'Aguardando confirmação de recebimento',nonreceipt_reported:'Não recebimento informado',disputed:'Divergência financeira',receipt_reported:'Recebimento informado',bilaterally_reported_received:'Recebimento confirmado pelas partes'};
+const states:Record<string,string>={no_payment_required:'Apuração concluída — nenhum pagamento necessário',not_due:'Pagamento previsto para a conclusão',awaiting_payment:'Aguardando pagamento',awaiting_receipt:'Aguardando confirmação de recebimento',nonreceipt_reported:'Não recebimento informado',disputed:'Divergência financeira',receipt_reported:'Recebimento informado',bilaterally_reported_received:'Recebimento confirmado pelas partes'};
 const statements:Record<string,string>={paid:'Pagamento informado',received:'Recebimento confirmado',not_received:'Recebimento negado'};
 const reviews:Record<string,string>={pending:'Análise administrativa solicitada',resolved_voluntarily:'Regularização voluntária registrada',resolved_administratively:'Análise administrativa encerrada'};
 const outcomes:Record<string,string>={payment_evidence_accepted:'Evidências favoráveis ao pagamento',nonreceipt_evidence_accepted:'Evidências favoráveis ao não recebimento',inconclusive:'Inconclusivo'};
@@ -16,6 +19,7 @@ const field='w-full rounded-xl bg-slate-950 border border-slate-800 px-3 py-2 te
 function valid(v:unknown,id:string,role:Case['role']):v is Case{
  if(!v||typeof v!=='object')return false;
  const c=v as Case;
+ if(c.amountMode==='hourly_zero')return c.offerId===id&&c.role===role&&c.bankVerified===false&&c.currency==='BRL'&&c.amountMinor===0&&typeof c.sourceDigest==='string'&&/^[a-f0-9]{64}$/.test(c.sourceDigest)&&c.timing==='on_completion'&&c.operationalStatus==='completed'&&c.due===false&&c.financialState==='no_payment_required'&&c.restrictionActive===false&&c.reviewStatus===null&&c.reviewOutcome===null&&c.canRequestReview===false&&c.canSubmitEvidence===false&&Array.isArray(c.statements)&&c.statements.length===0&&Array.isArray(c.ownNotes)&&c.ownNotes.length===0&&Array.isArray(c.ownReceipts)&&c.ownReceipts.length===0;
  return c.offerId===id&&c.role===role&&c.bankVerified===false&&c.currency==='BRL'&&Number.isSafeInteger(c.amountMinor)&&c.amountMinor>0&&(c.amountMode===undefined?c.sourceDigest===undefined:c.amountMode==='hourly_final'&&typeof c.sourceDigest==='string'&&/^[a-f0-9]{64}$/.test(c.sourceDigest)&&c.timing==='on_completion'&&c.due)&&
  ['advance','on_completion'].includes(c.timing)&&typeof c.due==='boolean'&&['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(c.operationalStatus)&&(c.due?c.financialState!=='not_due':c.financialState==='not_due')&&Object.hasOwn(states,c.financialState)&&typeof c.restrictionActive==='boolean'&&
  (c.reviewStatus===null||Object.hasOwn(reviews,c.reviewStatus))&&(c.reviewOutcome===null||Object.hasOwn(outcomes,c.reviewOutcome))&&
@@ -66,19 +70,21 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
   }catch{if(active())setError('Não foi possível ler o arquivo.');}
   finally{if(active()){lock.current=false;setBusy(false);}}
  };
- const paused=['under_review','cancelled'].includes(data?.operationalStatus??operationalStatus??'');
+ const paused=['under_review','cancelled'].includes(data?.operationalStatus??operationalStatus??'')&&!(data?.amountMode==='hourly_final'&&data.operationalStatus==='cancelled'&&data.due);
  const paid=data?.statements.some(s=>s.statement==='paid'),received=data?.statements.some(s=>s.statement==='received'),denied=data?.statements.some(s=>s.statement==='not_received');
+ const showPix=!busy&&!paused&&!paid&&!received&&!data?.reviewStatus&&(workMode!=='hourly'||['contracted','in_progress','completion_requested'].includes(operationalStatus??'')||data?.amountMode==='hourly_final');
  if(auth.currentUser?.uid!==user.uid)return null;
  return <section aria-label="Financeiro do Freela" className="rounded-xl border border-slate-700 p-3 space-y-3 text-sm">
   <h4 className="text-base font-bold text-white">Financeiro do Freela</h4>
   <p>Homologação: use somente dados e comprovantes fictícios. O Kyrub não realiza transferências nem confirma pagamentos bancários.</p>
   <button type="button" className={btn} disabled={busy} onClick={()=>void run()}>Consultar situação financeira</button>
   {busy&&<p role="status">Consultando financeiro…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status" className="text-emerald-300">{message}</p>}
-  {!busy&&!paused&&!paid&&!received&&!data?.reviewStatus&&(workMode!=='hourly'||['contracted','in_progress','completion_requested'].includes(operationalStatus??'')||data?.amountMode==='hourly_final')&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role} hourly={workMode==='hourly'}/> }
+  {showPix&&<FreelaPixSharing key={user.uid+':'+offerId} user={user} offerId={offerId} role={role} hourly={workMode==='hourly'}/> }
+  {!showPix&&!busy&&role==='freelancer'&&['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(operationalStatus??data?.operationalStatus??'')&&<FreelaPixWithdrawal key={'withdraw:'+user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {workMode==='hourly'&&<p>Jornada em homologação. A chave pode ser vinculada antes da execução; somente a obrigação final positiva permite consulta integral. Não pague pela estimativa.</p>}
   {data&&<>
-   <p className="font-bold text-white">{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.amountMinor/100)} · {data.amountMode==='hourly_final'?'Valor final apurado':data.timing==='advance'?'Antecipado':'Na conclusão'}</p>
-   {paused?<><p className="text-amber-300">{data.operationalStatus==='cancelled'?'Serviço cancelado. Tratamento financeiro pendente.':'Serviço em análise operacional.'} O valor acordado não representa saldo exigível. Não envie novo pagamento por este painel.</p>{data.due&&<p>Histórico de pagamento antecipado: {states[data.financialState]}. Registre somente fatos de pagamentos ou recebimentos já ocorridos.</p>}</>:<p>{states[data.financialState]}</p>}
+   <p className="font-bold text-white">{new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(data.amountMinor/100)} · {data.amountMode==='hourly_final'||data.amountMode==='hourly_zero'?'Valor final apurado':data.timing==='advance'?'Antecipado':'Na conclusão'}</p>
+   {data.amountMode==='hourly_zero'?<p>{states.no_payment_required}. O valor foi calculado a partir da jornada confirmada pelas partes; não houve transferência nem quitação bancária.</p>:paused?<><p className="text-amber-300">{data.operationalStatus==='cancelled'?'Serviço cancelado. Tratamento financeiro pendente.':'Serviço em análise operacional.'} O valor acordado não representa saldo exigível. Não envie novo pagamento por este painel.</p>{data.due&&<p>Histórico de pagamento antecipado: {states[data.financialState]}. Registre somente fatos de pagamentos ou recebimentos já ocorridos.</p>}</>:<p>{states[data.financialState]}</p>}
    {data.reviewStatus&&<p>{reviews[data.reviewStatus]}</p>}{data.reviewOutcome&&<p>{outcomes[data.reviewOutcome]}</p>}
    {data.restrictionActive&&<p className="text-amber-300">Novas contratações temporariamente indisponíveis para ambas as partes.</p>}
    {data.statements.map((s,i)=><p key={i} className="break-words">{s.role==='requester'?'Contratante':'Contratado'}: {statements[s.statement]} · {new Date(s.recordedAt).toLocaleString('pt-BR')}</p>)}
@@ -95,6 +101,8 @@ export default function FreelaFinancialPanel({user,offerId,role,operationalStatu
     {data.ownReceipts.length===0?<><label className="block">Comprovante fictício PNG (até 256 KiB)<input ref={fileInput} className={field} type="file" accept="image/png" disabled={busy||!!pending} onChange={e=>{const f=e.target.files?.[0];setError('');if(f&&(f.size>262144||f.type!=='image/png'||!f.size)){setFile(null);e.target.value='';setError('Selecione um PNG de até 256 KiB.');}else setFile(f??null);}}/></label><button type="button" className={btn} disabled={busy||!!pending||!file} onClick={()=>void prepareReceipt()}>Enviar comprovante</button></>:<p>Comprovante privado registrado.</p>}
    </div>}
   </>}
+  {workMode==='hourly'&&!busy&&!pending&&operationalStatus==='completed'&&!data&&<FreelaHourlyExcessReview key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
+  {workMode==='hourly'&&!busy&&!pending&&operationalStatus==='cancelled'&&<FreelaHourlyCancellationAgreement key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {workMode!=='hourly'&&!busy&&!pending&&(data?.operationalStatus??operationalStatus)==='cancelled'&&<FreelaCancellationAccounting key={user.uid+':'+offerId} user={user} offerId={offerId}/>}
   {pending&&<div className="rounded-xl border border-teal-700 p-3 space-y-2"><p>Confirma: {pending.label}?</p>{pending.body.expectedAmountMinor!==undefined&&<p>Valor integral da apuração: {new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(pending.body.expectedAmountMinor/100)}</p>}<button type="button" className={btn} disabled={busy} onClick={()=>void run(pending.body)}>Confirmar manifestação</button>{' '}<button type="button" className={btn} disabled={busy} onClick={clear}>Voltar</button></div>}
  </section>;

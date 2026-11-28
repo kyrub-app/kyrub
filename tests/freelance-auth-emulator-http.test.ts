@@ -509,12 +509,17 @@ test('contract Pix disclosure: explicit sharing, due, payer-only, recent session
 
  const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
  await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
+ await call(worker,200,id,'revoke_pix_share',{expectedSequence:2});
+ await call(worker,409,id,'restore_pix_share',{expectedSequence:3});
  await call(payer,409,id,'reveal_pix');
  for(const otherId of ids.slice(1)){await call(worker,200,otherId,'bind_pix');await call(worker,200,otherId,'authorize_pix_share');}
  assert.equal((await call(payer,200,ids[1])).due,false);await call(payer,409,ids[1],'reveal_pix');
  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:'new-'+key}});
  await call(payer,409,ids[2],'reveal_pix');
  await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:2,confirmed:true});
+ await call(worker,200,ids[2],'revoke_pix_share',{expectedSequence:0});
+ await call(worker,200,ids[2],'revoke_pix_share',{expectedSequence:0});
+ assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixSharingControl-1').get()).get('state'),'revoked');
  await call(payer,409,ids[2],'reveal_pix');
  assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).get('destinationRevision'),1);
 });
@@ -943,7 +948,7 @@ test('attendance HTTP: check-in, presence, server timestamps, early authorizatio
  assert.equal((await extensions(owner)).records.length,2);
 });
 
-test('variable basis from persisted emulator-only hourly fixture: immutable source, amount and isolation',async()=>{
+test('variable basis from persisted emulator-only hourly fixture: immutable source, amount and isolation',async t=>{
  const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
  const {recordFreelanceVariablePaymentBasis}=await import('../server/freelance/freelanceVariablePaymentBasisService.js');
  const owner=await account('variable-owner',['requester']),worker=await account('variable-worker',['freelancer']),other=await account('variable-other',['freelancer']);
@@ -1010,6 +1015,155 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  const excess=await recordFreelanceVariablePaymentBasis(owner.uid,id);
  assert.equal(excess.basis.disposition,'requires_review');assert.equal(excess.basis.finalAmountMinor,null);assert.equal(excess.basis.payable,false);
  await assert.rejects(issueFreelanceHourlyFinalObligation(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
+ // Separate synthetic excess case; do not mutate the accepted review to restore the other fixture.
+ const excessId=id+'-excess',er=db.doc('freelanceOffersV1/'+excessId);
+ await er.set({...offer,id:excessId});await er.collection('applications').doc(worker.uid).set({...application,offerId:excessId});
+ for(const name of ['schedule','schedule-schedule','timeline'])await er.collection('attendance').doc(name).set((await ref.collection('attendance').doc(name).get()).data()!);
+ const eb=await recordFreelanceVariablePaymentBasis(owner.uid,excessId);
+ const excessApi=async(actor:Actor,status:number,action?:string,extra:Record<string,unknown>={},target=excessId)=>{
+  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view=hourly_excess_review&offerId='+target);
+  const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:target,action,confirmed:true,...extra})}:{})});
+  const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));return data;
+ };
+ await excessApi(other,403);
+ const ev=await excessApi(worker,200);assert.equal(ev.excessMs,3600000);assert.equal(ev.authorizedMinor,12000);
+ const {calculateHourlyExcessResolution}=await import('../shared/freelanceHourlyExcessResolution.js');
+ assert.equal(calculateHourlyExcessResolution(eb.basis,0).recognizedServiceMinor,12000);
+ assert.equal(calculateHourlyExcessResolution(eb.basis,3600000).recognizedServiceMinor,14000);
+ const ep={proposalId:'first',sourceDigest:ev.sourceDigest,recognizedExcessMs:1800000};
+ await excessApi(worker,400,'propose_hourly_excess',{...ep,recognizedExcessMs:3600001});
+ await excessApi(worker,409,'propose_hourly_excess',{...ep,sourceDigest:'0'.repeat(64)});
+ await excessApi(worker,200,'propose_hourly_excess',ep);await excessApi(worker,200,'propose_hourly_excess',ep);
+ await excessApi(worker,403,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ await excessApi(owner,200,'decline_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ assert.equal((await excessApi(owner,200)).restrictionActive,false);
+ const restriction=async(actor:Actor)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v;};
+ const ef={sourceDigest:ev.sourceDigest};
+ await excessApi(other,403,'dispute_hourly_excess',ef);
+ await excessApi(owner,409,'dispute_hourly_excess',{sourceDigest:'0'.repeat(64)});
+ await excessApi(worker,200,'dispute_hourly_excess',ef);await excessApi(worker,200,'dispute_hourly_excess',ef);
+ for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[excessId]});
+ await excessApi(owner,200,'request_hourly_excess_review',ef);await excessApi(owner,200,'request_hourly_excess_review',ef);
+ assert.equal((await excessApi(worker,200)).dispute.status,'review_requested');
+ assert.equal((await db.doc('freelanceHourlyExcessReviewsV1/'+excessId).get()).get('status'),'pending');
+ // Synthetic concurrent cancellation and payment causes on the same offer.
+ for(const actor of [owner,worker])await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[excessId],openCancellationOfferIds:[excessId]});
+ await excessApi(owner,200,'propose_hourly_excess',{...ep,proposalId:'second'});
+ await excessApi(worker,409,'accept_hourly_excess',{proposalId:'first',sourceDigest:ev.sourceDigest});
+ await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
+ await excessApi(worker,200,'accept_hourly_excess',{proposalId:'second',sourceDigest:ev.sourceDigest});
+ const resolved=await excessApi(owner,200);assert.equal(resolved.resolved.recognizedServiceMinor,13000);assert.equal(resolved.resolved.unrecognizedExcessMs,1800000);assert.equal(resolved.payable,true);assert.equal(resolved.restrictionActive,false);assert.equal(resolved.dispute.status,'resolved_voluntarily');
+ assert.equal((await db.doc('freelanceHourlyExcessReviewsV1/'+excessId).get()).get('status'),'resolved_voluntarily');
+ for(const actor of [owner,worker]){assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[excessId]});const root=db.doc('freelanceEngagementRestrictionsV1/'+actor.uid);const stored=(await root.get()).data()!;assert.deepEqual(stored.openOfferIds,[excessId]);assert.deepEqual(stored.openCancellationOfferIds,[excessId]);assert.equal(stored.openExcessOfferIds,undefined);await root.set({schemaVersion:1,uid:actor.uid,openOfferIds:[]});}
+ const excessFinal=(await er.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;
+ assert.equal(excessFinal.kind,'hourly_excess_obligation');assert.equal(excessFinal.amountMinor,13000);assert.equal(excessFinal.sourceDigest,resolved.resolved.sourceDigest);assert.notEqual(excessFinal.sourceDigest,ev.sourceDigest);
+ // Synthetic pre-existing consent copied from the prepared hourly fixture, scoped to this contract.
+ for(const name of ['receivingDestination','pixSharing']){
+  const saved=(await ref.collection('directPayment').doc(name).get()).data()!;
+  await er.collection('directPayment').doc(name).set({...saved,offerId:excessId});
+ }
+ const excessFinance=async(actor:Actor,status:number,action?:string,extra:Record<string,unknown>={},target=excessId)=>{
+  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view=case&offerId='+target);
+  const r=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:target,action,confirmed:true,...extra})}:{})});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));return data;
+ };
+ assert.equal((await excessFinance(owner,200)).amountMinor,13000);
+ const disclosed=await excessFinance(owner,200,'reveal_pix',{expectedRevision:2});assert.equal(disclosed.amountMinor,13000);
+ const xf={eventId:'excess-paid',statement:'paid',expectedAmountMinor:13000,sourceDigest:excessFinal.sourceDigest};
+ await excessFinance(owner,409,'statement',{...xf,sourceDigest:ev.sourceDigest});
+ await excessFinance(owner,409,'statement',{...xf,expectedAmountMinor:12000});
+ await excessFinance(owner,200,'statement',xf);
+ await excessFinance(worker,200,'statement',{...xf,eventId:'excess-received',statement:'received'});
+ assert.equal((await excessFinance(owner,200)).financialState,'bilaterally_reported_received');
+ await excessApi(owner,409,'propose_hourly_excess',{...ep,proposalId:'third'});
+ // Separate excess case for administrative decision, with synthetic MFA only in emulator.
+ const adminId=excessId+'-admin',ar=db.doc('freelanceOffersV1/'+adminId);
+ await ar.set({...offer,id:adminId});await ar.collection('applications').doc(worker.uid).set({...application,offerId:adminId});
+ for(const name of ['schedule','schedule-schedule','timeline'])await ar.collection('attendance').doc(name).set((await er.collection('attendance').doc(name).get()).data()!);
+ await recordFreelanceVariablePaymentBasis(owner.uid,adminId);
+ const ax=await excessApi(worker,200,undefined,{},adminId),af={sourceDigest:ax.sourceDigest};
+ await excessApi(worker,200,'propose_hourly_excess',{...af,proposalId:'first',recognizedExcessMs:1800000},adminId);
+ await excessApi(owner,200,'decline_hourly_excess',{...af,proposalId:'first'},adminId);
+ await excessApi(worker,200,'dispute_hourly_excess',af,adminId);
+ await excessApi(owner,200,'request_hourly_excess_review',af,adminId);
+ const admin=await account('excess-review-admin',[]);
+ await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
+ const review=async(actor:Actor,status:number,input?:Record<string,unknown>)=>{
+  const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=hourly_excess'),{method:input?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});
+  const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;
+ };
+ await review(admin,403);
+ const original=auth.verifyIdToken.bind(auth);
+ const mock=t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
+ try{
+  const item=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(item);
+  const decision={action:'decide_hourly_excess',offerId:adminId,sourceDigest:ax.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedExcessMs:1800000,reason:'Decisão fictícia fundamentada do excedente',confirmed:true};
+  await excessApi(owner,200,'propose_hourly_excess',{...af,proposalId:'second',recognizedExcessMs:0},adminId);
+  await review(admin,409,decision);
+  const fresh=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
+  const note={kind:'excess',sourceDigest:ax.sourceDigest,evidenceId:'note-one',note:'Manifestação fictícia privada do profissional.'};
+  await excessApi(other,403,'submit_hourly_review_note',note,adminId);
+  await excessApi(worker,200,'submit_hourly_review_note',note,adminId);
+  await excessApi(worker,200,'submit_hourly_review_note',note,adminId);
+  const own=async(actor:Actor,kind:string,target:string,status=200)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=hourly_review_notes&kind='+kind+'&offerId='+target,{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+  assert.equal((await own(worker,'excess',adminId)).notes.length,1);
+  assert.deepEqual((await own(owner,'excess',adminId)).notes,[]);
+  await own(other,'excess',adminId,403);
+  await review(admin,409,{...decision,proposalDigest:fresh.proposalDigest});
+  const latest=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
+  assert.equal(latest.notes.length,1);assert.equal(latest.notes[0].note,note.note);assert.equal('actorUid' in latest.notes[0],false);
+  const next={...decision,proposalDigest:latest.proposalDigest,evidenceDigest:latest.evidenceDigest};
+  await review(admin,409,{...next,recognizedExcessMs:3600001});
+  await review(other,403,next);
+  assert.equal((await review(admin,200,next)).replay,false);assert.equal((await review(admin,200,next)).replay,true);
+  await review(admin,409,{...next,recognizedExcessMs:0});
+  await excessApi(worker,409,'accept_hourly_excess',{...af,proposalId:'second'},adminId);
+  await excessApi(worker,409,'submit_hourly_review_note',{...note,evidenceId:'late'},adminId);
+  const av=await excessApi(worker,200,undefined,{},adminId);
+  assert.equal(av.dispute.status,'resolved_administratively');assert.equal(av.resolved.recognizedServiceMinor,13000);assert.equal(av.restrictionActive,false);assert.equal(av.payable,true);
+  assert.equal('actorUid' in av.dispute.decision,false);
+  const adminFinal=(await ar.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;assert.equal(adminFinal.kind,'hourly_excess_obligation');assert.equal(adminFinal.amountMinor,13000);assert.equal(adminFinal.sourceDigest,av.resolved.sourceDigest);
+  assert.equal((await excessFinance(owner,200,undefined,{},adminId)).amountMinor,13000);
+  for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:false,openOfferIds:[]});
+  assert.ok(!(await review(admin,200)).items.some((x:any)=>x.offerId===adminId));
+ }finally{mock.mock.restore();}
+ await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);
+ // Positive contracted estimate rounded to zero on a short, bilaterally confirmed journey.
+ const zeroId=id+'-zero',zr=db.doc('freelanceOffersV1/'+zeroId);
+ const zeroPayment=createDirectPaymentTerms({method:'external_pix',amountMinor:1}),zeroWork={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:1};
+ const zeroFields={paymentTerms:zeroPayment,workTerms:zeroWork,completionRequestedAt:at('08:01'),completedAt:at('08:02')};
+ await zr.set({...offer,...zeroFields,id:zeroId,paymentMinor:1});
+ await zr.collection('applications').doc(worker.uid).set({...application,...zeroFields,offerId:zeroId});
+ await zr.collection('attendance').doc('schedule').set({proposalId:'schedule'});
+ await zr.collection('attendance').doc('schedule-schedule').set({id:'schedule',schedule:{location:'remote',scheduledStartAt:at('08:00'),agreedMinutes:60},proposedBy:'requester',proposedAt:at('07:20'),status:'accepted',decidedBy:'worker',decidedAt:at('07:25')});
+ await zr.collection('attendance').doc('timeline').set({scheduleId:'schedule',events:[events[0],{...events[1],at:at('08:01')},{...events[2],at:at('08:02')}]});
+ const zero=await recordFreelanceVariablePaymentBasis(worker.uid,zeroId);
+ assert.equal(zero.basis.disposition,'no_payment_required');assert.equal(zero.basis.finalAmountMinor,0);
+ assert.equal((await recordFreelanceVariablePaymentBasis(owner.uid,zeroId)).replay,true);
+ await excessFinance(other,403,undefined,{},zeroId);
+ for(const actor of [owner,worker]){
+  const z=await excessFinance(actor,200,undefined,{},zeroId);
+  assert.equal(z.amountMode,'hourly_zero');assert.equal(z.amountMinor,0);assert.equal(z.due,false);assert.equal(z.financialState,'no_payment_required');assert.equal(z.bankVerified,false);assert.equal(z.canRequestReview,false);assert.deepEqual(z.statements,[]);
+ }
+ await excessFinance(owner,409,'reveal_pix',{expectedRevision:2},zeroId);
+ await excessFinance(owner,409,'statement',{eventId:'zero-paid',statement:'paid',expectedAmountMinor:1,sourceDigest:zero.basis.sourceDigest},zeroId);
+ await excessFinance(worker,409,'request_review',{},zeroId);
+ assert.equal((await zr.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+ assert.equal((await zr.collection('directPayment').doc('hourlyStatements').get()).exists,false);
+ for(const name of ['receivingDestination','pixSharing']){const saved=(await ref.collection('directPayment').doc(name).get()).data()!;await zr.collection('directPayment').doc(name).set({...saved,offerId:zeroId});}
+ const withdrawal=async(actor:Actor,status:number)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=pix_withdrawal&offerId='+zeroId,{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ await withdrawal(owner,403);await withdrawal(other,403);
+ assert.deepEqual(await withdrawal(worker,200),{revision:2,sharingAuthorized:true,sharingRevoked:false,sharingSequence:0});
+ await excessFinance(worker,200,'revoke_pix_share',{expectedRevision:2,expectedSequence:0},zeroId);
+ await excessFinance(worker,200,'revoke_pix_share',{expectedRevision:2,expectedSequence:0},zeroId);
+ assert.deepEqual(await withdrawal(worker,200),{revision:2,sharingAuthorized:false,sharingRevoked:true,sharingSequence:1});
+ await excessFinance(worker,409,'restore_pix_share',{expectedRevision:2,expectedSequence:1},zeroId);
+ assert.equal((await excessFinance(worker,200,undefined,{},zeroId)).financialState,'no_payment_required');
+ await zr.collection('directPayment').doc('hourlyFinalObligation').set({fixture:true});
+ await excessFinance(owner,409,undefined,{},zeroId);
+ await zr.collection('directPayment').doc('hourlyFinalObligation').delete();
+ await zr.collection('attendance').doc('timeline').delete();await excessFinance(worker,409,undefined,{},zeroId);
+
  await ref.collection('directPayment').doc('obligation').set({fixture:true});
  await assert.rejects(recordFreelanceVariablePaymentBasis(owner.uid,id),/VARIABLE_PAYMENT_CONFLICT/);
  await act(owner,id,'record_hourly_basis',400,{confirmed:true});
@@ -1109,4 +1263,157 @@ test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparatio
   await finance(worker,200,'statement',{eventId:'received',statement:'received',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
   assert.equal((await finance(owner,200)).financialState,'bilaterally_reported_received');
  }finally{if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
+});
+
+test('hourly cancellation: administrative suspension snapshot, pre-start and worked service, no automatic debt',async t=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const owner=await account('hourly-cancel-owner',['requester']),worker=await account('hourly-cancel-worker',['freelancer']),other=await account('hourly-cancel-other',[]),admin=await account('hourly-cancel-admin',[]);
+ await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
+ const gate='KYRUB_FREELANCE_HOURLY_LIFECYCLE_TEST_ONLY',previous=process.env[gate];process.env[gate]='true';
+ const original=auth.verifyIdToken.bind(auth);
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+  const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
+ });
+ try{
+  const paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:360000});
+  const workTerms={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:360000};
+  const terms={title:'Cancelamento horário fictício',description:'Emulador',requirements:'',paymentMinor:360000,paymentTerms,workTerms};
+  const expected={expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms};
+  await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'hourly-cancel-'+suffix+'@example.invalid'}});
+  for(const started of [false,true]){
+   const id='hourly-cancel-'+started+'-'+suffix,ref=db.doc('freelanceOffersV1/'+id);
+   await act(owner,id,'publish',200,{terms});await act(worker,id,'apply',200,expected);await act(owner,id,'select',200,{applicantUid:worker.uid});await act(worker,id,'confirm',200,{confirmed:true,...expected});
+   const finance=async(a:Actor,status:number,action?:string,extra:Record<string,unknown>={},view='hourly_cancellation')=>{
+    const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view='+view+'&offerId='+id);
+    const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
+    const b=await res.json();assert.equal(res.status,status,JSON.stringify(b));return b;
+   };
+   await finance(worker,200,'bind_pix',{expectedRevision:1});await finance(worker,200,'authorize_pix_share',{expectedRevision:1});
+   if(started){
+    await act(owner,id,'propose_schedule',200,{proposalId:'schedule',scheduledStartAt:new Date(Date.now()+86400000).toISOString(),confirmed:true});
+    await act(worker,id,'accept_schedule',200,{proposalId:'schedule',confirmed:true});
+    await act(owner,id,'attendance_event',200,{kind:'authorize_early_start',eventId:'early',expectedSequence:0,confirmed:true});
+    await act(worker,id,'start',200,{confirmed:true});
+    await new Promise(resolve=>setTimeout(resolve,100));
+   }
+   const occurrenceId='cancel';
+   await act(worker,id,'report',200,{kind:'cancellation_requested',occurrenceId,confirmed:true});
+   if(!started){await finance(worker,200,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});await finance(worker,409,'restore_pix_share',{expectedRevision:1,expectedSequence:1});}
+   const decision={offerId:id,occurrenceId,outcome:'cancel',reason:'Cancelamento fictício fundamentado',confirmed:true};
+   const result=await decideFreelanceReview('Bearer '+admin.token,decision);
+   assert.equal(result.replay,false);assert.equal((await decideFreelanceReview('Bearer '+admin.token,decision)).replay,true);
+   assert.equal((await ref.get()).get('status'),'cancelled');
+   const basis=(await ref.collection('financialBasis').doc('hourlyCancellation').get()).data()!;
+   assert.equal(basis.finalAmountMinor,null);assert.equal(basis.recognizedServiceMinor,null);assert.equal(basis.payable,false);
+   if(started){assert.ok(basis.accounting.workMs>0);assert.equal(basis.accounting.status,'requires_suspension_review');}
+   else assert.equal(basis.accounting,null);
+   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,false);
+   assert.equal((await ref.collection('financialBasis').doc('remuneration').get()).exists,false);
+   await finance(other,403);const view=await finance(worker,200);assert.equal(view.finalAmountMinor,null);assert.equal(view.payable,false);
+   await finance(owner,409,'reveal_pix',{expectedRevision:1});
+   if(!started){await finance(worker,200,'revoke_pix_share',{expectedRevision:1,expectedSequence:0});assert.equal((await finance(worker,200,undefined,{},'pix_withdrawal')).sharingRevoked,true);}
+   const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
+   const financeRestrictions=async(a:Actor)=>{const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
+   await agreement(other,403);
+   const a=await agreement(worker,200);
+   assert.equal(a.agreedMinor,null);assert.equal(a.payable,false);
+   const proposal={proposalId:'p1',sourceDigest:a.sourceDigest,recognizedServiceMinor:started?Math.min(100,a.capMinor):0};
+   await finance(worker,400,'propose_hourly_cancellation',{...proposal,recognizedServiceMinor:a.capMinor+1});
+   await finance(worker,409,'propose_hourly_cancellation',{...proposal,sourceDigest:'0'.repeat(64)});
+   await finance(worker,200,'propose_hourly_cancellation',proposal);
+   await finance(worker,200,'propose_hourly_cancellation',proposal);
+   const decisionFields={proposalId:'p1',sourceDigest:a.sourceDigest};
+   await finance(worker,403,'accept_hourly_cancellation',decisionFields);
+   await finance(owner,403,'withdraw_hourly_cancellation',decisionFields);
+   await finance(owner,200,'decline_hourly_cancellation',decisionFields);
+   assert.equal((await agreement(owner,200)).restrictionActive,false);
+   const disputeFields={sourceDigest:a.sourceDigest};
+   await finance(other,403,'dispute_hourly_cancellation',disputeFields);
+   await finance(owner,409,'dispute_hourly_cancellation',{sourceDigest:'0'.repeat(64)});
+   await finance(worker,200,'dispute_hourly_cancellation',disputeFields);
+   await finance(worker,200,'dispute_hourly_cancellation',disputeFields);
+   for(const actor of [owner,worker]){
+    assert.deepEqual(await financeRestrictions(actor),{restricted:true,openOfferIds:[id]});
+   }
+   assert.equal((await act(owner,id+'-blocked','publish',409,{terms})).code,'FREELANCE_FINANCIAL_RESTRICTION');
+   await finance(owner,200,'request_hourly_cancellation_review',disputeFields);
+   await finance(owner,200,'request_hourly_cancellation_review',disputeFields);
+   assert.equal((await agreement(worker,200)).dispute.status,'review_requested');
+   // A synthetic second restriction cause on the same contract must survive this agreement.
+   if(started)for(const actor of [owner,worker])await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[id]});
+   await finance(owner,200,'propose_hourly_cancellation',{...proposal,proposalId:'p2'});
+   await finance(worker,409,'accept_hourly_cancellation',decisionFields);
+   const second={...decisionFields,proposalId:'p2'};
+   const adminReview=async(actor:Actor,status:number,input?:Record<string,unknown>)=>{
+    const url='http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=hourly_cancellation');
+    const res=await fetch(url,{method:input?'POST':'GET',headers:{authorization:'Bearer '+actor.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});
+    const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));return data;
+   };
+   await adminReview(other,403);
+   const queue=await adminReview(admin,200),item=queue.items.find((v:any)=>v.offerId===id);
+   assert.ok(item);assert.equal(item.sourceDigest,a.sourceDigest);
+   const adminDecision={action:'decide_hourly_cancellation',offerId:id,sourceDigest:a.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedServiceMinor:proposal.recognizedServiceMinor,reason:'Decisão fictícia fundamentada',confirmed:true};
+   if(started){
+    const note={kind:'cancellation',sourceDigest:a.sourceDigest,evidenceId:'cancel-note',note:'Manifestação fictícia sobre o cancelamento.'};
+    await finance(worker,200,'submit_hourly_review_note',note);
+    await finance(worker,200,'submit_hourly_review_note',note);
+    await finance(owner,409,'submit_hourly_review_note',note);
+    await adminReview(admin,409,adminDecision);
+    const fresh=(await adminReview(admin,200)).items.find((v:any)=>v.offerId===id);
+    assert.equal(fresh.notes.length,1);assert.equal(fresh.notes[0].note,note.note);
+    Object.assign(adminDecision,{evidenceDigest:fresh.evidenceDigest});
+    await adminReview(admin,409,{...adminDecision,proposalDigest:'0'.repeat(64)});
+    await adminReview(admin,409,{...adminDecision,sourceDigest:'0'.repeat(64)});
+    await adminReview(admin,409,{...adminDecision,recognizedServiceMinor:a.capMinor+1});
+    assert.equal((await adminReview(admin,200,adminDecision)).replay,false);
+    assert.equal((await adminReview(admin,200,adminDecision)).replay,true);
+    await adminReview(admin,409,{...adminDecision,reason:'Outra decisão fictícia fundamentada'});
+    await finance(worker,409,'accept_hourly_cancellation',second);
+   }else{
+    await finance(worker,200,'accept_hourly_cancellation',second);
+    await finance(worker,200,'accept_hourly_cancellation',second);
+    await adminReview(admin,409,adminDecision);
+   }
+   assert.ok(!(await adminReview(admin,200)).items.some((v:any)=>v.offerId===id));
+   const settled=await agreement(owner,200);
+   assert.equal(started?settled.administrativeMinor:settled.agreedMinor,proposal.recognizedServiceMinor);
+   assert.equal(settled.dispute.status,started?'resolved_administratively':'resolved_voluntarily');assert.equal(settled.restrictionActive,false);
+   for(const actor of [owner,worker]){
+    assert.deepEqual(await financeRestrictions(actor),{restricted:started,openOfferIds:started?[id]:[]});
+    if(started)await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openOfferIds:[]});
+   }
+   assert.equal((await ref.collection('directPayment').doc('hourlyCancellationAgreement-p1').get()).get('status'),'declined');
+   const resolution=(await ref.collection('directPayment').doc('hourlyCancellationResolution').get()).data()!;
+   assert.equal(resolution.recognizedServiceMinor,proposal.recognizedServiceMinor);
+   assert.equal(resolution.disposition,started?'positive_amount_calculated':'no_payment_required');
+   assert.equal(settled.payable,started);
+   assert.equal((await ref.collection('directPayment').doc('hourlyFinalObligation').get()).exists,started);
+   if(started){
+    const final=(await ref.collection('directPayment').doc('hourlyFinalObligation').get()).data()!;
+    assert.equal(final.kind,'hourly_cancellation_obligation');assert.equal(final.amountMinor,proposal.recognizedServiceMinor);
+    assert.equal(final.sourceDigest,resolution.sourceDigest);assert.notEqual(final.sourceDigest,a.sourceDigest);
+    const financial=await finance(owner,200,undefined,{},'case');assert.equal(financial.amountMinor,final.amountMinor);assert.equal(financial.due,true);
+    const reveal=await finance(owner,200,'reveal_pix',{expectedRevision:1});assert.equal(reveal.amountMinor,final.amountMinor);
+    const fields={eventId:'cancel-paid',statement:'paid',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest};
+    await finance(owner,409,'statement',{...fields,expectedAmountMinor:360000});
+    await finance(owner,409,'statement',{...fields,sourceDigest:a.sourceDigest});
+    await finance(owner,200,'statement',fields);
+    await finance(worker,200,'statement',{...fields,eventId:'cancel-denied',statement:'not_received'});
+    assert.equal((await finance(owner,200,undefined,{},'case')).financialState,'disputed');
+    await finance(worker,200,'statement',{...fields,eventId:'cancel-received',statement:'received'});
+    assert.equal((await finance(owner,200,undefined,{},'case')).financialState,'bilaterally_reported_received');
+    assert.equal((await agreement(owner,200)).restrictionActive,false);
+   }else{
+    await finance(owner,409,'reveal_pix',{expectedRevision:1});await finance(owner,409,undefined,{},'case');
+    await finance(owner,409,'statement',{eventId:'zero-paid',statement:'paid',expectedAmountMinor:0,sourceDigest:resolution.sourceDigest});
+   }
+   await finance(owner,409,'propose_hourly_cancellation',{...proposal,proposalId:'p3'});
+   if(started){
+    await ref.collection('attendance').doc('timeline').delete();
+    await agreement(worker,409);
+    await finance(worker,409);
+   }
+  }
+ }finally{t.mock.restoreAll();if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
 });
