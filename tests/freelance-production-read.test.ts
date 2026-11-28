@@ -141,3 +141,16 @@ test('precontract HTTP permits only publish, apply and select under explicit pil
  }
  assert.equal(calls,6);
 });
+
+test('contract authority is independent and limited to fixed external Pix on completion',async()=>{
+ const {freelanceContractPilotEnabled,assertContractPilotTerms}=await import('../server/freelance/freelanceEngagementPilotAuthority.js');
+ const e={...env,KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED:'true',KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED:'true',KYRUB_PERSONAL_PIX_PILOT_ENABLED:'true'};
+ assert.equal(freelanceContractPilotEnabled(e),true);
+ for(const flag of ['KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED','KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED','KYRUB_PERSONAL_PIX_PILOT_ENABLED','KYRUB_FREELANCE_PRODUCTION_READ_ENABLED'])assert.equal(freelanceContractPilotEnabled({...e,[flag]:undefined}),false);
+ assert.equal(freelanceContractPilotEnabled({...e,VERCEL_ENV:'preview'}),false);
+ const terms={paymentTerms:{schemaVersion:1 as const,method:'external_pix' as const,timing:'on_completion' as const,currency:'BRL' as const,amountMinor:1000,platformCommissionMinor:0 as const,providerFeeResponsibility:'financial_service_customer' as const},workTerms:{mode:'fixed' as const,location:'remote' as const,estimatedMinutes:60}};
+ assert.doesNotThrow(()=>assertContractPilotTerms(terms));
+ assert.throws(()=>assertContractPilotTerms({...terms,paymentTerms:{...terms.paymentTerms,timing:'advance'}}));
+ assert.throws(()=>assertContractPilotTerms({...terms,paymentTerms:{...terms.paymentTerms,method:'mercado_pago'}}));
+ assert.throws(()=>assertContractPilotTerms({...terms,paymentTerms:undefined}));
+});
