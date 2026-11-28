@@ -72,3 +72,14 @@ Não reabrir funcionalidades ou homologações já comprovadas. O checklist hist
 - #1355, #1380, #1409, #1414 continuam divergentes (29, 168, 13, 1 commits exclusivos, respectivamente, comparados ao SHA candidato); divergência não prova ausência funcional. Fazer comparação de equivalência e triagem de necessidade comercial, não merge automático ou expansão de escopo.
 - Validações finais: comparar regras/índices e configuração realmente implantados, verificar evidências anteriores de ingresso/LGPD/MFA e não repetir testes aprovados sem motivo. Jornada ERP e Freelas real/piloto autorizada; entregas independentes conforme escopo aprovado e estado efetivo. Reputações/Cocares experimentais não devem ser ativados sem cobertura; não tornar otimizações cosméticas requisito artificial de lançamento. Mercado Pago pessoal, split 1:N e adiantamentos não devem bloquear o caminho Pix externo aprovado. Kyrubia permanece fora.
 - Prioridade imediata: concluir #1577 após autorização, depois inventário curto de diferenças efetivas entre emulador e produção e classificação de bloqueios reais, sem novos desenvolvimentos laterais. Nenhuma autorização de produção, Firebase, cobrança ou migração implícita.
+
+### Mapa de transporte confirmado no SHA ed27e94
+
+| Rota Express existente (server.ts, 291–303) | Reescrita explícita em vercel.json | Barreira atual |
+|---|---|---|
+| /api/freelance/workspace | Não | freelanceWorkspaceEnabled: emuladores, sem Vercel |
+| /api/freelance/finance | Não | freelanceFinanceEnabled depende do workspace e flag local financeira |
+| /api/personal-finance/pix | Não | personalPixTransportEnabled: emuladores, sem Vercel |
+| /api/admin/freelance-financial-review | Não | financialReviewAdminEnabled; verificar autoridade por operação |
+
+A rota já existente /api/admin/freelance-review possui rewrite para /api/admin/operations/health?transport=freelance-review e gate de produção próprio; não confundir revisão operacional com revisão financeira. Reutilizar padrão serverless já homologado (notificações), sem expor multiplexer genérico ou remover gates locais. Os handlers existentes recebem Request/Response estrutural, já fazem autenticação ou delegam ao serviço de autoridade e retornam falha fechada. Primeira candidata posterior ao #1577 deve estabelecer transporte explicitamente roteado e desativado por padrão, com testes do handler real e autenticação/isolamento, antes de adaptar as barreiras de serviço por modalidade. Não alterar a PR #1577 já homologada. Nenhuma implantação ou habilitação autorizada por este registro.
