@@ -3,8 +3,11 @@ import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import {normalizePersonalPixKey,type PersonalPixKeyType} from '../../../shared/personalPixDestination';
 
+export function productionPersonalFinanceEnabled(){
+ return import.meta.env.PROD&&import.meta.env.VITE_KYRUB_FREELANCE_PRODUCTION_UI_ENABLED==='true'&&auth.app.options.projectId==='kyrub-b8d0e'&&typeof window!=='undefined'&&window.location.protocol==='https:'&&['www.kyrub.com','kyrub.com'].includes(window.location.hostname);
+}
 export function personalFinanceCandidateEnabled(){
- return import.meta.env.DEV&&import.meta.env.VITE_KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION==='true'&&
+ return productionPersonalFinanceEnabled()||import.meta.env.DEV&&import.meta.env.VITE_KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION==='true'&&
  import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'&&auth.app.options.projectId==='kyrub-security-test'&&
  typeof window!=='undefined'&&['localhost','127.0.0.1'].includes(window.location.hostname);
 }
@@ -38,6 +41,7 @@ function valid(v:unknown):v is Snapshot{
 const field='w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white';
 const btn='rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-cyan-300 disabled:opacity-50';
 export function PersonalPixSettings({onActivity}:{onActivity?:(uid:string,active:boolean)=>void}){
+ const production=productionPersonalFinanceEnabled();
  const [user,setUser]=useState<User|null>(null),[snapshot,setSnapshot]=useState<Snapshot|null>(null);
  const [type,setType]=useState<PersonalPixKeyType>('random'),[key,setKey]=useState(''),[confirmed,setConfirmed]=useState(false);
  const [revoke,setRevoke]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
@@ -69,7 +73,7 @@ export function PersonalPixSettings({onActivity}:{onActivity?:(uid:string,active
    const data=await response.json().catch(()=>null);
    if(!response.ok||!valid(data))throw Error(labels[data?.code]??'Consulta não confirmada.');
    if(active())setSnapshot(data);
-   try{
+   if(!production)try{
     const response=await fetch('/api/personal-finance/pix?view=cid_candidates',{headers:{authorization:'Bearer '+token},cache:'no-store',signal:abort.signal});
     const list=await response.json().catch(()=>null);
     if(!response.ok||!validCandidates(list))throw Error(labels[list?.code]??'Não foi possível consultar os CIDs vinculados.');
@@ -77,9 +81,10 @@ export function PersonalPixSettings({onActivity}:{onActivity?:(uid:string,active
    }catch(e){if(active())setCidError(e instanceof Error?e.message:'Consulta de CIDs indisponível.');}
   })().catch(e=>{if(active())setError(e instanceof Error?e.message:'Consulta não confirmada.');}).finally(()=>{if(active()){locked.current=false;setBusy(false);}});
   return()=>{generation.current++;abort.abort();};
- },[user,refresh]);
+ },[user,refresh,production]);
  const current=user&&auth.currentUser?.uid===user.uid?snapshot:null;
  const submit=async(action:'declare'|'revoke'|'import_cid')=>{
+  if(production&&action==='import_cid')return;
   if(locked.current||!current||!user||auth.currentUser?.uid!==user.uid||(action==='import_cid'?!cidConfirmed:!confirmed))return;
   const candidate=action==='import_cid'?candidates.find(c=>c.cidId===selectedCid):undefined;
   if(action==='import_cid'&&!candidate)return;
@@ -95,13 +100,13 @@ export function PersonalPixSettings({onActivity}:{onActivity?:(uid:string,active
     body:JSON.stringify({action,expectedRevision:current.revision,confirmed:true,...(destination?{destination}:{}),...(candidate?{cidId:candidate.cidId,sourceVersion:candidate.sourceVersion,replaceExisting:current.status==='declared'}:{})})});
    const data=await res.json().catch(()=>null);
    if(!res.ok||!valid(data)||data.revision!==current.revision+1||data.status!==(action==='revoke'?'revoked':'declared'))throw Error(labels[data?.code]??'Alteração não confirmada. Consulte novamente.');
-   if(active()){setSnapshot(data);setNotice(action==='import_cid'?'Chave Pix do CID aproveitada. Titularidade não verificada.':action==='declare'?'Chave de teste declarada. Titularidade não verificada.':'Revogação confirmada pelo servidor.');}
+   if(active()){setSnapshot(data);setNotice(action==='import_cid'?'Chave Pix do CID aproveitada. Titularidade não verificada.':action==='declare'?(production?'Chave Pix declarada. Titularidade não verificada.':'Chave de teste declarada. Titularidade não verificada.'):'Revogação confirmada pelo servidor.');}
   }catch(e){if(active()){setSnapshot(null);setCandidates([]);setError(e instanceof Error?e.message:'Alteração não confirmada. Consulte novamente.');}}
   finally{if(active()){locked.current=false;setBusy(false);}}
  };
  return <section id="personal-pix-settings" className="space-y-3 rounded-2xl border border-slate-700 p-3 text-sm text-slate-300">
   <h5 className="text-base font-bold text-white">Configurações financeiras</h5>
-  <p className="text-amber-300">Homologação local · use somente chaves fictícias. Sem dinheiro real.</p>
+  <p className="text-amber-300">{production?'Chave para recebimento de Pix externo.':'Homologação local · use somente chaves fictícias. Sem dinheiro real.'}</p>
   <h6 className="font-bold text-white">Pix externo</h6>
   <p>Recebimento em instituição de sua escolha. Não é saldo Kyrub. A declaração não comprova titularidade bancária.</p>
   <button type="button" className={btn} disabled={busy||!user} onClick={()=>setRefresh(n=>n+1)}>Atualizar cadastro</button>
@@ -124,9 +129,9 @@ export function PersonalPixSettings({onActivity}:{onActivity?:(uid:string,active
    </div>}
    {!revoke&&!selectedCid&&<form className="space-y-3" onSubmit={e=>{e.preventDefault();void submit('declare');}}>
     <label className="block">Tipo de chave<select className={field} value={type} disabled={busy} onChange={e=>{setType(e.target.value as PersonalPixKeyType);clear();}}>{Object.entries(types).map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></label>
-    <label className="block">Chave Pix de teste<input className={field} type="password" autoComplete="off" spellCheck={false} maxLength={254} value={key} disabled={busy} onChange={e=>{setKey(e.target.value);setConfirmed(false);}}/></label>
+    <label className="block">{production?'Chave Pix':'Chave Pix de teste'}<input className={field} type="password" autoComplete="off" spellCheck={false} maxLength={254} value={key} disabled={busy} onChange={e=>{setKey(e.target.value);setConfirmed(false);}}/></label>
     {type==='phone'&&<p>Formato: +55 seguido de DDD e número.</p>}
-    <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/>Confirmo que esta é uma chave fictícia para homologação.</label>
+    <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={e=>setConfirmed(e.target.checked)}/>{production?'Confirmo a declaração desta chave para recebimento.':'Confirmo que esta é uma chave fictícia para homologação.'}</label>
     <button type="submit" className={btn} disabled={busy||!key.trim()||!confirmed}>{current.status==='declared'?'Substituir chave':'Declarar chave'}</button>
    </form>}
    {current.status==='declared'&&!revoke&&<button type="button" className={btn} disabled={busy} onClick={()=>{clear();setRevoke(true);}}>Revogar chave</button>}
