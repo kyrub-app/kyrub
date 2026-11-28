@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {freelancePrecontractEnabled,assertProductionPrecontractTerms,freelancePilotAllowed} from '../server/freelance/freelanceProductionPolicy.js';
+import {handleFreelanceProductionRead} from '../server/freelance/freelanceProductionReadTransport.js';
+import {createDirectPaymentTerms} from '../shared/directPaymentTerms.js';
+const env={KYRUB_FREELANCE_PRODUCTION_READ_ENABLED:'true',KYRUB_FREELANCE_PRODUCTION_PRECONTRACT_ENABLED:'true',KYRUB_FREELANCE_PILOT_UIDS:'pilot,worker',VERCEL:'1',VERCEL_ENV:'production',NODE_ENV:'production'};
+test('precontract requires independent release, valid pilot and supported direct terms',()=>{
+ assert.equal(freelancePrecontractEnabled(env),true);
+ assert.equal(freelancePrecontractEnabled({...env,KYRUB_FREELANCE_PRODUCTION_PRECONTRACT_ENABLED:undefined}),false);
+ assert.equal(freelancePrecontractEnabled({...env,VERCEL_ENV:'preview'}),false);
+ assert.equal(freelancePilotAllowed(env,'worker'),true);
+ assert.equal(freelancePilotAllowed(env,'other'),false);
+ assert.equal(freelancePilotAllowed({...env,KYRUB_FREELANCE_PILOT_UIDS:'tagpk_fixture'},'tagpk_fixture'),false);
+ const workTerms={mode:'hourly' as const,location:'remote' as const,estimatedMinutes:60,hourlyRateMinor:2000};
+ const paymentTerms=createDirectPaymentTerms({method:'external_pix',timing:'on_completion',amountMinor:2000});
+ assert.doesNotThrow(()=>assertProductionPrecontractTerms({workTerms,paymentTerms}));
+ assert.throws(()=>assertProductionPrecontractTerms({workTerms,paymentTerms:{...paymentTerms,timing:'advance'}}),/NOT_ENABLED/);
+ assert.throws(()=>assertProductionPrecontractTerms({workTerms,paymentTerms:{...paymentTerms,method:'mercado_pago'}}),/NOT_ENABLED/);
+ assert.throws(()=>assertProductionPrecontractTerms({}),/NOT_ENABLED/);
+});
+test('precontract HTTP keeps actor from token, strips no business fields and returns ACK only',async()=>{
+ let status=0,body:unknown,called=0;
+ const response={setHeader(){},status(n:number){status=n;return{json(v:unknown){body=v;}}}};
+ const input={action:'publish',offerId:'offer',terms:{}};
+ const deps={env,projectReady:()=>true,verify:async()=>({uid:'pilot',aud:'kyrub-b8d0e',email_verified:true}),accountEligible:async()=>true,read:async()=>({items:[],nextCursor:null}),mutate:async(uid:string,b:unknown)=>{called++;assert.equal(uid,'pilot');assert.deepEqual(b,input);return {private:'never returned'};}};
+ const req={method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:input};
+ await handleFreelanceProductionRead({...req,query:{uid:'other'}},response,deps);assert.equal(status,400);
+ await handleFreelanceProductionRead({...req,headers:{authorization:'Bearer fixture'}},response,deps);assert.equal(status,415);
+ await handleFreelanceProductionRead(req,response,{...deps,accountEligible:async()=>false});assert.equal(status,403);
+ assert.equal(called,0);
+ await handleFreelanceProductionRead(req,response,deps);assert.equal(status,200);assert.equal(called,1);assert.deepEqual(body,{confirmed:true});
+});

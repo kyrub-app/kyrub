@@ -26,12 +26,12 @@ function projectApplication(raw:unknown,offer:FreelanceOffer,uid:string){
  return {applicantUid:a.applicantUid,status:effectiveStatus,createdAt:a.createdAt,...(proposal?{counterproposal:proposal}:{})};
 }
 const PAGE_SIZE=20;
-export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:unknown,cursor?:unknown){
+export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:unknown,cursor?:unknown,productionPilot=false){
  if(cursor!==undefined&&cursor!==null&&cursor!==''&&!validFreelanceId(cursor))throw Error('FREELANCE_INVALID');
  const after=validFreelanceId(cursor)?cursor:undefined;
  if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
-  if(view==='requester_stores'){if(offerId||cursor)throw Error('FREELANCE_INVALID');const store=await readOwnedFreelanceStore(tx,uid);return {items:store?[store]:[]};}
+  if(view==='requester_stores'){if(offerId||cursor)throw Error('FREELANCE_INVALID');const store=await readOwnedFreelanceStore(tx,uid,productionPilot);return {items:store?[store]:[]};}
   if(view==='open'||view==='owner'){
    let query=(view==='open'?offers().where('status','==','open'):offers().where('ownerUid','==',uid)).orderBy(FieldPath.documentId()).limit(PAGE_SIZE+1);
    if(after)query=query.startAfter(after);
