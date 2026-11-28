@@ -1,3 +1,4 @@
+import {assertEngagementPilotAuthority,assertContractPilotTerms,freelanceContractPilotEnabled} from './freelanceEngagementPilotAuthority.js';
 import {readFreelanceHourlyFinalContext} from './freelanceHourlyFinalObligationService.js';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
@@ -7,6 +8,17 @@ import {appendExternalPixStatement,projectExternalPixStatements,type ExternalPix
 import {writeFreelanceFinancialNotices} from './freelanceFinancialNoticeService.js';
 import {prepareVoluntaryDisputeRestriction,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 
+function assertStatementAuthority(uid:string,pilot:boolean){
+ if(!pilot){assertLocal();return;}
+ assertEngagementPilotAuthority(uid);
+ if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+}
+function assertStatementPair(offer:FreelanceOffer){
+ assertContractPilotTerms(offer);
+ if(!validFreelanceId(offer.selectedApplicantUid))throw Error('FREELANCE_FORBIDDEN');
+ assertEngagementPilotAuthority(offer.ownerUid);
+ assertEngagementPilotAuthority(offer.selectedApplicantUid);
+}
 function assertLocal(){
  if(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
  !/^(127\.0\.0\.1|localhost):8088$/.test(process.env.FIRESTORE_EMULATOR_HOST??'')||
@@ -106,13 +118,14 @@ export function checkedReview(raw:unknown,obligation:ReturnType<typeof buildFree
  return r;
 }
 /** Explicit escalation by either participant, one queue entry per disputed obligation. */
-export async function requestFreelanceFinancialReview(uid:string,offerId:string,input:unknown){
- assertLocal();
+export async function requestFreelanceFinancialReview(uid:string,offerId:string,input:unknown,pilot=false){
+ assertStatementAuthority(uid,pilot);
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input)||
  Object.keys(input).length!==1||(input as Record<string,unknown>).confirmed!==true)throw Error('FREELANCE_INVALID');
  return adminDb.runTransaction(async tx=>{
   const ref=reviewRef(offerId),snapshot=await tx.get(ref);
-  const {obligation,events,projection}=await readFinancialContext(tx,uid,offerId);
+  const {offer,obligation,events,projection}=await readFinancialContext(tx,uid,offerId);
+  if(pilot)assertStatementPair(offer);
   const existing=checkedReview(snapshot.data(),obligation);
   if(projection.state!=='disputed')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   await assertFinancialCaseRestrictions(tx,obligation);
@@ -134,8 +147,8 @@ export async function requestFreelanceFinancialReview(uid:string,offerId:string,
  * Participant statements record facts as asserted, not provider verification.
  * The restriction and its causal history commit together or neither commits.
  */
-export async function recordFreelanceExternalPaymentStatement(uid:string,offerId:string,input:unknown){
- assertLocal();
+export async function recordFreelanceExternalPaymentStatement(uid:string,offerId:string,input:unknown,pilot=false){
+ assertStatementAuthority(uid,pilot);
  if(!validFreelanceId(uid)||!validFreelanceId(offerId)||!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(![3,5].includes(Object.keys(b).length)||Object.keys(b).some(k=>!['eventId','statement','confirmed','expectedAmountMinor','sourceDigest'].includes(k))||!validFreelanceId(b.eventId)||b.confirmed!==true||
@@ -143,6 +156,7 @@ export async function recordFreelanceExternalPaymentStatement(uid:string,offerId
  return adminDb.runTransaction(async tx=>{
   const review=reviewRef(offerId),reviewSnapshot=await tx.get(review);
   const {offer,obligation,events,statementRef,hourlyFinal}=await readFinancialContext(tx,uid,offerId);
+  if(pilot)assertStatementPair(offer);
   if(hourlyFinal?(Object.keys(b).length!==5||b.expectedAmountMinor!==hourlyFinal.amountMinor||b.sourceDigest!==hourlyFinal.sourceDigest):Object.keys(b).length!==3)throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   if((b.statement==='paid'&&uid!==offer.ownerUid)||(b.statement!=='paid'&&uid!==offer.selectedApplicantUid))throw Error('FREELANCE_FORBIDDEN');
   const now=new Date().toISOString();
