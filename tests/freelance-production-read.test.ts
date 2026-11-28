@@ -96,3 +96,19 @@ test('personal Pix pilot requires explicit production authority and recent authe
  await handlePersonalPixPilot({...req,method:'GET'},response,deps);assert.equal(status,200);assert.equal(reads,1);
  await handlePersonalPixPilot(req,response,deps);assert.equal(status,200);assert.equal(changes,1);
 });
+
+test('engagement pilot is separately gated and only allows supported personal fixed-price terms',async()=>{
+ const {freelanceEngagementPilotEnabled,freelanceEngagementPilotAllows,assertEngagementPilotTerms}=await import('../server/freelance/freelanceEngagementPilotAuthority.js');
+ const e={...env,KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED:'true'};
+ assert.equal(freelanceEngagementPilotEnabled(e),true);
+ for(const change of [{KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED:undefined},{KYRUB_FREELANCE_PRODUCTION_READ_ENABLED:undefined},{VERCEL_ENV:'preview'},{FIRESTORE_EMULATOR_HOST:'localhost:8088'},{KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION:'true'}])assert.equal(freelanceEngagementPilotEnabled({...e,...change}),false);
+ assert.equal(freelanceEngagementPilotAllows('pilot',e),true);
+ assert.equal(freelanceEngagementPilotAllows('other',e),false);
+ assert.equal(freelanceEngagementPilotAllows('tagpk_demo',{...e,KYRUB_FREELANCE_PILOT_UIDS:'tagpk_demo'}),false);
+ const terms={paymentTerms:{schemaVersion:1 as const,method:'external_pix' as const,timing:'on_completion' as const,currency:'BRL' as const,amountMinor:1000,platformCommissionMinor:0 as const,providerFeeResponsibility:'financial_service_customer' as const},workTerms:{mode:'fixed' as const,location:'remote' as const,estimatedMinutes:60}};
+ assert.doesNotThrow(()=>assertEngagementPilotTerms(terms));
+ assert.throws(()=>assertEngagementPilotTerms({...terms,paymentTerms:undefined}));
+ assert.throws(()=>assertEngagementPilotTerms({...terms,paymentTerms:{...terms.paymentTerms,method:'mercado_pago'}}));
+ assert.throws(()=>assertEngagementPilotTerms({...terms,workTerms:{...terms.workTerms,mode:'hourly',hourlyRateMinor:1000}}));
+ assert.throws(()=>assertEngagementPilotTerms({...terms,requesterStore:{storeId:'store',displayName:'Store',representativeRole:'owner'}}));
+});
