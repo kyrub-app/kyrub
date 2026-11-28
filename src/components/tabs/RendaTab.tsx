@@ -15,6 +15,7 @@ import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { FreelanceEarningsPlanningCard } from '../renda/FreelanceEarningsPlanningCard';
+import { useLocalFreelaCandidate } from '../modals/CanonicalFreelaWorkspace';
 import { RendaActivityAlertsBell } from '../renda/RendaActivityAlertsBell';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
 import { ErpManagementAlertsBell } from '../store/ErpManagementAlertsBell';
@@ -70,6 +71,7 @@ export function RendaTab({
   setGestaoRole,
   triggerToast,
 }: RendaTabProps) {
+  const localFreelaCandidate = useLocalFreelaCandidate();
   const [hasConfiguredStore, setHasConfiguredStore] =
     useState(false);
   const [isCheckingStore, setIsCheckingStore] =
@@ -345,7 +347,7 @@ export function RendaTab({
               id="btn-fazer-freela"
             >
               <span>Fazer freela</span>
-              {freelanceJobs.filter(
+              {!localFreelaCandidate && freelanceJobs.filter(
                 job => job.status === 'open'
               ).length > 0 && (
                 <span className="rounded-full bg-orange-600 px-1.5 text-[8px] font-bold font-mono text-slate-950">

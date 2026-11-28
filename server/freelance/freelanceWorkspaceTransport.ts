@@ -1,6 +1,7 @@
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {readFreelanceWorkspace} from './freelanceWorkspaceReadService.js';
+import {readFreelancePersonalSummary} from './freelancePersonalReadService.js';
 import * as lifecycle from './freelanceLifecycleService.js';
 
 export function freelanceWorkspaceEnabled(){
@@ -31,8 +32,8 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
 }
 type Request={method?:string;headers:Record<string,string|string[]|undefined>;query?:Record<string,unknown>;body?:unknown};
 type Response={setHeader(name:string,value:string):unknown;status(code:number):{json(body:unknown):unknown}};
-type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:typeof readFreelanceWorkspace;mutate:(uid:string,input:unknown)=>Promise<unknown>};
-const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:readFreelanceWorkspace,mutate:executeFreelanceWorkspaceAction};
+type Dependencies={enabled:()=>boolean;verify:(token:string)=>Promise<{uid:string}>;read:(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>Promise<unknown>;mutate:(uid:string,input:unknown)=>Promise<unknown>};
+const defaults:Dependencies={enabled:freelanceWorkspaceEnabled,verify:token=>adminAuth.verifyIdToken(token,true),read:(uid,view,offerId,cursor)=>view==='alerts'||view==='earnings'?readFreelancePersonalSummary(uid,view):readFreelanceWorkspace(uid,view,offerId,cursor),mutate:executeFreelanceWorkspaceAction};
 export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dependencies=defaults){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
  try{if(!deps.enabled()){res.status(503).json({code:'FREELANCE_DISABLED'});return;}}catch{res.status(503).json({code:'FREELANCE_DISABLED'});return;}
@@ -43,7 +44,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
  let uid:string;
  try{uid=(await deps.verify(token)).uid;if(!validFreelanceId(uid))throw Error('AUTH_REQUIRED');}catch{res.status(401).json({code:'AUTH_REQUIRED'});return;}
  try{
-  if(req.method==='GET'){res.status(200).json(await deps.read(uid,req.query?.view,req.query?.offerId));return;}
+  if(req.method==='GET'){res.status(200).json(await deps.read(uid,req.query?.view,req.query?.offerId,req.query?.cursor));return;}
   const media=req.headers['content-type'];
   if(typeof media!=='string'||!/^application\/json(?:\s*;|$)/i.test(media)){res.status(415).json({code:'JSON_REQUIRED'});return;}
   if(Buffer.byteLength(JSON.stringify(req.body)??'','utf8')>16384){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}

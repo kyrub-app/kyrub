@@ -133,3 +133,47 @@ test('read workspace excludes other participants private records',async()=>{
  const ownerList=await readFreelanceWorkspace(owner,'owner');
  assert.ok(ownerList.items?.some(i=>i.id===id));
 });
+
+test('personal earnings and alerts expose only authenticated participant records',async()=>{
+ const {readFreelancePersonalSummary}=await import('../server/freelance/freelancePersonalReadService.js');
+ const id='fixture-freelance-summary';
+ await s.publishFreelanceOffer(owner,id,input);await s.applyToFreelanceOffer(worker,id);
+ const initial=await readFreelancePersonalSummary(owner,'alerts');
+ assert.ok(initial.alerts?.some(a=>a.offerId===id&&a.state==='applications_pending'));
+ await s.selectFreelanceApplication(owner,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const projected=await readFreelancePersonalSummary(worker,'earnings');
+ assert.ok(projected.entries?.some(e=>e.offerId===id&&e.state==='projected'&&e.receivedMinor===null));
+ await funding.confirmSimulatedFreelanceFunding(id,'fixture-summary-payment',15000,owner,worker);
+ await s.recordFreelanceExecution(worker,id,'start',true);await s.recordFreelanceExecution(worker,id,'request_completion',true);await s.recordFreelanceExecution(owner,id,'confirm_completion',true);
+ const earned=await readFreelancePersonalSummary(worker,'earnings');
+ assert.ok(earned.entries?.some(e=>e.offerId===id&&e.confirmedServiceMinor===15000&&e.receivedMinor===null));
+ assert.equal(earned.receivedMinor,null);
+ const unrelated=await readFreelancePersonalSummary('unrelated','earnings');
+ assert.deepEqual(unrelated.entries,[]);assert.equal(unrelated.receivedMinor,null);
+ const own=await readFreelancePersonalSummary(owner,'earnings');
+ assert.ok(!own.entries?.some(e=>e.offerId===id));
+});
+
+test('workspace pages and visible candidate names do not expose reserved profile data',async()=>{
+ const {readFreelanceWorkspace}=await import('../server/freelance/freelanceWorkspaceReadService.js');
+ const {readFreelancePersonalSummary}=await import('../server/freelance/freelancePersonalReadService.js');
+ const id='fixture-freelance-visible';
+ await s.publishFreelanceOffer(owner,id,input);
+ await s.applyToFreelanceOffer(worker,id);await s.applyToFreelanceOffer(other,id);
+ await adminDb.doc('users/'+worker).set({uid:worker,name:'Nome público',isProfileVisible:true,email:'private-worker@example.invalid'});
+ await adminDb.doc('users/'+other).set({uid:other,name:'Nome reservado',isProfileVisible:false,email:'private-other@example.invalid'});
+ const result=await readFreelanceWorkspace(owner,'detail',id);
+ assert.equal(result.applications?.find(a=>a.applicantUid===worker)?.publicName,'Nome público');
+ assert.equal(result.applications?.find(a=>a.applicantUid===other)?.publicName,null);
+ assert.doesNotMatch(JSON.stringify(result),/private-worker|private-other|Nome reservado/);
+ await s.selectFreelanceApplication(owner,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const alerts=await readFreelancePersonalSummary(other,'alerts');
+ assert.ok(alerts.alerts?.some(a=>a.offerId===id&&a.state==='not_selected'));
+ for(let i=0;i<21;i++)await s.publishFreelanceOffer(owner,'fixture-page-'+String(i).padStart(2,'0'),input);
+ const first=await readFreelanceWorkspace(owner,'owner');
+ assert.equal(first.items?.length,20);assert.ok(first.nextCursor);
+ const second=await readFreelanceWorkspace(owner,'owner',undefined,first.nextCursor);
+ assert.ok(second.items?.length);
+ assert.ok(second.items?.every(a=>!first.items?.some(b=>a.id===b.id)));
+ await assert.rejects(readFreelanceWorkspace(owner,'owner',undefined,'bad/path'),/FREELANCE_INVALID/);
+});
