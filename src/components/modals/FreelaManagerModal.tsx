@@ -3,7 +3,7 @@ import { Briefcase } from 'lucide-react';
 import { db } from '../../utils/firebase';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { FreelanceJob } from '../../types';
-import { CanonicalFreelaWorkspace, useLocalFreelaCandidate } from './CanonicalFreelaWorkspace';
+import { CanonicalFreelaWorkspace, useLocalFreelaCandidate, useProductionFreelaCandidate } from './CanonicalFreelaWorkspace';
 
 interface FreelaManagerModalProps {
   isOpen: boolean;
@@ -16,7 +16,9 @@ interface FreelaManagerModalProps {
 }
 
 export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = (props) => {
-  const candidate = useLocalFreelaCandidate();
+  const localCandidate = useLocalFreelaCandidate();
+  const productionCandidate = useProductionFreelaCandidate();
+  const candidate = localCandidate || productionCandidate;
   return candidate ? (props.isOpen ? <CanonicalFreelaWorkspace key={props.mode} mode={props.mode} onClose={props.onClose}/> : null) : <LegacyFreelaManagerModal {...props}/>;
 };
 

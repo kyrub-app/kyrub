@@ -1,3 +1,4 @@
+import {productionPersonalFinanceEnabled} from './PersonalPixSettings';
 import FreelaPixWithdrawal from './FreelaPixWithdrawal';
 import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
@@ -86,7 +87,7 @@ export default function FreelaPixSharing({user,offerId,role,hourly=false}:{user:
  const selected=current??candidate;
  return <section aria-label="Chave Pix do contrato" className="rounded-xl border border-slate-700 p-3 space-y-2 text-sm">
   <h5 className="font-bold">Chave Pix do contrato</h5>
-  <p>Dados fictícios de homologação. Titularidade não verificada. Confira o destinatário no aplicativo bancário antes de pagar.</p>
+  <p>{productionPersonalFinanceEnabled()?'Titularidade não verificada. Confira o destinatário no aplicativo bancário antes de pagar.':'Dados fictícios de homologação. Titularidade não verificada. Confira o destinatário no aplicativo bancário antes de pagar.'}</p>
   <button type="button" className={btn} disabled={busy} onClick={()=>void execute()}>Consultar chave vinculada</button>
   {busy&&<p role="status">Consultando Pix…</p>}{error&&<p role="alert" className="text-amber-300">{error}</p>}{message&&<p role="status">{message}</p>}
   {selected&&<p>{types[selected.keyType]} · {selected.maskedKey}</p>}
