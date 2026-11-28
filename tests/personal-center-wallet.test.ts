@@ -147,3 +147,53 @@ test('CID import in Movimentações uses server candidates and separate confirma
  assert.match(settings,/Utilizar chave Pix do meu CID/);
  assert.match(settings,/setCandidates\(\[\]\)/);
 });
+
+test('private experience and reputation are outside reward wallet and verify minimal scoped projections',async()=>{
+ const {validVerifiedReputationView}=await import('../src/components/modals/verifiedReputationView');
+ const {emptyReputationAccumulator,projectReputationAccumulator}=await import('../shared/freelanceReputationAccumulator');
+ const kind='professional',id='fixture-user';
+ const projection=projectReputationAccumulator(kind,emptyReputationAccumulator(kind));
+ const v={subject:{kind,id},state:'verified_snapshot',projection};
+ assert.equal(validVerifiedReputationView(v,kind,id),true);
+ assert.equal(validVerifiedReputationView(v,kind,'outsider'),false);
+ assert.equal(validVerifiedReputationView({...v,state:'repair_required'},kind,id),false);
+ assert.equal(validVerifiedReputationView({...v,state:'repair_required',projection:null},kind,id),true);
+ assert.equal(validVerifiedReputationView({...v,projection:{...projection,aggregate:{...projection.aggregate,mean:5}}},kind,id),false);
+ assert.equal(validVerifiedReputationView({...v,missingReceipts:0},kind,id),false);
+ const ui=read('src/components/modals/PersonalReputationPanel.tsx');
+ assert.match(profile,/personalReputationCandidateEnabled\(\) && <div/);
+ assert.match(profile,/<PersonalReputationPanel key=\{currentUserId\}/);
+ assert.match(ui,/VITE_KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY/);
+ assert.match(ui,/onAuthStateChanged/);assert.match(ui,/auth.currentUser!==user/);assert.match(ui,/cache:'no-store'/);
+ assert.match(ui,/data\?\.state==='verified_snapshot'&&p/);
+ assert.doesNotMatch(ui,/method:'POST'|localStorage|rewardXp/);
+});
+
+test('store reputation operational and management destinations preserve distinct authority',()=>{
+ const menu=read('src/components/MobileErpMenu.tsx'),runtime=read('src/components/MobileErpMenuRuntime.tsx'),router=read('src/components/RetailerPanelRuntimeRouter.tsx');
+ assert.match(menu,/id: 'reputacoes', label: 'Reputações', icon: Star, section: 'operacao'/);
+ assert.match(menu,/itemId === 'ponto' \|\| itemId === 'reputacoes'/);
+ assert.match(runtime,/storeReputationCandidateEnabled\(\)/);
+ assert.match(router,/props.activeSubTab === 'reputacoes'/);
+ const ui=read('src/components/store/StoreReputationWorkspace.tsx');
+ assert.match(ui,/view=reputation_team&storeId=/);assert.match(ui,/method:'GET'/);assert.match(ui,/cache:'no-store'/);
+ assert.doesNotMatch(ui,/method:'POST'|localStorage|contest_reputation|submit_reputation/);
+});
+
+test('management Reputações remains separate from operational team view and reuses existing reporting',()=>{
+ const menu=read('src/components/MobileErpMenu.tsx'),router=read('src/components/RetailerPanelRuntimeRouter.tsx');
+ assert.match(menu,/id: 'reputacoes_gestao', label: 'Reputações', icon: Star, section: 'gestao'/);
+ assert.match(menu,/itemId === 'reputacoes_gestao'\) return role === 'manager'/);
+ assert.match(router,/moduleId === 'reputacoes_gestao'/);
+ const ui=read('src/components/store/StoreReputationManagementWorkspace.tsx');
+ assert.match(ui,/view=reputation_management&storeId=/);assert.match(ui,/submitStoreReviewReport\(report.storeId,report.reviewId,reason\)/);
+ assert.match(ui,/<FreelaReputationPanel/);assert.match(ui,/view.owner\?/);
+ assert.doesNotMatch(ui,/deleteDoc|updateDoc|localStorage/);
+});
+
+test('management reputation uses bounded forward pages with the current report scope',()=>{
+ const ui=read('src/components/store/StoreReputationManagementWorkspace.tsx');
+ assert.match(ui,/Próxima página/);assert.match(ui,/Voltar à primeira página/);
+ assert.match(ui,/fetch\(url\(pageCursor\)/);
+ assert.match(ui,/encodeURIComponent\(cursor\)/);
+});

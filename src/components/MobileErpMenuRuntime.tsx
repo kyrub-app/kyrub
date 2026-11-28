@@ -1,3 +1,4 @@
+import {storeReputationCandidateEnabled} from '../utils/storeReputationCandidate';
 import { useRef, useState, type MouseEvent } from 'react';
 import { ArrowLeft, Menu, X } from 'lucide-react';
 import {
@@ -75,7 +76,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section &&
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (!['reputacoes','reputacoes_gestao'].includes(item.id) || storeReputationCandidateEnabled()) &&
       accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id)).map(item => {
       const Icon = item.icon;
       const isSelected =

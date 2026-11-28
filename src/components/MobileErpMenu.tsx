@@ -1,3 +1,4 @@
+import {storeReputationCandidateEnabled} from '../utils/storeReputationCandidate';
 import { useRef, useState, type MouseEvent } from 'react';
 import {
   ArrowLeft,
@@ -15,6 +16,7 @@ import {
   ReceiptText,
   RefreshCw,
   Settings,
+  Star,
   Store as StoreIcon,
   UserCheck,
   Users,
@@ -35,6 +37,7 @@ export type ErpSubTab =
   | 'pedidos'
   | 'reservas'
   | 'ponto'
+  | 'reputacoes'
   | 'gerencial';
 
 export type MobileErpMenuItemId =
@@ -57,6 +60,7 @@ export const canStoreRoleAccessErpMenuItem = (
   if (role === 'owner') return true;
   if (itemId === 'planos') return false;
   if (itemId === 'loja') return role === 'manager';
+  if (itemId === 'reputacoes_gestao') return role === 'manager';
   if (itemId === 'rh') return role === 'manager';
   if (itemId === 'central_staff') return role === 'manager';
   if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
@@ -67,7 +71,7 @@ export const canStoreRoleAccessErpMenuItem = (
   if (itemId === 'clientes') return hasStorePermission(role, 'orders.create');
   if (itemId === 'caixa') return hasStorePermission(role, 'cash.read');
   if (itemId === 'pedidos') return hasStorePermission(role, 'orders.read');
-  if (itemId === 'ponto') return true;
+  if (itemId === 'ponto' || itemId === 'reputacoes') return true;
   if (itemId === 'reservas') return hasStorePermission(role, 'orders.create');
   if (itemId === 'assinaturas' || itemId === 'marketing' || itemId === 'integracoes' || itemId === 'vouchers') return role === 'manager';
   return false;
@@ -86,6 +90,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
   { id: 'fiscal', label: 'Fiscal', icon: ReceiptText, section: 'gestao' },
   { id: 'rh', label: 'Equipe & Permissões', icon: Briefcase, section: 'gestao' },
+  { id: 'reputacoes_gestao', label: 'Reputações', icon: Star, section: 'gestao' },
   { id: 'central_staff', label: 'Central do Staff', icon: ClipboardCheck, section: 'gestao' },
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
   { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
@@ -96,6 +101,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'pedidos', label: 'Pedidos', icon: ClipboardList, section: 'operacao' },
   { id: 'reservas', label: 'Reservas', icon: Calendar, section: 'operacao' },
   { id: 'ponto', label: 'Ponto', icon: Fingerprint, section: 'operacao' },
+  { id: 'reputacoes', label: 'Reputações', icon: Star, section: 'operacao' },
 ];
 
 const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
@@ -111,6 +117,7 @@ const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'marketing',
   'integracoes',
   'vouchers',
+  'reputacoes_gestao',
 ]);
 
 export const isMobileErpManagementModule = (
@@ -216,7 +223,7 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section && (!['reputacoes','reputacoes_gestao'].includes(item.id) || storeReputationCandidateEnabled()) && (accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id))).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&

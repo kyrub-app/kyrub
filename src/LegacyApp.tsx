@@ -1,3 +1,4 @@
+import {storeReputationCandidateEnabled} from './utils/storeReputationCandidate';
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShieldCheck,
@@ -49,7 +50,8 @@ import {
   Calendar,
   Fingerprint,
   LayoutGrid,
-  LogOut
+  LogOut,
+  Star
 } from 'lucide-react';
 import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
 
@@ -292,7 +294,7 @@ export default function App({onOpenCanonicalFreela,onPersonalFinanceActivity}:{o
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
   const [isGestaoOpen, setIsGestaoOpen] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial'>('clientes');
+  const [activeSubTab, setActiveSubTab] = useState<'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'reputacoes' | 'gerencial'>('clientes');
   const [gestaoRole, setGestaoRole] = useState<'admin' | 'supplier' | 'retailer' | 'sandbox'>('retailer');
   const [visitingStore, setVisitingStore] = useState<Store | null>(null);
 
@@ -1579,6 +1581,9 @@ const handleLogin = async (provider: 'google' | 'apple') => {
                     </button>
                   )}
 
+                  {storeReputationCandidateEnabled() && canStoreRoleAccessErpMenuItem(erpAccessRole, 'reputacoes_gestao') && (
+                    <button type="button" onClick={() => requestErpManagementNavigation('reputacoes_gestao')} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider text-slate-400" data-kyrub-desktop-management-item="reputacoes_gestao"><Star className="w-3.5 h-3.5"/><span>Reputações (gestão)</span></button>
+                  )}
                   {/* Restantes abas de navegação */}
                   {[
                     { id: 'clientes', label: 'Clientes', icon: Users },
@@ -1586,14 +1591,15 @@ const handleLogin = async (provider: 'google' | 'apple') => {
                     { id: 'pedidos', label: 'KDS/Vendas', icon: ClipboardList },
                     { id: 'reservas', label: 'Reservas', icon: Calendar },
                     { id: 'ponto', label: 'Ponto', icon: Fingerprint },
+                    { id: 'reputacoes', label: 'Reputações', icon: Star },
                     { id: 'gerencial', label: 'Gerencial', icon: LayoutGrid }
-                  ].filter(tab => canStoreRoleAccessErpMenuItem(erpAccessRole, tab.id as any)).map(tab => {
+                  ].filter(tab => (tab.id !== 'reputacoes' || storeReputationCandidateEnabled()) && canStoreRoleAccessErpMenuItem(erpAccessRole, tab.id as any)).map(tab => {
                     const Icon = tab.icon;
                     const isSelected = activeSubTab === tab.id;
                     return (
                       <button
                         key={tab.id}
-                        onClick={() => setActiveSubTab(tab.id as any)}
+                        onClick={() => { requestErpManagementNavigation(null); setActiveSubTab(tab.id as any); }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 ${
                           isSelected
                             ? 'bg-orange-500 text-slate-950 shadow-md shadow-orange-500/10'

@@ -28,8 +28,8 @@ interface RetailerPanelProps {
   setOrders: React.Dispatch<React.SetStateAction<Order[]>>;
   onUpdateStore: (updates: BuildUserStoreUpdateInput) => Promise<void>;
   triggerToast: (msg: string, type?: 'success' | 'error' | 'info') => void;
-  activeSubTab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial';
-  setActiveSubTab: (tab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial') => void;
+  activeSubTab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'reputacoes' | 'gerencial';
+  setActiveSubTab: (tab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'reputacoes' | 'gerencial') => void;
   atendimentoSpaces: string[];
   producaoSpaces: string[];
   accessRole?: 'owner' | 'manager' | 'seller' | 'cashier' | 'production';

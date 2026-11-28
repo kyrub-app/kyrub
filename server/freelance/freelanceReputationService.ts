@@ -1,3 +1,5 @@
+import {invalidateUnindexedCoverage} from './freelanceReputationCoverage.js';
+import {prepareFreelanceReputationIndex,reputationIndexEnabled,reputationContractContext} from './freelanceReputationIndexPreparation.js';
 import {normalizeReputationScores,projectReputationRating,projectReputationAggregate,type ReputationScores} from '../../shared/freelanceReputationCriteria.js';
 import type {Transaction} from 'firebase-admin/firestore';
 import {FieldPath} from 'firebase-admin/firestore';
@@ -20,8 +22,7 @@ const reasonText=(value:unknown)=>{
 type Slot={schemaVersion:2;offerId:string;contractDigest:string;role:Role;authorUid:string;subject:ReputationSubject;scores:ReputationScores;submittedAt:string};
 export async function readFreelanceReputationContext(tx:Transaction,uid:string,id:string){
  assertFreelanceReputationLocal();
- const c=await readAttendanceContext(tx,uid,id),parties=freelanceReputationParties(c.offer,c.application);
- const contractDigest=digestVariablePaymentSources({parties,selectedAt:c.offer.selectedAt,contractedAt:c.offer.contractedAt,startedAt:c.offer.startedAt,completionRequestedAt:c.offer.completionRequestedAt,paymentMinor:c.offer.paymentMinor,paymentTerms:c.offer.paymentTerms??null,workTerms:c.offer.workTerms??null,requesterStore:c.offer.requesterStore??null});
+ const c=await readAttendanceContext(tx,uid,id),{parties,contractDigest}=reputationContractContext(c.offer,c.application);
  const collection=c.ref.collection('reputationPrivateV1'),refs={requester:collection.doc('requester'),worker:collection.doc('worker')};
  const [a,b]=await tx.getAll(refs.requester,refs.worker);
  function checked(raw:unknown,role:Role):Slot|undefined{
@@ -107,7 +108,9 @@ export async function submitFreelanceReputation(uid:string,id:string,input:unkno
   const submittedAt=new Date().toISOString();
   if(Date.parse(submittedAt)<Date.parse(x.parties.completedAt))return fail();
   const slot:Slot={schemaVersion:2,offerId:id,contractDigest:x.contractDigest,role,authorUid:uid,subject,scores,submittedAt};
-  tx.create(x.refs[role],slot);
+  const next={...x,slots:{...x.slots,[role]:slot}};
+  const plan=reputationIndexEnabled()?await prepareFreelanceReputationIndex(tx,next,true):null;
+  tx.create(x.refs[role],slot);plan?.write();if(!plan)invalidateUnindexedCoverage(tx,next.parties);
   return {...view({...x,slots:{...x.slots,[role]:slot}}),changed:true};
  });
 }
@@ -139,5 +142,41 @@ export async function readOwnFreelanceReputationProfile(uid:string,kind:unknown,
    entries.push({offerId:doc.id,scores:v.received.scores,mean:v.received.mean,applicableCount:v.received.applicableCount,submittedAt:v.received.submittedAt,completedAt:c.parties.completedAt});
   }
   return {subject,entries,releasedCountOnPage:entries.length,pageAggregate:projectReputationAggregate(kind,entries.map(e=>e.scores)),nextCursor:docs.size>20?page.at(-1)!.id:null,rewardsGranted:false as const};
+ },{readOnly:true});
+}
+
+/** Bounded private historical snapshot for local homologation only.
+ * Never present a sample as a lifetime average. A larger history needs
+ * an indexed, reconciled projection before commercial activation. */
+export const REPUTATION_HISTORY_SCAN_LIMIT=100;
+export async function readOwnFreelanceReputationSummary(uid:string,kind:unknown){
+ assertFreelanceReputationLocal();
+ if(!validFreelanceId(uid)||(kind!=='professional'&&kind!=='personal_requester'&&kind!=='store_requester'))throw Error('FREELANCE_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const store=kind==='store_requester'?await readOwnedFreelanceStore(tx,uid):null;
+  if(kind==='store_requester'&&!store)throw Error('FREELANCE_STORE_FORBIDDEN');
+  const subject:ReputationSubject={kind,id:store?.storeId??uid};
+  const docs=await tx.get(adminDb.collection('freelanceOffersV1')
+   .where(kind==='professional'?'selectedApplicantUid':'ownerUid','==',uid)
+   .where('status','==','completed').orderBy(FieldPath.documentId()).limit(REPUTATION_HISTORY_SCAN_LIMIT+1));
+  if(docs.size>REPUTATION_HISTORY_SCAN_LIMIT)return {subject,historyState:'requires_index' as const,completedContracts:null,aggregate:null,rewardsGranted:false as const};
+  const ratings:ReputationScores[]=[];
+  let completedContracts=0;
+  for(const doc of docs.docs){
+   const o=doc.data() as FreelanceOffer;
+   if(o.id!==doc.id||o.status!=='completed'||!validFreelanceId(o.ownerUid)||(kind==='professional'?o.selectedApplicantUid!==uid||o.ownerUid===uid:o.ownerUid!==uid))return fail();
+   if(kind==='personal_requester'&&o.requesterStore!==undefined)continue;
+   if(kind==='store_requester'&&o.requesterStore?.storeId!==store?.storeId)continue;
+   const c=await readFreelanceReputationContext(tx,uid,doc.id);
+   const expected=kind==='professional'?c.parties.worker:c.parties.requester;
+   if(canonicalVariablePaymentRecord(expected)!==canonicalVariablePaymentRecord(subject))return fail();
+   completedContracts++;
+   const v=view(c);
+   if(v.received){
+    if(canonicalVariablePaymentRecord(v.received.subject)!==canonicalVariablePaymentRecord(subject))return fail();
+    ratings.push(v.received.scores);
+   }
+  }
+  return {subject,historyState:'complete' as const,completedContracts,aggregate:projectReputationAggregate(kind,ratings),rewardsGranted:false as const};
  },{readOnly:true});
 }
