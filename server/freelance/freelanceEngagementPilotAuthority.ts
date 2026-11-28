@@ -38,3 +38,11 @@ export function assertContractPilotTerms(offer:Pick<FreelanceOffer,'paymentTerms
  assertEngagementPilotTerms(offer);
  if(offer.paymentTerms?.timing!=='on_completion')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
 }
+
+/** Never admit a new job without the existing financial-resolution authority. */
+export function freelanceAdmissionReady(env:NodeJS.ProcessEnv=process.env){
+ return freelanceContractPilotEnabled(env)&&env.KYRUB_FREELANCE_ADMIN_REVIEW_PILOT_ENABLED==='true';
+}
+export function assertFreelanceAdmissionReady(){
+ if(!freelanceAdmissionReady())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+}

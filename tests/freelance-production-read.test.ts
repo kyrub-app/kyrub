@@ -113,9 +113,9 @@ test('engagement pilot is separately gated and only allows supported personal fi
  assert.throws(()=>assertEngagementPilotTerms({...terms,requesterStore:{storeId:'store',displayName:'Store',representativeRole:'owner'}}));
 });
 
-test('precontract HTTP permits only publish, apply and select under explicit pilot authority',async()=>{
+test('precontract HTTP admits new jobs only when contract and administrative resolution are ready, preserving exits',async()=>{
  const {handleFreelanceEngagementPilot}=await import('../server/freelance/freelanceEngagementPilotTransport.js');
- const e={...env,KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED:'true'};
+ const e={...env,KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED:'true',KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED:'true',KYRUB_PERSONAL_PIX_PILOT_ENABLED:'true',KYRUB_FREELANCE_ADMIN_REVIEW_PILOT_ENABLED:'true'};
  let status=0,body:unknown,calls=0;
  const res={setHeader(){},status(n:number){status=n;return {json(v:unknown){body=v;}}}};
  const deps={env:e,verify:async()=>({uid:'pilot',aud:'kyrub-b8d0e',email_verified:true}),authorize:()=>{},execute:async(uid:string,_input:unknown)=>{assert.equal(uid,'pilot');calls++;}};
@@ -129,6 +129,10 @@ test('precontract HTTP permits only publish, apply and select under explicit pil
   await handleFreelanceEngagementPilot({...req,body:{action,offerId:'offer'}},res,deps);assert.equal(status,400);
  }
  await handleFreelanceEngagementPilot({...req,body:{...req.body,uid:'other'}},res,deps);assert.equal(status,400);
+ for(const flag of ['KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED','KYRUB_PERSONAL_PIX_PILOT_ENABLED','KYRUB_FREELANCE_ADMIN_REVIEW_PILOT_ENABLED']){
+  await handleFreelanceEngagementPilot(req,res,{...deps,env:{...e,[flag]:undefined}});assert.equal(status,503);
+ }
+ await handleFreelanceEngagementPilot({...req,body:{...req.body,terms:{...req.body.terms,paymentTerms:{...paymentTerms,timing:'advance'}}}},res,deps);assert.notEqual(status,200);
  assert.equal(calls,0);
  await handleFreelanceEngagementPilot(req,res,deps);assert.equal(status,200);assert.deepEqual(body,{confirmed:true});
  await handleFreelanceEngagementPilot({...req,body:{action:'apply',offerId:'offer',expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms}},res,deps);assert.equal(status,200);
@@ -137,7 +141,7 @@ test('precontract HTTP permits only publish, apply and select under explicit pil
   const exit={action,offerId:'offer',...(action==='release'?{applicantUid:'applicant'}:{})};
   await handleFreelanceEngagementPilot({...req,body:exit},res,deps);assert.equal(status,400);
   await handleFreelanceEngagementPilot({...req,body:{...exit,confirmed:true,uid:'other'}},res,deps);assert.equal(status,400);
-  await handleFreelanceEngagementPilot({...req,body:{...exit,confirmed:true}},res,deps);assert.equal(status,200);
+  await handleFreelanceEngagementPilot({...req,body:{...exit,confirmed:true}},res,{...deps,env:{...e,KYRUB_FREELANCE_ADMIN_REVIEW_PILOT_ENABLED:undefined}});assert.equal(status,200);
  }
  assert.equal(calls,6);
 });
