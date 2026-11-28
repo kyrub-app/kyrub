@@ -12,6 +12,9 @@ export async function executeEngagementPilotAction(uid:string,input:unknown){
  case 'publish':{const terms=normalizeFreelanceOffer(b.terms);assertEngagementPilotTerms(terms);await lifecycle.publishFreelanceOffer(uid,b.offerId,terms,undefined,true);break;}
  case 'apply':await lifecycle.applyToFreelanceOffer(uid,b.offerId,{expected:b.expectedPaymentTerms,expectedWorkTerms:b.expectedWorkTerms,counterproposal:b.counterproposal},true);break;
  case 'select':await lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid as string,b.expectedCounterproposal,true);break;
+ case 'release':await lifecycle.releaseFreelanceReservation(uid,b.offerId,b.applicantUid as string,b.confirmed,true);break;
+ case 'withdraw':await lifecycle.withdrawPendingFreelanceApplication(uid,b.offerId,b.confirmed,true);break;
+ case 'cancel_open':await lifecycle.cancelUncontractedFreelanceOffer(uid,b.offerId,b.confirmed,true);break;
  default:throw Error('FREELANCE_INVALID');
  }
 }
@@ -19,11 +22,12 @@ export function validateEngagementPilotAction(input:unknown):Record<string,unkno
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
- const allowed=b.action==='publish'?['terms']:b.action==='apply'?['expectedPaymentTerms','expectedWorkTerms','counterproposal']:b.action==='select'?['applicantUid','expectedCounterproposal']:null;
+ const allowed=b.action==='publish'?['terms']:b.action==='apply'?['expectedPaymentTerms','expectedWorkTerms','counterproposal']:b.action==='select'?['applicantUid','expectedCounterproposal']:b.action==='release'?['applicantUid','confirmed']:b.action==='withdraw'||b.action==='cancel_open'?['confirmed']:null;
  if(!allowed||Object.keys(b).some(k=>!['action','offerId',...allowed].includes(k)))throw Error('FREELANCE_INVALID');
  if(b.action==='publish')assertEngagementPilotTerms(normalizeFreelanceOffer(b.terms));
  if(b.action==='apply'&&(!b.expectedPaymentTerms||!b.expectedWorkTerms))throw Error('FREELANCE_INVALID');
- if(b.action==='select'&&!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');
+ if((b.action==='release'||b.action==='withdraw'||b.action==='cancel_open')&&b.confirmed!==true)throw Error('FREELANCE_INVALID');
+ if((b.action==='select'||b.action==='release')&&!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');
  return {...b,offerId:b.offerId};
 }
 type Dependencies={env:NodeJS.ProcessEnv;verify:(token:string)=>Promise<{uid:string;aud:string;email_verified?:boolean}>;authorize:(uid:string)=>void;execute:(uid:string,input:unknown)=>Promise<void>};
