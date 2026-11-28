@@ -125,7 +125,7 @@ test('precontract HTTP permits only publish, apply and select under explicit pil
  await handleFreelanceEngagementPilot(req,res,{...deps,env});assert.equal(status,503);
  await handleFreelanceEngagementPilot(req,res,{...deps,verify:async()=>({uid:'other',aud:'kyrub-b8d0e',email_verified:true})});assert.equal(status,403);
  await handleFreelanceEngagementPilot({...req,query:{uid:'other'}},res,deps);assert.equal(status,400);
- for(const action of ['confirm','start','request_completion','confirm_completion','statement','reveal_pix','release','withdraw','cancel_open']){
+ for(const action of ['confirm','start','request_completion','confirm_completion','statement','reveal_pix']){
   await handleFreelanceEngagementPilot({...req,body:{action,offerId:'offer'}},res,deps);assert.equal(status,400);
  }
  await handleFreelanceEngagementPilot({...req,body:{...req.body,uid:'other'}},res,deps);assert.equal(status,400);
@@ -133,4 +133,11 @@ test('precontract HTTP permits only publish, apply and select under explicit pil
  await handleFreelanceEngagementPilot(req,res,deps);assert.equal(status,200);assert.deepEqual(body,{confirmed:true});
  await handleFreelanceEngagementPilot({...req,body:{action:'apply',offerId:'offer',expectedPaymentTerms:paymentTerms,expectedWorkTerms:workTerms}},res,deps);assert.equal(status,200);
  await handleFreelanceEngagementPilot({...req,body:{action:'select',offerId:'offer',applicantUid:'applicant'}},res,deps);assert.equal(status,200);assert.equal(calls,3);
+ for(const action of ['release','withdraw','cancel_open']){
+  const exit={action,offerId:'offer',...(action==='release'?{applicantUid:'applicant'}:{})};
+  await handleFreelanceEngagementPilot({...req,body:exit},res,deps);assert.equal(status,400);
+  await handleFreelanceEngagementPilot({...req,body:{...exit,confirmed:true,uid:'other'}},res,deps);assert.equal(status,400);
+  await handleFreelanceEngagementPilot({...req,body:{...exit,confirmed:true}},res,deps);assert.equal(status,200);
+ }
+ assert.equal(calls,6);
 });
