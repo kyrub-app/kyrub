@@ -29,3 +29,12 @@ export async function assertEngagementPilotParticipants(tx:FirebaseFirestore.Tra
  }
  await assertFreelanceEngagementAllowed(tx,...participants.map(p=>p.uid));
 }
+
+/** Contract preparation requires a separate explicit gate. No HTTP route in this parcel. */
+export function freelanceContractPilotEnabled(env:NodeJS.ProcessEnv=process.env){
+ return freelanceEngagementPilotEnabled(env)&&env.KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED==='true'&&env.KYRUB_PERSONAL_PIX_PILOT_ENABLED==='true';
+}
+export function assertContractPilotTerms(offer:Pick<FreelanceOffer,'paymentTerms'|'workTerms'|'requesterStore'>){
+ assertEngagementPilotTerms(offer);
+ if(offer.paymentTerms?.timing!=='on_completion')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+}
