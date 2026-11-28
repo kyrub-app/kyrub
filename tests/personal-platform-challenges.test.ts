@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { projectPlatformChallengeCatalog } from '../shared/platformChallengeCatalog';
+import {createPlantPitangueiraDraft,assertPlantPitangueiraDraft,assertPlantPitangueiraPublicationReady,PLANT_PITANGUEIRA_CHALLENGE_ID} from '../shared/plantPitangueiraChallenge';
 import type { KyrubChallengeDefinition } from '../shared/gamification';
 
 const current = '2026-11-21T15:00:00.000Z';
@@ -77,4 +78,24 @@ test('personal panel includes loading, retry, empty state and no action claiming
   assert.match(ui, /Nenhum desafio disponível no momento/);
   assert.match(ui, /O progresso aparece após confirmação pelo sistema/);
   assert.doesNotMatch(ui, /fetch\(|setDoc\(|updateDoc\(|POST|onClaim|awardReward/);
+});
+
+test('permanent planting challenge is exact, private and non-published until reward flow is ready',()=>{
+ const draft=createPlantPitangueiraDraft();
+ assert.equal(draft.status,'draft');
+ assert.equal(draft.rewardKCoins,200);
+ assert.equal(draft.rewardXp,0);
+ assert.equal(draft.maxCompletionsPerUser,1);
+ assert.equal(draft.endsAt,undefined);
+ assert.equal(draft.maxCompletions,undefined);
+ assert.equal(draft.validationMode,'manual_review');
+ assert.match(draft.description,/validação privada/);
+ assert.doesNotThrow(()=>assertPlantPitangueiraDraft(draft));
+ for(const altered of [{...draft,rewardKCoins:100},{...draft,maxCompletionsPerUser:2},{...draft,validationMode:'deterministic' as const},{...draft,endsAt:'2027-01-01T00:00:00Z'}])assert.throws(()=>assertPlantPitangueiraDraft(altered),/DRAFT_INVALID/);
+ assert.throws(()=>assertPlantPitangueiraPublicationReady(PLANT_PITANGUEIRA_CHALLENGE_ID),/NOT_READY/);
+ assert.doesNotThrow(()=>assertPlantPitangueiraPublicationReady(challenge.id));
+ assert.deepEqual(projectPlatformChallengeCatalog([draft],{},current).challenges,[]);
+ const repository=read('server/gamification/globalChallengeAdminRepository.ts');
+ assert.match(repository,/assertPlantPitangueiraDraft\(draft\)/);
+ assert.ok(repository.indexOf('assertPlantPitangueiraPublicationReady(challengeId)')<repository.indexOf('tx.update(ref, { status: planned.challenge.status'));
 });
