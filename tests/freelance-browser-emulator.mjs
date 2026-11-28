@@ -113,6 +113,7 @@ try{
  await employer.getByLabel('Descrição',{exact:true}).fill('Descrição de teste isolado');
  await employer.getByLabel('Requisitos',{exact:true}).fill('Somente emulador');
  await employer.getByLabel('Valor acordado (R$)',{exact:true}).fill('150,00');
+ await employer.getByLabel('Forma de pagamento').selectOption('legacy_fixture');
  await action(employer,'Publicar freela');
  const offers=await db.collection('freelanceOffersV1').where('ownerUid','==',owner.uid).get();
  assert.equal(offers.size,1);const offerId=offers.docs[0].id;
@@ -284,16 +285,32 @@ try{
   assert.equal((await financialRef.get()).get('key'),cidKey);
   console.log('PASS CID Pix UI: masked linked choice, separate confirmation, import without retyping, explicit replacement and independent destination');
  }finally{delete process.env.KYRUB_CID_FINANCE_INTEGRATED_TEST;await cidRef.delete();}
- // Direct publication is intentionally disabled in public transport; create an isolated
- // contract using real lifecycle services, then exercise financial actions through UI.
- const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.ts');
- const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.ts');
+ // Publish and contract through the isolated UI; no fixture-only direct contract.
  const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.ts');
  const fp=await account('finance-payer','requester','Pagador teste'),fw=await account('finance-worker','freelancer','Recebedor teste');
- const directId='browser-direct-'+suffix,directTitle='Freela financeiro '+suffix;
- await publishFreelanceOffer(fp.uid,directId,{title:directTitle,description:'Contrato direto fictício',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
- await applyToFreelanceOffer(fw.uid,directId);await selectFreelanceApplication(fp.uid,directId,fw.uid);await confirmFreelanceContract(fw.uid,directId,true);
+ const directTitle='Freela financeiro '+suffix;
  const payerPage=await session(fp,1365),receiverPage=await session(fw,390);
+ const pm=await open(payerPage,'owner'),wm=await open(receiverPage,'worker');
+ await pm.getByLabel('Título',{exact:true}).fill(directTitle);
+ await pm.getByLabel('Descrição',{exact:true}).fill('Contrato direto fictício');
+ await pm.getByLabel('Valor acordado (R$)',{exact:true}).fill('150,00');
+ assert.equal(await pm.getByLabel('Momento do pagamento').inputValue(),'on_completion');
+ await pm.getByLabel('Momento do pagamento').selectOption('advance');
+ await action(pm,'Publicar freela');
+ const directOffers=await db.collection('freelanceOffersV1').where('ownerUid','==',fp.uid).get();
+ assert.equal(directOffers.size,1);const directId=directOffers.docs[0].id;
+ async function directDetail(modal,tab){
+  await button(modal,tab).click();await button(modal,'Atualizar consulta').click();
+  const article=modal.locator('article').filter({has:modal.page().getByRole('heading',{name:directTitle,exact:true})}).first();
+  await button(article,'Ver detalhes').click();
+  await waitText(modal,'Pix externo · Pagamento antecipado');
+ }
+ await directDetail(wm,'Solicitações');await action(wm,'Candidatar-se');
+ await directDetail(pm,'Publicados');await action(pm,'Selecionar Recebedor teste');
+ await directDetail(wm,'Fazendo');await action(wm,'Confirmar contratação');
+ assert.equal((await db.doc('freelanceOffersV1/'+directId+'/directPayment/obligation').get()).get('terms.timing'),'advance');
+ await button(pm,'Fechar').click();await button(wm,'Fechar').click();
+ console.log('PASS direct Pix publication and acceptance via actual browser interfaces');
  async function finance(page,role){
   const modal=await open(page,role);
   await button(modal,role==='owner'?'Publicados':'Fazendo').click();await button(modal,'Atualizar consulta').click();
@@ -315,6 +332,39 @@ try{
  await payerPage.bringToFront();await button(ps,'Consultar chave Pix integral').click();await button(ps,'Confirmar operação Pix').click();await waitText(ps,sharingKey);
  await button(ps,'Ocultar chave Pix').click();assert.ok(!(await ps.innerText()).includes(sharingKey));assert.ok(!(await ws.innerText()).includes(sharingKey));
  console.log('PASS Pix sharing UI: bind, separate consent, payer-only reveal, manual hide');
+ await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Compartilhamento autorizado');
+ await button(ws,'Revogar compartilhamento neste contrato').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento revogado neste contrato.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento revogado');
+ assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ await button(ws,'Autorizar novamente neste contrato').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento novamente autorizado.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento autorizado');
+ console.log('PASS contract-specific Pix revocation and explicit restoration through authenticated UI');
+
+ const replacementKey='replacement-'+suffix+'@example.invalid';
+ await changePersonalPixDestination(fw.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:replacementKey}});
+ await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Substituição ainda não solicitada.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Substituição ainda não solicitada.');
+ assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ assert.equal(await button(ps,'Aceitar substituição da chave Pix').count(),0);
+ await button(ws,'Solicitar substituição da chave Pix').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Substituição solicitada, aguardando aceite.');
+ await button(ps,'Consultar chave vinculada').click();await button(ps,'Aceitar substituição da chave Pix').click();
+ assert.equal(await button(ps,'Confirmar operação Pix').isDisabled(),true);
+ await ps.getByLabel('Declaro que ainda não enviei o pagamento deste contrato.').check();
+ await button(ps,'Confirmar operação Pix').click();await waitText(ps,'Substituição aceita. Aguarde nova autorização de compartilhamento.');
+ await waitText(ps,'Compartilhamento ainda não autorizado');assert.equal(await button(ps,'Consultar chave Pix integral').count(),0);
+ await button(ws,'Consultar chave vinculada').click();await waitText(ws,'Compartilhamento ainda não autorizado');
+ await button(ws,'Autorizar compartilhamento com o contratante').click();await button(ws,'Confirmar operação Pix').click();
+ await waitText(ws,'Compartilhamento autorizado para este contratante.');
+ await button(ps,'Consultar chave vinculada').click();await waitText(ps,'Compartilhamento autorizado');
+ await payerPage.bringToFront();await button(ps,'Consultar chave Pix integral').click();await button(ps,'Confirmar operação Pix').click();
+ await waitText(ps,replacementKey);await button(ps,'Ocultar chave Pix').click();
+ assert.ok(!(await ps.innerText()).includes(replacementKey));assert.ok(!(await ws.innerText()).includes(replacementKey));
+ assert.equal((await db.doc('freelanceOffersV1/'+directId+'/directPayment/pixRebind-2').get()).get('status'),'accepted');
+ console.log('PASS bilateral replacement via two authenticated browser sessions; new explicit sharing required');
+
  async function financialAction(panel,label){
   await button(panel,label).click();
   const result=panel.page().waitForResponse(r=>r.url().endsWith('/api/freelance/finance')&&r.request().method()==='POST');
@@ -337,6 +387,12 @@ try{
  await financialAction(receiverPanel,'Confirmar recebimento');await waitText(receiverPanel,'Regularização voluntária registrada');
  await button(payerPanel,'Consultar situação financeira').click();await waitText(payerPanel,'Recebimento confirmado pelas partes');
  for(const a of [fp,fw])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
+ const workerModal=receiverPage.getByRole('dialog',{name:'Fazer Freelas',exact:true}),payerModal=payerPage.getByRole('dialog',{name:'Solicitar Freelas',exact:true});
+ await action(workerModal,'Iniciar serviço');await directDetail(workerModal,'Fazendo');await action(workerModal,'Solicitar conclusão');
+ await directDetail(payerModal,'Publicados');await action(payerModal,'Confirmar conclusão');
+ assert.equal((await db.doc('freelanceOffersV1/'+directId).get()).get('status'),'completed');
+ assert.equal((await db.doc('freelanceOffersV1/'+directId+'/financialBasis/remuneration').get()).get('settlement'),'not_verified');
+ console.log('PASS direct advance execution after bilateral receipt and voluntary release');
  for(const page of [payerPage,receiverPage]){
   const modal=page.getByRole('dialog',{name:page===payerPage?'Solicitar Freelas':'Fazer Freelas',exact:true});
   await button(modal,'Fechar').click();
@@ -345,6 +401,8 @@ try{
   const panel=page.locator('#canonical-notification-center');
   const inbox=await response;assert.equal(inbox.status(),200,await inbox.text());
   await waitText(panel,'Divergência financeira em Freelas');await waitText(panel,'Regularização financeira em Freelas');
+  await waitText(panel,page===payerPage?'Substituição de chave Pix solicitada':'Substituição de chave Pix aceita');
+  assert.ok(!(await panel.innerText()).includes(replacementKey));assert.ok(!(await panel.innerText()).includes(sharingKey));
   assert.ok(!(await panel.innerText()).includes('Relato fictício do não recebimento.'));
   await page.screenshot({path:'freelance-browser-evidence/financial-notices-'+(page===payerPage?'payer':'worker')+'.png',fullPage:true});
  }
@@ -399,6 +457,74 @@ try{
  assert.equal(posts,2);
  await adminPage.screenshot({path:'freelance-browser-evidence/admin-financial-review.png',fullPage:true});
  console.log('PASS admin financial UI: actual MFA denial; isolated intercepted fixture for receipt preview, stale revision and confirmation; no real decision from UI');
+ // Prepare only the administrative cancellation in the isolated emulator.
+ // Genuine admin MFA is not available in this browser fixture; HTTP covers
+ // operational cancellation with the existing synthetic claim seam.
+ const accountingTitle='Apuração fictícia '+suffix,accountingId='browser-cancel-'+suffix,occurrenceId='browser-cancel-occurrence';
+ const lifecycle=await import('../server/freelance/freelanceLifecycleService.ts');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.ts');
+ const {resolveFreelanceOccurrence}=await import('../shared/freelanceLifecycle.ts');
+ const {buildFreelanceRemunerationBasis}=await import('../shared/freelanceRemuneration.ts');
+ const {FieldValue}=await import('firebase-admin/firestore');
+ const terms=createDirectPaymentTerms({method:'external_pix',timing:'on_completion',amountMinor:15000});
+ await lifecycle.publishFreelanceOffer(fp.uid,accountingId,{title:accountingTitle,description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms});
+ await lifecycle.applyToFreelanceOffer(fw.uid,accountingId,{expected:terms});
+ await lifecycle.selectFreelanceApplication(fp.uid,accountingId,fw.uid);
+ await lifecycle.confirmFreelanceContract(fw.uid,accountingId,true,{expected:terms});
+ await lifecycle.reportFreelanceOccurrence(fw.uid,accountingId,'cancellation_requested',true,occurrenceId);
+ const ar=db.doc('freelanceOffersV1/'+accountingId),ap=ar.collection('applications').doc(fw.uid),oc=ar.collection('occurrences').doc(occurrenceId);
+ await db.runTransaction(async tx=>{
+  const [o,a,r]=await tx.getAll(ar,ap,oc);
+  const result=resolveFreelanceOccurrence(o.data(),a.data(),r.data(),adminActor.uid,'cancel','Cancelamento fictício para testar a interface',true,new Date().toISOString());
+  const basis=buildFreelanceRemunerationBasis(result.offer,result.application,result.occurrence);
+  const patch={status:'cancelled',cancelledAt:result.offer.cancelledAt,occurrenceId:FieldValue.delete()};
+  tx.update(ar,patch);tx.update(ap,patch);tx.update(oc,{status:'resolved',decision:result.occurrence.decision});
+  tx.create(ar.collection('financialBasis').doc('remuneration'),basis);
+ });
+ async function cancelledPanel(page,role){
+  await page.reload({waitUntil:'domcontentloaded'});await page.locator('#btn-solicitar-freela').waitFor({state:'visible',timeout:30000});
+  const modal=await open(page,role);await button(modal,'Histórico').click();await button(modal,'Atualizar consulta').click();
+  const article=modal.locator('article').filter({has:page.getByRole('heading',{name:accountingTitle,exact:true})}).first();
+  await button(article,'Ver detalhes').click();
+  const panel=modal.getByRole('region',{name:'Apuração do cancelamento'});
+  await button(panel,'Consultar apuração').click();await waitText(panel,'Valor original:');
+  return panel;
+ }
+ const ca=await cancelledPanel(receiverPage,'worker'),cb=await cancelledPanel(payerPage,'owner');
+ async function accountingAction(panel,label){
+  await button(panel,label).click();
+  const response=panel.page().waitForResponse(r=>r.url().endsWith('/api/freelance/finance')&&r.request().method()==='POST');
+  await button(panel,'Confirmar apuração').click();
+  const result=await response;assert.equal(result.status(),200,await result.text());
+  await waitText(panel,'Operação de apuração registrada pelo servidor.');
+ }
+ assert.equal(await button(ca,'Propor apuração').isDisabled(),true);
+ await ca.getByLabel('Remuneração reconhecida (R$)',{exact:true}).fill('50,00');
+ assert.equal(await button(ca,'Propor apuração').isDisabled(),true);
+ await ca.getByLabel('Valor declarado como recebido (R$)',{exact:true}).fill('0,00');
+ await accountingAction(ca,'Propor apuração');await waitText(ca,'Proposta aguardando aceite');
+ assert.equal(await button(ca,'Aceitar proposta de apuração').count(),0);
+ await button(cb,'Consultar apuração').click();await waitText(cb,'Proposta aguardando aceite');
+ await accountingAction(cb,'Recusar proposta');await waitText(cb,'Proposta encerrada sem aceite');
+ await button(ca,'Consultar apuração').click();await waitText(ca,'Proposta encerrada sem aceite');
+ await ca.getByLabel('Remuneração reconhecida (R$)',{exact:true}).fill('40,00');
+ await ca.getByLabel('Valor declarado como recebido (R$)',{exact:true}).fill('0,00');
+ await accountingAction(ca,'Propor apuração');await waitText(ca,'Proposta aguardando aceite');
+ await button(cb,'Consultar apuração').click();await waitText(cb,'Proposta aguardando aceite');
+ await accountingAction(cb,'Aceitar proposta de apuração');await waitText(cb,'Proposta aceita pelas partes');
+ await button(ca,'Consultar apuração').click();await waitText(ca,'Proposta aceita pelas partes');
+ const pointer=(await ar.collection('directPayment').doc('cancellationAccounting').get()).data();
+ const agreed=(await ar.collection('directPayment').doc('cancellationAccounting-'+pointer.proposalId).get()).data();
+ assert.equal(agreed.status,'accepted');assert.equal(agreed.recognizedServiceMinor,4000);
+ assert.equal((await ar.collection('financialBasis').doc('remuneration').get()).get('settlement'),'not_verified');
+ await receiverPage.screenshot({path:'freelance-browser-evidence/cancellation-accounting.png',fullPage:true});
+ for(const [page,role,label] of [[payerPage,'Solicitar Freelas','Apuração de cancelamento proposta'],[receiverPage,'Fazer Freelas','Apuração de cancelamento aceita']]){
+  await button(page.getByRole('dialog',{name:role,exact:true}),'Fechar').click();
+  const response=page.waitForResponse(r=>r.url().includes('/api/notifications?limit=')&&r.request().method()==='GET');
+  await page.locator('#canonical-notification-trigger').click();assert.equal((await response).status(),200);
+  await waitText(page.locator('#canonical-notification-center'),label);
+ }
+ console.log('PASS cancellation accounting UI and real private notices in two authenticated sessions; administrative cancellation prepared in emulator');
  assert.deepEqual(forbidden,[]);assert.deepEqual(uncaught,[]);
  console.log('PASS: two authenticated Chromium contexts, actual UI publication to completion, funding denial, earnings and bell');
 }catch(e){

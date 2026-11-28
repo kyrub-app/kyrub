@@ -1,3 +1,4 @@
+import {readCancellationAccounting,changeCancellationAccounting} from './freelanceCancellationAccountingService.js';
 import {adminAuth} from '../firebaseAdmin.js';
 import {readOwnFreelanceMovements} from './freelanceMovementsService.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
@@ -6,7 +7,7 @@ import {readFinancialContext,checkedReview,recordFreelanceExternalPaymentStateme
 import {submitFreelanceFinancialEvidence,readFinancialEvidence} from './freelanceFinancialEvidenceService.js';
 import {submitFreelanceFinancialReceipt,readFinancialReceiptManifest,readFinancialReceiptBytes} from './freelanceFinancialReceiptService.js';
 import {personalPixRecentLogin} from '../payments/personalPixTransport.js';
-import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination} from './freelancePixDestinationService.js';
+import {bindFreelancePixDestination,authorizeFreelancePixSharing,readFreelancePixSharing,revealFreelancePixDestination,changeFreelancePixBinding,readFreelancePixRebind,changeFreelancePixSharingConsent} from './freelancePixDestinationService.js';
 import {readOwnFreelanceRestrictions,assertFinancialCaseRestrictions} from './freelanceEngagementRestrictionService.js';
 import {adminDb} from '../firebaseAdmin.js';
 
@@ -16,7 +17,7 @@ export function freelanceFinanceEnabled(){
 async function readCase(uid:string,offerId:string,receiptId?:string){
  return adminDb.runTransaction(async tx=>{
   const reviewSnapshot=await tx.get(adminDb.doc('freelanceFinancialReviewsV1/'+offerId));
-  const {offer,obligation,events,projection}=await readFinancialContext(tx,uid,offerId);
+  const {offer,obligation,events,projection,due}=await readFinancialContext(tx,uid,offerId,true);
   const review=checkedReview(reviewSnapshot.data(),obligation);
   const role=uid===obligation.requesterUid?'requester':'freelancer';
   const restricted=projection.state==='disputed'&&review?.status!=='resolved_administratively';
@@ -29,7 +30,7 @@ async function readCase(uid:string,offerId:string,receiptId?:string){
    return readFinancialReceiptBytes(tx,obligation,review!.requestedAt,receiptId);
   }
   return {offerId,role,amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
-   operationalStatus:offer.status,financialState:projection.state,hadDisagreement:projection.hadDisagreement,bankVerified:false,
+   operationalStatus:offer.status,due,financialState:due?projection.state:'not_due',hadDisagreement:projection.hadDisagreement,bankVerified:false,
    restrictionActive:restricted,reviewStatus:review?.status??null,
    reviewOutcome:review?.decision?.outcome??null,requestedAt:review?.requestedAt??null,
    statements:events.map(e=>({role:e.actorUid===uid?role:role==='requester'?'freelancer':'requester',statement:e.statement,recordedAt:e.recordedAt})),
@@ -53,7 +54,9 @@ export async function handleFreelanceFinance(req:Request,res:Response){
  try{
   const q=req.query??{},keys=Object.keys(q);
   if(req.method==='GET'){
+   if(q.view==='cancellation_accounting'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCancellationAccounting(uid,q.offerId));return;}
    if(q.view==='movements'&&(keys.length===2||keys.length===3)&&keys.every(k=>['view','role','cursor'].includes(k))){res.status(200).json(await readOwnFreelanceMovements(uid,q.role,q.cursor));return;}
+   if(q.view==='pix_rebind'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixRebind(uid,q.offerId));return;}
    if(q.view==='pix_sharing'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readFreelancePixSharing(uid,q.offerId));return;}
    if(q.view==='restrictions'&&keys.length===1){res.status(200).json(await readOwnFreelanceRestrictions(uid));return;}
    if(q.view==='case'&&keys.length===2&&validFreelanceId(q.offerId)){res.status(200).json(await readCase(uid,q.offerId));return;}
@@ -68,8 +71,15 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const max=b.action==='submit_receipt'?360*1024:8192;
   if(Buffer.byteLength(JSON.stringify(b),'utf8')>max){res.status(413).json({code:'PAYLOAD_TOO_LARGE'});return;}
   const exact=(fields:string[])=>{if(Object.keys(b).length!==fields.length+2||Object.keys(b).some(k=>!['offerId','action',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
-  if(['bind_pix','authorize_pix_share','reveal_pix'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
+  if(['bind_pix','authorize_pix_share','reveal_pix','propose_pix_rebind','accept_pix_rebind','revoke_pix_share','restore_pix_share','propose_cancellation_accounting','accept_cancellation_accounting','close_cancellation_accounting'].includes(String(b.action))&&!personalPixRecentLogin(authTime)){res.status(403).json({code:'REAUTHENTICATION_REQUIRED'});return;}
   switch(b.action){
+   case 'propose_cancellation_accounting':exact(['proposalId','recognizedServiceMinor','reportedReceivedMinor','confirmed']);await changeCancellationAccounting(uid,b.offerId,'propose',{proposalId:b.proposalId,recognizedServiceMinor:b.recognizedServiceMinor,reportedReceivedMinor:b.reportedReceivedMinor,confirmed:b.confirmed});break;
+   case 'accept_cancellation_accounting':
+   case 'close_cancellation_accounting':exact(['proposalId','confirmed']);await changeCancellationAccounting(uid,b.offerId,b.action==='accept_cancellation_accounting'?'accept':'close',{proposalId:b.proposalId,confirmed:b.confirmed});break;
+   case 'propose_pix_rebind':exact(['oldRevision','newRevision','confirmed']);await changeFreelancePixBinding(uid,b.offerId,'propose',{oldRevision:b.oldRevision,newRevision:b.newRevision,confirmed:b.confirmed});break;
+   case 'accept_pix_rebind':exact(['oldRevision','newRevision','confirmed','paymentNotSent']);await changeFreelancePixBinding(uid,b.offerId,'accept',{oldRevision:b.oldRevision,newRevision:b.newRevision,confirmed:b.confirmed,paymentNotSent:b.paymentNotSent});break;
+   case 'revoke_pix_share':
+   case 'restore_pix_share':exact(['expectedRevision','expectedSequence','confirmed']);await changeFreelancePixSharingConsent(uid,b.offerId,b.action==='revoke_pix_share'?'revoke':'restore',{expectedRevision:b.expectedRevision,expectedSequence:b.expectedSequence,confirmed:b.confirmed});break;
    case 'bind_pix':exact(['expectedRevision','confirmed']);await bindFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
    case 'authorize_pix_share':exact(['expectedRevision','confirmed']);await authorizeFreelancePixSharing(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed});break;
    case 'reveal_pix':exact(['expectedRevision','confirmed']);res.status(200).json(await revealFreelancePixDestination(uid,b.offerId,{expectedRevision:b.expectedRevision,confirmed:b.confirmed}));return;
@@ -84,7 +94,7 @@ export async function handleFreelanceFinance(req:Request,res:Response){
   const code=e instanceof Error?e.message:'';
   const status=['FREELANCE_INVALID','FREELANCE_RECEIPT_INVALID'].includes(code)?400:
    ['FREELANCE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_CANCELLATION_ACCOUNTING_CONFLICT','FREELANCE_PAYMENT_NOT_DUE','FREELANCE_PAYMENT_STATEMENT_CONFLICT','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_FINANCIAL_REVIEW_CONFLICT','FREELANCE_FINANCIAL_EVIDENCE_CONFLICT','FREELANCE_RESTRICTION_CONFLICT','FREELANCE_PIX_DESTINATION_REQUIRED','FREELANCE_PIX_DESTINATION_CHANGED','FREELANCE_PIX_DISCLOSURE_UNAVAILABLE','PERSONAL_PIX_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_FINANCE_UNAVAILABLE':code});
  }
 }

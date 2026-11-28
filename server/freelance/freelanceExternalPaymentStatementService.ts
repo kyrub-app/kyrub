@@ -1,5 +1,5 @@
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
-import {validFreelanceId,type FreelanceOffer,type FreelanceApplication} from '../../shared/freelanceLifecycle.js';
+import {validFreelanceId,type FreelanceOffer,type FreelanceApplication,type FreelanceOccurrence} from '../../shared/freelanceLifecycle.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import {appendExternalPixStatement,projectExternalPixStatements,type ExternalPixEvent,type ExternalPixStatement} from '../../shared/freelanceExternalPaymentStatements.js';
@@ -12,7 +12,7 @@ function assertLocal(){
  getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
 }
 function contractSnapshot<T extends FreelanceOffer|FreelanceApplication>(record:T):T{
- const {startedAt,completionRequestedAt,completedAt,...rest}=record;
+ const {startedAt,completionRequestedAt,completedAt,cancelledAt,occurrenceId,...rest}=record;
  return {...rest,status:'contracted'} as T;
 }
 function readEvents(raw:unknown,offerId:string):ExternalPixEvent[]{
@@ -31,11 +31,29 @@ export async function readFinancialContext(tx:FirebaseFirestore.Transaction,uid:
   if(!offer||offer.id!==offerId||!validFreelanceId(offer.selectedApplicantUid)||
    (uid!==offer.ownerUid&&uid!==offer.selectedApplicantUid))throw Error('FREELANCE_FORBIDDEN');
   const app=(await tx.get(ref.collection('applications').doc(offer.selectedApplicantUid))).data() as FreelanceApplication|undefined;
-  if(!app||app.status!==offer.status||!['contracted','in_progress','completion_requested','completed'].includes(offer.status))
+  if(!app||app.status!==offer.status||!['contracted','in_progress','completion_requested','completed','under_review','cancelled'].includes(offer.status))
    throw Error('FREELANCE_PAYMENT_STATEMENT_CONFLICT');
   const obligation=buildFreelancePaymentObligation(contractSnapshot(offer),contractSnapshot(app));
   if(obligation.terms.method!=='external_pix'||!matchesFreelancePaymentObligation(ob.data(),obligation))
    throw Error('FREELANCE_PAYMENT_OBLIGATION_CONFLICT');
+  if(offer.status==='under_review'){
+   if(!validFreelanceId(offer.occurrenceId)||app.occurrenceId!==offer.occurrenceId||offer.cancelledAt||app.cancelledAt||offer.completedAt||app.completedAt)
+    throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+   const occurrence=(await tx.get(ref.collection('occurrences').doc(offer.occurrenceId))).data() as FreelanceOccurrence|undefined;
+   if(!occurrence||occurrence.id!==offer.occurrenceId||occurrence.offerId!==offerId||occurrence.ownerUid!==offer.ownerUid||
+      occurrence.applicantUid!==app.applicantUid||occurrence.status!=='awaiting_review'||occurrence.decision||
+      !['contracted','in_progress','completion_requested'].includes(occurrence.priorStatus)||
+      !Number.isFinite(Date.parse(occurrence.openedAt))||Date.parse(occurrence.openedAt)<Date.parse(obligation.contractedAt))
+    throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+  }
+  if(offer.status==='cancelled'){
+   const saved=await tx.get(ref.collection('financialBasis').doc('remuneration'));
+   const occurrenceId=saved.get('sourceOccurrenceId');
+   if(!validFreelanceId(occurrenceId))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+   const occurrence=(await tx.get(ref.collection('occurrences').doc(occurrenceId))).data() as FreelanceOccurrence|undefined;
+   const basis=buildFreelanceRemunerationBasis(offer,app,occurrence);
+   if(!matchesFreelanceRemunerationBasis(saved.data(),basis))throw Error('FREELANCE_FINANCIAL_BASIS_CONFLICT');
+  }
   const due=obligation.dueTrigger==='contract_confirmation'||offer.status==='completed';
   if(!due&&!allowNotDue)throw Error('FREELANCE_PAYMENT_NOT_DUE');
   if(offer.status==='completed'){

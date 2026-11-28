@@ -2,6 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb,getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import {buildFreelancePaymentObligation,matchesFreelancePaymentObligation} from '../../shared/freelancePaymentObligation.js';
 import {assertFreelanceEngagementAllowed} from './freelanceEngagementRestrictionService.js';
+import {assertDirectPixStart} from './freelancePixDestinationService.js';
 import {assertFreelanceFundingForStart} from './freelanceFundingService.js';
 import {buildFreelanceRemunerationBasis,matchesFreelanceRemunerationBasis} from '../../shared/freelanceRemuneration.js';
 import { sameFreelancePaymentTerms,createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, releaseFreelanceSelection, withdrawFreelanceApplication, cancelOpenFreelanceOffer, advanceFreelanceExecution, openFreelanceOccurrence, recordFreelanceOccurrenceResponse, type FreelanceOccurrence, type FreelanceExecutionAction, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
@@ -14,9 +15,19 @@ const assertApproved = (data: Record<string, unknown> | undefined, profile: 'req
   }
 };
 
-/** Service-only candidate: no public transport, no client writes and no migration of legacy records. */
+/** Transport always supplies acceptance, including undefined for legacy.
+ * Internal fixture callers retain their existing service contract. */
+function assertAcceptedPaymentTerms(offer:FreelanceOffer,acceptance?:{expected:unknown}){
+ if(!acceptance)return;
+ if(offer.paymentTerms!==undefined&&(!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||
+ process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
+ process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||getFirebaseAdminProjectId()!=='kyrub-security-test'||offer.paymentTerms.method!=='external_pix'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+ if(!sameFreelancePaymentTerms(offer.paymentTerms,acceptance.expected,offer.paymentMinor))throw Error('FREELANCE_CONFLICT');
+}
+/** Service-only candidate: no client writes and no migration of legacy records. */
 export async function publishFreelanceOffer(actorUid: string, offerId: string, input: unknown): Promise<{offer:FreelanceOffer;created:boolean}> {
   const proposed = createFreelanceOffer(offerId, actorUid, input, new Date().toISOString());
+  if(proposed.paymentTerms!==undefined&&(process.env.VERCEL||process.env.VERCEL_ENV||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||!['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test'))throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
   const ref = adminDb.doc(offers + '/' + offerId);
   return adminDb.runTransaction(async tx => {
     const [identity, existing] = await tx.getAll(eligibility(actorUid), ref);
@@ -34,7 +45,7 @@ export async function publishFreelanceOffer(actorUid: string, offerId: string, i
     return {offer:proposed,created:true};
   });
 }
-export async function applyToFreelanceOffer(actorUid: string, offerId: string): Promise<{application:FreelanceApplication;created:boolean}> {
+export async function applyToFreelanceOffer(actorUid: string, offerId: string, acceptance?:{expected:unknown}): Promise<{application:FreelanceApplication;created:boolean}> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId)) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
@@ -43,6 +54,7 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string): 
     assertApproved(identity.data(),'freelancer');
     const offer = offerSnap.data() as FreelanceOffer | undefined;
     if (!offerSnap.exists || !offer || offer.id !== offerId) throw new Error('FREELANCE_FORBIDDEN');
+    assertAcceptedPaymentTerms(offer,acceptance);
     const proposed = createFreelanceApplication(offer,actorUid,new Date().toISOString());
     if (applicationSnap.exists) {
       const saved = applicationSnap.data() as FreelanceApplication;
@@ -78,7 +90,7 @@ export async function selectFreelanceApplication(actorUid: string, offerId: stri
   });
 }
 /** The selected worker must explicitly confirm; the owner cannot confirm for them. */
-export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown): Promise<FreelanceSelectionResult> {
+export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown, acceptance?:{expected:unknown}): Promise<FreelanceSelectionResult> {
   if (!validFreelanceId(actorUid) || !validFreelanceId(offerId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
   const offerRef = adminDb.doc(offers + '/' + offerId);
   const applicationRef = offerRef.collection('applications').doc(actorUid);
@@ -91,6 +103,7 @@ export async function confirmFreelanceContract(actorUid: string, offerId: string
     const ownerIdentity = await tx.get(eligibility(offer.ownerUid));
     assertApproved(ownerIdentity.data(),'requester');
     assertApproved(workerIdentity.data(),'freelancer');
+    assertAcceptedPaymentTerms(offer,acceptance);
     const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
     if(result.changed)await assertFreelanceEngagementAllowed(tx,offer.ownerUid,actorUid);
     if(result.offer.paymentTerms!==undefined){
@@ -177,10 +190,10 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       const [owner,worker]=await tx.getAll(eligibility(offer.ownerUid),eligibility(offer.selectedApplicantUid));
       assertApproved(owner.data(),'requester');
       assertApproved(worker.data(),'freelancer');
-      // Direct terms are not a payment authorization. Preserve the legacy gate;
-      // the new lifecycle remains blocked until its obligation model is integrated.
-      if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined)throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
-      await assertFreelanceFundingForStart(tx,offer,application);
+      if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined){
+        if(actorUid!==offer.selectedApplicantUid)throw Error('FREELANCE_FORBIDDEN');
+        await assertDirectPixStart(tx,offer,application);
+      }else await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString());
     if(action==='confirm_completion'){
