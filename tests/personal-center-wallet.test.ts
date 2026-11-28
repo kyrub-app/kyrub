@@ -265,3 +265,12 @@ test('chat card preserves all four original indicators and identifies the origin
  assert.match(chat,/Math.min\(60_000,/);
  assert.match(chat,/validConnectedReputationCard/);
 });
+
+test('cocar header uses publication snapshot and keeps the full reputation card',()=>{
+ const ui=read('src/components/ReputationSquarePreview.tsx'),feed=read('src/components/PublicSocialFeedPanel.tsx');
+ assert.match(ui,/formatCocarCompact\(count\)/);
+ assert.match(ui,/Cocares na data da publicação/);
+ assert.match(ui,/PublicationCocarLabel count=\{summary.publication.cocaresAtPublication\}/);
+ assert.match(feed,/PublicationCocarLabel count=\{summary.cocaresAtPublication\}/);
+ assert.match(ui,/VITE_KYRUB_FREELANCE_REPUTATION_COCAR_HEADER_TEST_ONLY/);
+});

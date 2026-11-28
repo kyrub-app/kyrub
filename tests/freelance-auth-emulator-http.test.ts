@@ -2249,6 +2249,112 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
         await call(payer,'',403,comment);
         await assert.rejects(readVerifiedPostSemeadura(db,seedInput),/POST_NOT_ELIGIBLE/);
        }finally{await post.delete();await proof.delete();}
+       const cocarFlag='KYRUB_FREELANCE_REPUTATION_COCAR_HEADER_TEST_ONLY',oldCocar=process.env[cocarFlag];
+       const ledger=db.collection('users/'+worker.uid+'/xpLedger');
+       const xp=ledger.doc('cocar-fixture-'+suffix);
+       const extraXp=Array.from({length:40},(_,i)=>ledger.doc('cocar-extra-'+String(i).padStart(2,'0')+'-'+suffix));
+       try{
+        process.env[cocarFlag]='true';
+        const entry={id:xp.id,userId:worker.uid,economy:'kyrub_xp',deltaXp:12,sourceId:'fixture',correlationId:'fixture',idempotencyKey:'fixture-'+suffix,occurredAt:new Date().toISOString()};
+        await xp.set(entry);
+        // More than one query page; the signed adjustment starts page two.
+        // A sum of separately floored page totals would be wrong.
+        for(const [i,ref] of extraXp.entries())await ref.set({...entry,id:ref.id,idempotencyKey:ref.id,deltaXp:i===32?-5:1});
+        const expectedCocares=46;
+        const sample={...input,requestId:'cocar-'+suffix};
+        await call(worker,'',200,sample);await call(worker,'',200,sample);
+        const result=await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get();
+        assert.equal(result.size,1);
+        const source=result.docs[0],samplePost=db.doc('social_posts/'+source.id);
+        try{
+         assert.equal(source.get('cocaresAtPublication'),expectedCocares);
+         assert.equal((await samplePost.get()).get('cocaresAtPublication'),undefined);
+         const url='?view=reputation_square_post&offerId='+source.id;
+         const published=await call(payer,url,200);
+         assert.equal(published.cocaresAtPublication,expectedCocares);
+         await xp.update({deltaXp:13});
+         assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
+         // Reuse a key from the first page in the second: reject the entire
+         // snapshot, not just the duplicate row, and keep prior publication.
+         await xp.update({idempotencyKey:extraXp[0].id});
+         await call(worker,'',200,{...input,requestId:'cocar-invalid-'+suffix});
+         const duplicate=(await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get()).docs.find(d=>d.id!==source.id);
+         assert.ok(duplicate);
+         try{
+          assert.equal(duplicate.get('cocaresAtPublication'),null);
+          assert.equal((await call(payer,'?view=reputation_square_post&offerId='+duplicate.id,200)).cocaresAtPublication,null);
+          assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
+         }finally{await db.doc('social_posts/'+duplicate.id).delete();await duplicate.ref.delete();}
+         await xp.update({idempotencyKey:entry.idempotencyKey});
+         // The candidate is exercised only with this explicitly enrolled
+         // isolated UID. Direct fixture writes above are now finished.
+         const projectionFlags=['KYRUB_COCAR_PROJECTION_TEST_ONLY','KYRUB_COCAR_PROJECTION_TEST_EPOCH','KYRUB_COCAR_PROJECTION_READ_TEST_ONLY','KYRUB_COCAR_PROJECTION_READ_FIXTURE_UID'] as const;
+         const previousProjectionFlags=projectionFlags.map(key=>process.env[key]);
+         const projectionRef=db.doc('users/'+worker.uid+'/cocarProjectionV1/current');
+         const {rebuildCocarProjectionFixture,readCocarProjectionFixtureInTransaction}=await import('../server/gamification/cocarProjectionTransaction.js');
+         const projectedRead=()=>db.runTransaction(tx=>readCocarProjectionFixtureInTransaction(tx,db,worker.uid),{readOnly:true});
+         try{
+          process.env[projectionFlags[0]]='true';process.env[projectionFlags[1]]='publication-'+suffix;
+          process.env[projectionFlags[2]]='true';process.env[projectionFlags[3]]=worker.uid;
+          assert.equal(await projectedRead(),null);
+          assert.equal((await rebuildCocarProjectionFixture(db,worker.uid)).total,expectedCocares+1);
+          assert.equal(await projectedRead(),expectedCocares+1);
+          const publishCandidate=async (requestId:string)=>{
+           await call(worker,'',200,{...input,requestId});
+           const created=(await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get()).docs.find(d=>d.id!==source.id);
+           assert.ok(created);
+           try{
+            assert.equal(created.get('cocaresAtPublication'),expectedCocares+1);
+            assert.equal((await call(payer,'?view=reputation_square_post&offerId='+created.id,200)).cocaresAtPublication,expectedCocares+1);
+           }finally{await db.doc('social_posts/'+created.id).delete();await created.ref.delete();}
+          };
+          await publishCandidate('cocar-projection-'+suffix);
+          // A mismatched epoch must fall back to the exact history, not zero.
+          process.env[projectionFlags[1]]='different-'+suffix;
+          assert.equal(await projectedRead(),null);
+          await publishCandidate('cocar-fallback-'+suffix);
+          process.env[projectionFlags[1]]='publication-'+suffix;
+          process.env[projectionFlags[3]]=payer.uid;
+          assert.equal(await projectedRead(),null);
+          assert.equal((await call(payer,url,200)).cocaresAtPublication,expectedCocares);
+         }finally{
+          await projectionRef.delete();
+          projectionFlags.forEach((key,i)=>{const previous=previousProjectionFlags[i];if(previous===undefined)delete process.env[key];else process.env[key]=previous;});
+         }
+         const squareForward='KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY',directForward='KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY';
+         const oldSquareForward=process.env[squareForward],oldDirectForward=process.env[directForward];
+         const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
+         const chat=db.collection('social_chats/'+connectionId+'/messages');
+         const notices=db.collection('users/'+worker.uid+'/notifications').where('eventType','==','reputation_forward_received');
+         try{
+          process.env[squareForward]='true';process.env[directForward]='true';
+          await connection.set({senderId:payer.uid,receiverId:worker.uid,participantIds:[payer.uid,worker.uid],status:'accepted'});
+          await call(payer,'',200,{action:'forward_reputation_connected',offerId:source.id,connectionId,recipientId:worker.uid,confirmed:true});
+          const messages=await chat.get();assert.equal(messages.size,1);
+          const card='?view=reputation_connected_card&offerId='+connectionId+'&cursor='+messages.docs[0].id;
+          const received=await call(worker,card,200);
+          assert.deepEqual(received.experience,published.experience);
+          assert.deepEqual(received.reputations,published.reputations);
+          assert.equal(received.publication.cocaresAtPublication,expectedCocares);
+          assert.equal(received.publication.createdAtIso,source.get('createdAtIso'));
+          assert.deepEqual(await call(payer,card,200),received);
+          await call(null,card,401);
+          await profile.update({isProfileVisible:false});
+          assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});
+          await profile.update({isProfileVisible:true});
+         }finally{
+          await connection.delete();
+          for(const d of (await chat.get()).docs)await d.ref.delete();
+          for(const d of (await notices.get()).docs)await d.ref.delete();
+          for(const d of (await source.ref.collection('directForwards').get()).docs)await d.ref.delete();
+          if(oldSquareForward===undefined)delete process.env[squareForward];else process.env[squareForward]=oldSquareForward;
+          if(oldDirectForward===undefined)delete process.env[directForward];else process.env[directForward]=oldDirectForward;
+         }
+         await profile.update({isProfileVisible:false});
+         assert.deepEqual(await call(payer,url,200),{experience:null,reputations:null});
+         await profile.update({isProfileVisible:true});
+        }finally{await samplePost.delete();await source.ref.delete();}
+       }finally{await xp.delete();for(const ref of extraXp)await ref.delete();if(oldCocar===undefined)delete process.env[cocarFlag];else process.env[cocarFlag]=oldCocar;}
       }finally{if(oldPublish===undefined)delete process.env[publishFlag];else process.env[publishFlag]=oldPublish;}
       await profile.update({isProfileVisible:false});
       assert.deepEqual(await call(worker,preview,200),{experience:null,reputations:null});
@@ -2281,5 +2387,132 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   }
  }finally{
   for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
+ }
+});
+
+
+test('Cocares candidate: canonical writer, concurrency, replay and invalidation in the same emulator transaction',async()=>{
+ const flag='KYRUB_COCAR_PROJECTION_TEST_ONLY',epochKey='KYRUB_COCAR_PROJECTION_TEST_EPOCH';
+ const previousFlag=process.env[flag],previousEpoch=process.env[epochKey];
+ const uid='cocar-projection-'+suffix,epoch='fixture-'+suffix;
+ const ledger=db.collection('users/'+uid+'/xpLedger'),projection=db.doc('users/'+uid+'/cocarProjectionV1/current');
+ const {rebuildCocarProjectionFixture}=await import('../server/gamification/cocarProjectionTransaction.js');
+ const {persistVerifiedKyrubXp,readVerifiedKyrubXpTotal}=await import('../server/gamification/xpLedgerRepository.js');
+ const entry=(key:string,deltaXp:number)=>({userId:uid,sourceType:'achievement' as const,sourceId:'fixture',deltaXp,correlationId:key,idempotencyKey:key,occurredAt:'2026-11-27T12:00:00.000Z'});
+ try{
+  delete process.env[flag];
+  await assert.rejects(rebuildCocarProjectionFixture(db,uid),/COCAR_PROJECTION_EMULATOR_ONLY/);
+  await persistVerifiedKyrubXp(entry('seed',3));
+  assert.equal((await projection.get()).exists,false);
+  process.env[flag]='true';process.env[epochKey]=epoch;
+  assert.equal((await rebuildCocarProjectionFixture(db,uid)).total,3);
+  await Promise.all([persistVerifiedKyrubXp(entry('b',5)),persistVerifiedKyrubXp(entry('b',5)),persistVerifiedKyrubXp(entry('a',7))]);
+  assert.equal((await projection.get()).get('total'),15);
+  assert.equal((await projection.get()).get('entryCount'),3);
+  assert.deepEqual(await readVerifiedKyrubXpTotal(uid),{total:15,entryCount:3});
+  const before=(await projection.get()).data();
+  await persistVerifiedKyrubXp(entry('b',5));
+  assert.deepEqual((await projection.get()).data(),before);
+  await assert.rejects(persistVerifiedKyrubXp(entry('b',6)),/XP_IDEMPOTENCY_CONFLICT/);
+  assert.deepEqual((await projection.get()).data(),before);
+  // Existing historical key in a different document: economic writer retains
+  // its existing contract, but a projection may no longer claim validity.
+  const duplicateKey='other';
+  await ledger.doc('legacy_other').set({...entry(duplicateKey,1),id:'legacy_other',economy:'kyrub_xp'});
+  await rebuildCocarProjectionFixture(db,uid);
+  await persistVerifiedKyrubXp(entry(duplicateKey,2));
+  assert.equal((await projection.get()).exists,false);
+  assert.equal((await ledger.doc('xp_other').get()).exists,true);
+  await assert.rejects(rebuildCocarProjectionFixture(db,uid),/COCAR_LEDGER_ORDER_OR_KEY_INVALID/);
+ }finally{
+  await projection.delete();
+  for(const d of (await ledger.get()).docs)await d.ref.delete();
+  if(previousFlag===undefined)delete process.env[flag];else process.env[flag]=previousFlag;
+  if(previousEpoch===undefined)delete process.env[epochKey];else process.env[epochKey]=previousEpoch;
+ }
+});
+
+
+test('Cocares historical reconciliation: preview, multiple pages, concurrent grant and no duplicate migration',async()=>{
+ const flag='KYRUB_COCAR_PROJECTION_TEST_ONLY',epochKey='KYRUB_COCAR_PROJECTION_TEST_EPOCH';
+ const previousFlag=process.env[flag],previousEpoch=process.env[epochKey];
+ const uid='cocar-history-'+suffix,epoch='history-'+suffix;
+ const ledger=db.collection('users/'+uid+'/xpLedger'),projection=db.doc('users/'+uid+'/cocarProjectionV1/current');
+ const {reconcileCocarProjectionFixture}=await import('../server/gamification/cocarProjectionTransaction.js');
+ const {persistVerifiedKyrubXp,readVerifiedKyrubXpTotal}=await import('../server/gamification/xpLedgerRepository.js');
+ const entry=(key:string,deltaXp:number)=>({userId:uid,sourceType:'achievement' as const,sourceId:'fixture',deltaXp,correlationId:key,idempotencyKey:key,occurredAt:'2026-11-27T12:00:00.000Z'});
+ try{
+  process.env[flag]='true';process.env[epochKey]=epoch;
+  const batch=db.batch();
+  for(let i=0;i<260;i++){
+   const key='history_'+String(i).padStart(3,'0'),ref=ledger.doc('xp_'+key);
+   batch.set(ref,{...entry(key,i===128?-2:1),id:ref.id,economy:'kyrub_xp'});
+  }
+  await batch.commit();
+  const preview=await reconcileCocarProjectionFixture(db,uid,'preview');
+  assert.equal(preview.status,'reconciled');assert.equal(preview.changed,false);
+  assert.equal(preview.projection?.total,257);assert.equal((await projection.get()).exists,false);
+  // Both transaction orders are valid: the final projection must include the grant.
+  await Promise.all([reconcileCocarProjectionFixture(db,uid,'apply'),persistVerifiedKyrubXp(entry('zz',5))]);
+  const current=await projection.get();
+  assert.equal(current.get('total'),262);assert.equal(current.get('entryCount'),261);
+  assert.deepEqual(await readVerifiedKyrubXpTotal(uid),{total:262,entryCount:261});
+  assert.equal((await reconcileCocarProjectionFixture(db,uid,'apply')).changed,false);
+  assert.ok((await projection.get()).updateTime?.isEqual(current.updateTime!));
+  const bad=ledger.doc('xp_zzz');
+  await bad.set({...entry('history_000',1),id:bad.id,economy:'kyrub_xp'});
+  assert.equal((await reconcileCocarProjectionFixture(db,uid,'preview')).status,'invalid');
+  assert.equal((await projection.get()).exists,true);
+  const rejected=await reconcileCocarProjectionFixture(db,uid,'apply');
+  assert.equal(rejected.status,'invalid');assert.equal(rejected.changed,true);
+  assert.equal((await projection.get()).exists,false);
+  assert.equal((await ledger.get()).size,262);
+ }finally{
+  const cleanup=db.batch();
+  cleanup.delete(projection);
+  for(const d of (await ledger.get()).docs)cleanup.delete(d.ref);
+  await cleanup.commit();
+  if(previousFlag===undefined)delete process.env[flag];else process.env[flag]=previousFlag;
+  if(previousEpoch===undefined)delete process.env[epochKey];else process.env[epochKey]=previousEpoch;
+ }
+});
+
+
+test('Cocares resumable migration: bounded steps, grant invalidation and cross-page duplicate keys',async()=>{
+ const flags=['KYRUB_COCAR_PROJECTION_TEST_ONLY','KYRUB_COCAR_PROJECTION_TEST_EPOCH','KYRUB_COCAR_MIGRATION_FIXTURE_UID'] as const;
+ const old=flags.map(k=>process.env[k]),uid='cocar-migration-'+suffix;
+ const ledger=db.collection('users/'+uid+'/xpLedger'),projection=db.doc('users/'+uid+'/cocarProjectionV1/current'),checkpoint=projection.parent.doc('migration');
+ const {startCocarMigrationFixture,stepCocarMigrationFixture}=await import('../server/gamification/cocarProjectionTransaction.js');
+ const {persistVerifiedKyrubXp,readVerifiedKyrubXpTotal}=await import('../server/gamification/xpLedgerRepository.js');
+ const entry=(key:string,deltaXp:number)=>({userId:uid,sourceType:'achievement' as const,sourceId:'fixture',deltaXp,correlationId:key,idempotencyKey:key,occurredAt:'2026-11-27T12:00:00.000Z'});
+ try{
+  process.env[flags[0]]='true';process.env[flags[1]]='migration-'+suffix;process.env[flags[2]]=uid;
+  const batch=db.batch();
+  for(let i=0;i<130;i++){const key='old_'+String(i).padStart(3,'0'),ref=ledger.doc('xp_'+key);batch.set(ref,{...entry(key,i===64?-2:1),id:ref.id,economy:'kyrub_xp'});}
+  await batch.commit();
+  await startCocarMigrationFixture(db,uid,'run1');
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run1'),{status:'progress',entries:64});
+  assert.equal((await projection.get()).exists,false);
+  await persistVerifiedKyrubXp(entry('zz',5));
+  assert.equal((await checkpoint.get()).exists,false);
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run1'),{status:'restart_required'});
+  await startCocarMigrationFixture(db,uid,'run2');
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run1'),{status:'restart_required'});
+  for(let i=0;i<5;i++){assert.equal((await stepCocarMigrationFixture(db,uid,'run2')).status,'progress');assert.equal((await projection.get()).exists,false);}
+  assert.deepEqual(await stepCocarMigrationFixture(db,uid,'run2'),{status:'complete',total:132,entries:131});
+  assert.equal((await checkpoint.get()).exists,false);
+  assert.deepEqual(await readVerifiedKyrubXpTotal(uid),{total:132,entryCount:131});
+  assert.equal((await projection.get()).get('total'),132);
+  // Seed duplicate key at sorted positions 63 and 64, straddling a key page.
+  const dup=ledger.doc('xp_duplicate');
+  await dup.set({...entry('old_063',1),id:dup.id,economy:'kyrub_xp'});
+  await startCocarMigrationFixture(db,uid,'run3');
+  for(let i=0;i<4;i++)assert.equal((await stepCocarMigrationFixture(db,uid,'run3')).status,'progress');
+  assert.equal((await stepCocarMigrationFixture(db,uid,'run3')).status,'invalid');
+  assert.equal((await projection.get()).exists,false);
+  assert.equal((await ledger.get()).size,132);
+ }finally{
+  const clean=db.batch();clean.delete(projection);clean.delete(checkpoint);for(const d of (await ledger.get()).docs)clean.delete(d.ref);await clean.commit();
+  flags.forEach((k,i)=>{if(old[i]===undefined)delete process.env[k];else process.env[k]=old[i];});
  }
 });

@@ -1,3 +1,4 @@
+import { prepareCocarProjectionForNewXp } from './cocarProjectionTransaction.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
 import { planFirstStoreChallengeReward, type VerifiedFirstStoreEvent } from './firstStoreChallengeReward.js';
@@ -60,6 +61,13 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
     return { replay: true, pitangas: plan.pitangas, xp: plan.xp };
   }
   if (xpEntry.exists || pitangaEntry.exists) throw new Error('FIRST_STORE_REWARD_PARTIAL_STATE');
+  const xpRow = {
+    id: input.xpLedgerRef.id, userId: uid, deltaXp: plan.xp,
+    sourceType: 'challenge' as const, sourceId: plan.challengeId,
+    correlationId: awardId, idempotencyKey: awardId,
+    occurredAt: input.event.createdAt, economy: 'kyrub_xp',
+  };
+  const updateProjection = plan.xp > 0 ? await prepareCocarProjectionForNewXp(tx, input.xpLedgerRef, xpRow) : () => {};
   // The canonical Pitanga balance must already exist after verified migration.
   // This deliberately fails closed for un-migrated users.
   if (plan.pitangas > 0) {
@@ -71,12 +79,8 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
     });
   }
   if (plan.xp > 0) {
-    tx.create(input.xpLedgerRef, {
-      id: input.xpLedgerRef.id, userId: uid, deltaXp: plan.xp,
-      sourceType: 'challenge', sourceId: plan.challengeId,
-      correlationId: awardId, idempotencyKey: awardId,
-      occurredAt: input.event.createdAt, economy: 'kyrub_xp',
-    });
+    tx.create(input.xpLedgerRef, xpRow);
+    updateProjection();
   }
   tx.create(input.receiptRef, expected);
   return { replay: false, pitangas: plan.pitangas, xp: plan.xp };

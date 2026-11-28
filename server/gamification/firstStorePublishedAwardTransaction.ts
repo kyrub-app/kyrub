@@ -1,3 +1,4 @@
+import { prepareCocarProjectionForNewXp } from './cocarProjectionTransaction.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
 import { planFirstStorePublishedReward, type VerifiedFirstStorePublication } from './firstStorePublishedReward.js';
@@ -39,12 +40,15 @@ export async function awardVerifiedFirstStorePublicationInTransaction(
     return { replay: true, pitangas: 0, xp: 2 };
   }
   if (xp.exists) throw Error('FIRST_STORE_PUBLICATION_REWARD_PARTIAL_STATE');
-  tx.create(input.xpLedgerRef, {
+  const xpRow = {
     id: input.xpLedgerRef.id, userId: uid, deltaXp: 2,
-    sourceType: 'challenge', sourceId: plan.challengeId,
+    sourceType: 'challenge' as const, sourceId: plan.challengeId,
     correlationId: id, idempotencyKey: id,
     occurredAt: input.event.publishedAt, economy: 'kyrub_xp',
-  });
+  };
+  const updateProjection = await prepareCocarProjectionForNewXp(tx, input.xpLedgerRef, xpRow);
+  tx.create(input.xpLedgerRef, xpRow);
+  updateProjection();
   tx.create(input.receiptRef, {
     userId: uid, storeId: plan.storeId, challengeId: plan.challengeId,
     pitangas: 0, xp: 2, idempotencyKey: id, occurredAt: input.event.publishedAt,

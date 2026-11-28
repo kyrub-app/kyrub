@@ -1,3 +1,5 @@
+import {readCocarProjectionFixtureInTransaction} from '../gamification/cocarProjectionTransaction.js';
+import {kyrubXpTotal,type KyrubXpEntry} from '../../shared/gamification.js';
 import {buildUserNotification,userNotificationPath} from '../../shared/userNotifications.js';
 import {isSocialAddress,isDocumentId,matchesSocialAddressRecord,projectSocialAddress} from '../identity/publicSocialAddressPolicy.js';
 import {coverageRef,indexDigest,checkedCoverage,writeCoverage,readReputationMaintenance} from './freelanceReputationCoverage.js';
@@ -255,6 +257,45 @@ const validSquarePost=(v:unknown):v is string=>typeof v==='string'&&/^reputation
 const squareWindow=24*60*60*1000;
 /** Only a server-created reference attests this special publication.
  * Store no numeric snapshot in either document. Request ID is idempotent. */
+
+const cocarSnapshotEnabled=()=>process.env.KYRUB_FREELANCE_REPUTATION_COCAR_HEADER_TEST_ONLY==='true';
+const validCocarSnapshot=(v:unknown)=>v===null||typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
+/** Exact, emulator-only reconstruction at publication; never in the feed or chat.
+ * Page size bounds each query, not the total history. Preserve document-ID order
+ * and cross-page idempotency validation, including signed adjustments.
+ * Only explicitly enrolled emulator fixtures may use the candidate projection;
+ * all other cases retain the canonical reconstruction. Do not activate on production.
+ */
+async function readPublicationCocares(tx:Transaction,uid:string):Promise<number|null>{
+ const ledger=adminDb.collection('users/'+uid+'/xpLedger');
+ const projected=await readCocarProjectionFixtureInTransaction(tx,ledger.firestore,uid);
+ if(projected!==null)return projected;
+ const pageSize=32;
+ const query=ledger.orderBy(FieldPath.documentId()).limit(pageSize);
+ let cursor:QueryDocumentSnapshot|undefined;
+ let total=0,magnitude=0;
+ const seen=new Set<string>();
+ for(;;){
+  const rows=await tx.get(cursor?query.startAfter(cursor):query);
+  try{
+   for(const d of rows.docs){
+    const e=d.data() as KyrubXpEntry&{economy?:string};
+    if(e.userId!==uid||e.id!==d.id||e.economy!=='kyrub_xp'||!Number.isFinite(Date.parse(e.occurredAt))||!Number.isSafeInteger(e.deltaXp))throw Error('XP_LEDGER_INVALID');
+    magnitude+=Math.abs(e.deltaXp);
+    if(!Number.isSafeInteger(magnitude))throw Error('XP_LEDGER_INVALID');
+    if(seen.has(e.idempotencyKey))throw Error('XP_LEDGER_INVALID');
+    // Reuse the canonical single-entry validation. Its zero floor must
+    // be applied to the running total, not to an independently summed page.
+    kyrubXpTotal([e]);
+    seen.add(e.idempotencyKey);
+    total=Math.max(0,total+e.deltaXp);
+   }
+  }catch{return null;}
+  if(rows.size<pageSize)return total;
+  cursor=rows.docs[rows.docs.length-1];
+ }
+}
+
 export async function publishOwnReputationSquare(uid:string,identifier:unknown,requestId:unknown,confirmed:unknown){
  assertFreelanceReputationLocal();
  if(!squarePublicationEnabled())throw Error('FREELANCE_FORBIDDEN');
@@ -265,7 +306,7 @@ export async function publishOwnReputationSquare(uid:string,identifier:unknown,r
   const expected={schemaVersion:1,postId,authorId:uid,identifier,requestId};
   if(proof.exists){
    const raw=proof.data();
-   if(!post.exists||!raw||!equal(raw,{...expected,createdAtIso:raw.createdAtIso})||post.get('authorId')!==uid||post.get('createdAtIso')!==raw.createdAtIso)throw Error('FREELANCE_REPUTATION_CONFLICT');
+   if(!post.exists||!raw||!equal(raw,{...expected,createdAtIso:raw.createdAtIso,...(Object.hasOwn(raw,'cocaresAtPublication')?{cocaresAtPublication:raw.cocaresAtPublication}:{})})||(Object.hasOwn(raw,'cocaresAtPublication')&&!validCocarSnapshot(raw.cocaresAtPublication))||post.get('authorId')!==uid||post.get('createdAtIso')!==raw.createdAtIso)throw Error('FREELANCE_REPUTATION_CONFLICT');
    return {postId,created:false};
   }
   if(post.exists)throw Error('FREELANCE_REPUTATION_CONFLICT');
@@ -274,8 +315,9 @@ export async function publishOwnReputationSquare(uid:string,identifier:unknown,r
   const userRef=adminDb.doc('users/'+uid),[source,publicProfile]=await tx.getAll(userRef,userRef.collection('public_profile').doc('main'));
   const identity=projectSocialAddress({kind:'profile',identifier,targetId:uid},source.data(),publicProfile.data());
   if(!identity)throw Error('FREELANCE_FORBIDDEN');
+  const cocar=cocarSnapshotEnabled()?{cocaresAtPublication:await readPublicationCocares(tx,uid)}:{};
   const now=new Date(),createdAtIso=now.toISOString();
-  tx.create(proofRef,{...expected,createdAtIso});
+  tx.create(proofRef,{...expected,createdAtIso,...cocar});
   tx.create(postRef,{postId,sourcePostId:postId,authorId:uid,authorName:identity.name,authorAvatar:identity.image,content:'Conheça minha Experiência e Reputações no Kyrub!',publicationType:'feed',taggedUsers:[],taggedUserIds:[],mediaUrls:[],visibility:'public',audienceIds:[],createdAtIso,createdAt:now,updatedAt:now});
   return {postId,created:true};
  });
@@ -284,13 +326,18 @@ export async function readReputationSquarePublication(uid:string,postId:unknown)
  assertFreelanceReputationLocal();
  if(!squarePublicationEnabled())throw Error('FREELANCE_FORBIDDEN');
  if(!validFreelanceId(uid)||!validSquarePost(postId))throw Error('FREELANCE_INVALID');
- return adminDb.runTransaction(tx=>readReputationSquareInTransaction(tx,postId),{readOnly:true});
+ return adminDb.runTransaction(async tx=>{
+  const summary=await readReputationSquareInTransaction(tx,postId);
+  if(!cocarSnapshotEnabled()||!summary.experience||!summary.reputations)return summary;
+  const proof=(await tx.get(adminDb.doc('freelanceReputationSquarePostsV1/'+postId))).data();
+  return {...summary,cocaresAtPublication:proof?.cocaresAtPublication??null};
+ },{readOnly:true});
 }
 async function readReputationSquareInTransaction(tx:Transaction,postId:string){
   const hidden={experience:null,reputations:null};
   const [post,proof]=await tx.getAll(adminDb.doc('social_posts/'+postId),adminDb.doc('freelanceReputationSquarePostsV1/'+postId));
   const p=post.data(),r=proof.data();
-  if(!p||!r||Object.keys(r).length!==6||r.schemaVersion!==1||r.postId!==postId||!validFreelanceId(r.authorId)||!validFreelanceId(r.requestId)||squarePostId(r.authorId,r.requestId)!==postId||typeof r.identifier!=='string'||!isSocialAddress('profile',r.identifier)||typeof r.createdAtIso!=='string'||p.createdAtIso!==r.createdAtIso||p.authorId!==r.authorId||p.postId!==postId||p.visibility!=='public'||p.publicationType!=='feed')return hidden;
+  if(!p||!r||(Object.keys(r).length!==6+(Object.hasOwn(r,'cocaresAtPublication')?1:0))||(Object.hasOwn(r,'cocaresAtPublication')&&!validCocarSnapshot(r.cocaresAtPublication))||r.schemaVersion!==1||r.postId!==postId||!validFreelanceId(r.authorId)||!validFreelanceId(r.requestId)||squarePostId(r.authorId,r.requestId)!==postId||typeof r.identifier!=='string'||!isSocialAddress('profile',r.identifier)||typeof r.createdAtIso!=='string'||p.createdAtIso!==r.createdAtIso||p.authorId!==r.authorId||p.postId!==postId||p.visibility!=='public'||p.publicationType!=='feed')return hidden;
   let distributedAt=r.createdAtIso;
   if(p.squareDistributedAtIso!==undefined||p.squareForwardedById!==undefined){
    if(typeof p.squareDistributedAtIso!=='string'||!validFreelanceId(p.squareForwardedById))return hidden;
@@ -415,7 +462,7 @@ export async function readConnectedReputationCard(uid:string,connectionId:unknow
   if(!identity)return hidden;
   const expiresAt=Date.parse(p.squareDistributedAtIso??r.createdAtIso)+squareWindow;
   if(!Number.isFinite(expiresAt)||Date.now()>=expiresAt)return hidden;
-  return {experience:summary.experience,reputations:summary.reputations,publication:{authorName:identity.name,authorImage:identity.image,createdAtIso:r.createdAtIso,expiresAtIso:new Date(expiresAt).toISOString()}};
+  return {experience:summary.experience,reputations:summary.reputations,publication:{authorName:identity.name,authorImage:identity.image,createdAtIso:r.createdAtIso,expiresAtIso:new Date(expiresAt).toISOString(),...(cocarSnapshotEnabled()?{cocaresAtPublication:r.cocaresAtPublication??null}:{})}};
 
  },{readOnly:true});
 }
