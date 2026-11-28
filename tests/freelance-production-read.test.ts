@@ -154,3 +154,25 @@ test('contract authority is independent and limited to fixed external Pix on com
  assert.throws(()=>assertContractPilotTerms({...terms,paymentTerms:{...terms.paymentTerms,method:'mercado_pago'}}));
  assert.throws(()=>assertContractPilotTerms({...terms,paymentTerms:undefined}));
 });
+
+test('financial pilot requires contract authority, exact participants and recent authentication for Pix actions',async()=>{
+ const {handleFreelanceFinancePilot}=await import('../server/freelance/freelanceFinancePilotTransport.js');
+ const e={...env,KYRUB_FREELANCE_ENGAGEMENT_PILOT_ENABLED:'true',KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED:'true',KYRUB_PERSONAL_PIX_PILOT_ENABLED:'true'};
+ let status=0,body:unknown,calls=0,reads=0;
+ const res={setHeader(){},status(n:number){status=n;return {json(v:unknown){body=v;}}}};
+ const identity={uid:'pilot',aud:'kyrub-b8d0e',email_verified:true,auth_time:Math.floor(Date.now()/1000)};
+ const deps={env:e,verify:async()=>identity,authorize:()=>{},active:async()=>true,read:async(uid:string,view:string,id:string|undefined)=>{assert.equal(uid,'pilot');assert.equal(view,'case');assert.equal(id,'offer');reads++;return {bankVerified:false};},execute:async(uid:string,_input:unknown)=>{assert.equal(uid,'pilot');calls++;return {confirmed:true};}};
+ const req={method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:{action:'bind_pix',offerId:'offer',expectedRevision:1,confirmed:true}};
+ await handleFreelanceFinancePilot(req,res,{...deps,env:{...e,KYRUB_FREELANCE_CONTRACT_PILOT_ENABLED:undefined}});assert.equal(status,503);
+ await handleFreelanceFinancePilot(req,res,{...deps,verify:async()=>({...identity,uid:'other'})});assert.equal(status,403);
+ await handleFreelanceFinancePilot(req,res,{...deps,verify:async()=>({...identity,aud:'other-project'})});assert.equal(status,401);
+ await handleFreelanceFinancePilot(req,res,{...deps,active:async()=>false});assert.equal(status,403);
+ await handleFreelanceFinancePilot(req,res,{...deps,verify:async()=>({...identity,auth_time:identity.auth_time-600})});assert.equal(status,403);
+ await handleFreelanceFinancePilot({...req,body:{...req.body,uid:'other'}},res,deps);assert.equal(status,400);
+ await handleFreelanceFinancePilot({...req,body:{action:'submit_receipt',offerId:'offer',confirmed:true}},res,deps);assert.equal(status,400);
+ assert.equal(calls,0);
+ await handleFreelanceFinancePilot(req,res,deps);assert.equal(status,200);assert.deepEqual(body,{confirmed:true});
+ await handleFreelanceFinancePilot({...req,body:{action:'statement',offerId:'offer',eventId:'event',statement:'paid',confirmed:true}},res,deps);assert.equal(status,200);assert.equal(calls,2);
+ await handleFreelanceFinancePilot({...req,method:'GET',query:{view:'case',offerId:'offer'}},res,deps);assert.equal(status,200);assert.equal(reads,1);
+ await handleFreelanceFinancePilot({...req,method:'GET',query:{view:'case',offerId:'offer',uid:'other'}},res,deps);assert.equal(status,400);
+});
