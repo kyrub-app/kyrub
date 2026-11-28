@@ -1,3 +1,4 @@
+import {readPersonalPixReadiness} from '../payments/personalPixDestinationService.js';
 import {adminAuth,adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 import {readFreelanceWorkspace} from './freelanceWorkspaceReadService.js';
@@ -11,7 +12,7 @@ type Dependencies={
  projectReady:()=>boolean;
  verify:(token:string)=>Promise<Identity>;
  accountEligible:(uid:string)=>Promise<boolean>;
- read:typeof readFreelanceWorkspace;
+ read:(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>Promise<unknown>;
 };
 export function freelanceProductionReadEnabled(env:NodeJS.ProcessEnv=process.env){
  return env.KYRUB_FREELANCE_PRODUCTION_READ_ENABLED==='true'&&env.VERCEL==='1'&&env.VERCEL_ENV==='production'&&
@@ -36,7 +37,7 @@ const defaults:Dependencies={
   return age.get('uid')===uid&&age.get('status')==='verified_adult'&&profile.get('status')==='approved'&&
    Array.isArray(roles)&&roles.some(r=>r==='requester'||r==='freelancer');
  },
- read:readFreelanceWorkspace
+ read:(uid,view,offerId,cursor)=>view==='personal_pix_readiness'?adminDb.runTransaction(tx=>readPersonalPixReadiness(tx,uid),{readOnly:true}):readFreelanceWorkspace(uid,view,offerId,cursor)
 };
 export async function handleFreelanceProductionRead(req:Request,res:Response,deps:Dependencies=defaults){
  res.setHeader('Cache-Control','private, no-store, max-age=0');
