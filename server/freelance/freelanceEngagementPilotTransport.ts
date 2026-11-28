@@ -15,7 +15,7 @@ export async function executeEngagementPilotAction(uid:string,input:unknown){
  default:throw Error('FREELANCE_INVALID');
  }
 }
-export function validateEngagementPilotAction(input:unknown){
+export function validateEngagementPilotAction(input:unknown):Record<string,unknown>&{offerId:string}{
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
