@@ -45,9 +45,9 @@ export async function handleFreelanceProductionRead(req:Request,res:Response,dep
  if(req.method!=='GET'){res.setHeader('Allow','GET');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;}
  const q=req.query??{};
  if(Object.keys(q).some(k=>!['view','offerId','cursor'].includes(k))||
- !['open','owner','applications','detail','requester_stores','engagement_preflight'].includes(String(q.view))||
+ !['open','owner','applications','detail','requester_stores','engagement_preflight','personal_pix_readiness'].includes(String(q.view))||
  typeof q.view!=='string'||(q.view==='detail'?!validFreelanceId(q.offerId):q.offerId!==undefined)||
- (q.cursor!==undefined&&!validFreelanceId(q.cursor))||(['requester_stores','engagement_preflight'].includes(q.view)&&q.cursor!==undefined)){
+ (q.cursor!==undefined&&!validFreelanceId(q.cursor))||(['requester_stores','engagement_preflight','personal_pix_readiness'].includes(q.view)&&q.cursor!==undefined)){
   res.status(400).json({code:'FREELANCE_INVALID'});return;
  }
  const h=req.headers.authorization;
