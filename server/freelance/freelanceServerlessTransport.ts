@@ -24,6 +24,9 @@ export async function handleFreelanceServerlessRequest(surface: Surface, request
       case 'freelance-finance':
         return await (await import('./freelanceFinanceTransport.js')).handleFreelanceFinance(forwarded, response);
       case 'personal-finance-pix':
+        if (process.env.VERCEL || process.env.VERCEL_ENV) {
+          return await (await import('../payments/personalPixPilotTransport.js')).handlePersonalPixPilot(forwarded, response);
+        }
         return await (await import('../payments/personalPixTransport.js')).handlePersonalPix(forwarded, response);
       case 'freelance-financial-review':
         return await (await import('../admin/freelanceFinancialReviewTransport.js')).handleFreelanceFinancialReview(forwarded, response);

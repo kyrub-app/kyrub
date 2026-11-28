@@ -75,3 +75,24 @@ test('Pix readiness accepts only own authenticated read without keys or mutation
  await handleFreelanceProductionRead(req,response,deps);assert.equal(status,200);assert.equal(calls,1);
  assert.deepEqual(body,{status:'declared',ownershipVerified:false});
 });
+
+test('personal Pix pilot requires explicit production authority and recent authentication for mutations',async()=>{
+ const {handlePersonalPixPilot}=await import('../server/payments/personalPixPilotTransport.js');
+ const {personalPixPilotEnabled}=await import('../server/payments/personalPixDestinationService.js');
+ const pilotEnv={VERCEL:'1',VERCEL_ENV:'production',NODE_ENV:'production',KYRUB_PERSONAL_PIX_PILOT_ENABLED:'true',KYRUB_FREELANCE_PILOT_UIDS:'pilot'};
+ assert.equal(personalPixPilotEnabled(pilotEnv),true);
+ for(const override of [{KYRUB_PERSONAL_PIX_PILOT_ENABLED:undefined},{VERCEL_ENV:'preview'},{FIRESTORE_EMULATOR_HOST:'localhost:8088'},{KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION:'true'}])assert.equal(personalPixPilotEnabled({...pilotEnv,...override}),false);
+ let status=0,changes=0,reads=0;
+ const response={setHeader(){},status(n:number){status=n;return{json(){}}}};
+ const identity={uid:'pilot',aud:'kyrub-b8d0e',email_verified:true,auth_time:Math.floor(Date.now()/1000)};
+ const deps={env:pilotEnv,projectReady:()=>true,verify:async()=>identity,active:async()=>true,read:async(uid:string)=>{assert.equal(uid,'pilot');reads++;return {status:'declared',revision:1};},change:async(uid:string,input:unknown)=>{assert.equal(uid,'pilot');assert.deepEqual(input,{action:'revoke',expectedRevision:1,confirmed:true});changes++;return {status:'revoked'};}};
+ const req={method:'POST',headers:{authorization:'Bearer fixture','content-type':'application/json'},body:{action:'revoke',expectedRevision:1,confirmed:true}};
+ await handlePersonalPixPilot(req,response,{...deps,projectReady:()=>false});assert.equal(status,503);
+ await handlePersonalPixPilot(req,response,{...deps,verify:async()=>({...identity,uid:'other'})});assert.equal(status,403);
+ await handlePersonalPixPilot(req,response,{...deps,verify:async()=>({...identity,auth_time:identity.auth_time-301})});assert.equal(status,403);
+ await handlePersonalPixPilot({...req,body:{...req.body,uid:'other'}},response,deps);assert.equal(status,400);
+ await handlePersonalPixPilot({...req,body:{...req.body,action:'import_cid'}},response,deps);assert.equal(status,400);
+ assert.equal(changes,0);
+ await handlePersonalPixPilot({...req,method:'GET'},response,deps);assert.equal(status,200);assert.equal(reads,1);
+ await handlePersonalPixPilot(req,response,deps);assert.equal(status,200);assert.equal(changes,1);
+});
