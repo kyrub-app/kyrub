@@ -271,6 +271,7 @@ test('commercial checkout supports multiple buyers and canonical Business term w
   delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
   docs.set('stores/second-store',{ownerId:'second',legacyTenantId:'second',plan:'free'});
   docs.set('users/second',{displayName:'Second'});
+  docs.set('users/second/stores/second',{plan:'free'});
   docs.set('stores/official/products/business-product',{...docs.get('stores/official/products/pro-product'),name:'Kyrub Business',price:397,contractDiscounts:[{months:1,discountPercent:0},{months:3,discountPercent:20},{months:6,discountPercent:30},{months:12,discountPercent:40}]});
   docs.set(`${ROOT}/official_plan_products/business-product`,{...docs.get(`${ROOT}/official_plan_products/pro-product`),productId:'business-product',planId:'business'});
   const a=await accepted();
