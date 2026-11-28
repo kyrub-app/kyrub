@@ -14,6 +14,7 @@ import AdminWorkspaceRecoveryBoundary from './AdminWorkspaceRecoveryBoundary';
 const PlatformEconomy = lazy(() => import('./AdminPlatformEconomyWorkspace'));
 
 const GlobalChallenges = lazy(() => import('./AdminGlobalChallengesWorkspace'));
+const FreelanceReview = lazy(() => import('./AdminFreelanceReviewWorkspace'));
 
 const OfficialPlanGovernance = lazy(() => import('../store/OfficialStoreCommercialWorkspace'));
 
@@ -52,6 +53,7 @@ export default function AdminControlPlaneApp() {
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-firebase-preflight" title="Diagnóstico Firebase" description="Verificação manual e somente leitura da credencial Firebase da plataforma." icon={ShieldCheck} badge="Super Admin"><AdminFirebasePreflight key={user.uid} user={user} profile={profile} /></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-global-challenges" title="Desafios globais" description="Consulte desafios do Kyrub, crie rascunhos e publique com confirmação." icon={Trophy} badge="Super Admin"><Suspense fallback={<p role="status">Carregando desafios…</p>}><AdminWorkspaceRecoveryBoundary section="Desafios globais"><GlobalChallenges key={user.uid} user={user} profile={profile} /></AdminWorkspaceRecoveryBoundary></Suspense></AdminAccordionSection>}
       {hasAdminPermission(profile, 'read_finance') && <AdminAccordionSection key={user.uid + ':' + profile.role} id="admin-platform-economy" title="Financeiro da Plataforma" description="Movimentações do ecossistema, conciliação sistêmica e eficiência da infraestrutura. Gestão empresarial no ERP da Loja Oficial." icon={Banknote} badge="Control Plane"><AdminWorkspaceRecoveryBoundary section="Economia da Plataforma"><Suspense fallback={<p role="status">Carregando financeiro…</p>}><PlatformEconomy user={user} profile={profile}/></Suspense></AdminWorkspaceRecoveryBoundary></AdminAccordionSection>}
+      {profile.role === 'super_admin' && <AdminAccordionSection id="admin-freelance-review" title="Ocorrências de Freelas" description="Análise de divergências e decisões operacionais auditadas." icon={CircleAlert} badge="Super Admin"><AdminWorkspaceRecoveryBoundary section="Ocorrências de Freelas"><Suspense fallback={<p role="status">Carregando ocorrências…</p>}><FreelanceReview key={user.uid} user={user}/></Suspense></AdminWorkspaceRecoveryBoundary></AdminAccordionSection>}
       <AdminModulesWorkspace profile={profile} compactRoot />
     </div><section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"/><p className="text-[10px] leading-relaxed text-slate-500">O Control Plane preserva autoridade, auditoria e políticas sistêmicas. Operações comerciais da própria Kyrub são executadas na Loja Oficial sem enfraquecer os gates server-side.</p></div></section></main>
   </div>;
