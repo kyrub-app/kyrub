@@ -56,3 +56,22 @@ test('engagement preflight is private, parameterless and never dispatches a muta
  await handleFreelanceProductionRead(req,response,deps);assert.equal(status,200);assert.equal(calls,1);
  assert.deepEqual(body,{requesterEligible:true,freelancerEligible:false,restricted:true,mutationsEnabled:false});
 });
+
+test('Pix readiness accepts only own authenticated read without keys or mutations',async()=>{
+ let status=0,body:unknown,calls=0;
+ const response={setHeader(){},status(n:number){status=n;return{json(v:unknown){body=v;}}}};
+ const deps={env,projectReady:()=>true,verify:async()=>({uid:'pilot',aud:'kyrub-b8d0e',email_verified:true}),accountEligible:async()=>true,
+  read:async(uid:string,view:unknown,offerId?:unknown,cursor?:unknown)=>{
+   calls++;assert.equal(uid,'pilot');assert.equal(view,'personal_pix_readiness');assert.equal(offerId,undefined);assert.equal(cursor,undefined);
+   return {status:'declared',ownershipVerified:false};
+  }};
+ const req={method:'GET',headers:{authorization:'Bearer fixture'},query:{view:'personal_pix_readiness'}};
+ for(const query of [{...req.query,uid:'other'},{...req.query,offerId:'offer'},{...req.query,cursor:'page'}]){
+  await handleFreelanceProductionRead({...req,query},response,deps);assert.equal(status,400);
+ }
+ await handleFreelanceProductionRead({...req,method:'POST'},response,deps);assert.equal(status,405);
+ await handleFreelanceProductionRead(req,response,{...deps,accountEligible:async()=>false});assert.equal(status,403);
+ assert.equal(calls,0);
+ await handleFreelanceProductionRead(req,response,deps);assert.equal(status,200);assert.equal(calls,1);
+ assert.deepEqual(body,{status:'declared',ownershipVerified:false});
+});
