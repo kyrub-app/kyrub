@@ -228,13 +228,15 @@ export async function cancelUncontractedFreelanceOffer(actorUid:string,offerId:s
   });
 }
 /** Operational completion is not payment evidence. All reads precede state changes. */
-export async function recordFreelanceExecution(actorUid:string,offerId:string,action:FreelanceExecutionAction,confirmed:unknown):Promise<FreelanceSelectionResult>{
+export async function recordFreelanceExecution(actorUid:string,offerId:string,action:FreelanceExecutionAction,confirmed:unknown,pilot=false):Promise<FreelanceSelectionResult>{
   if(!validFreelanceId(actorUid)||!validFreelanceId(offerId)||confirmed!==true)throw new Error('FREELANCE_INVALID');
+  if(pilot){assertEngagementPilotAuthority(actorUid);if(!freelanceContractPilotEnabled())throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');}
   const offerRef=adminDb.doc(offers+'/'+offerId);
   return adminDb.runTransaction(async tx=>{
     const offer=(await tx.get(offerRef)).data() as FreelanceOffer|undefined;
     if(!offer||offer.id!==offerId||!validFreelanceId(offer.ownerUid)||!validFreelanceId(offer.selectedApplicantUid)||
        (actorUid!==offer.ownerUid&&actorUid!==offer.selectedApplicantUid))throw new Error('FREELANCE_FORBIDDEN');
+    if(pilot){assertContractPilotTerms(offer);assertEngagementPilotAuthority(offer.ownerUid);assertEngagementPilotAuthority(offer.selectedApplicantUid);}
     const applicationRef=offerRef.collection('applications').doc(offer.selectedApplicantUid);
     const snap=await tx.get(applicationRef);
     const application=snap.data() as FreelanceApplication|undefined;
@@ -248,7 +250,7 @@ export async function recordFreelanceExecution(actorUid:string,offerId:string,ac
       assertApproved(worker.data(),'freelancer');
       if(offer.paymentTerms!==undefined||application.paymentTerms!==undefined){
         if(actorUid!==offer.selectedApplicantUid)throw Error('FREELANCE_FORBIDDEN');
-        await assertDirectPixStart(tx,offer,application);
+        await assertDirectPixStart(tx,offer,application,pilot);
       }else await assertFreelanceFundingForStart(tx,offer,application);
     }
     const result=advanceFreelanceExecution(offer,application,actorUid,action,confirmed,new Date().toISOString(),hourly);
