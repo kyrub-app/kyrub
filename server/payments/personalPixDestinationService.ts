@@ -128,3 +128,15 @@ export async function readPersonalPixForContract(tx:FirebaseFirestore.Transactio
  const {key,...masked}=await readPersonalPixSecretForContract(tx,uid);
  return masked;
 }
+
+/** Internal read-only pilot preflight; caller authenticates and binds the UID.
+ * No key, masked key, revision or bank ownership assertion crosses this boundary.
+ * Does not relax the local-only gate for declaration or contractual disclosure. */
+export async function readPersonalPixReadiness(tx:FirebaseFirestore.Transaction,uid:string){
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid)||uid.startsWith('tagpk_'))throw Error('PERSONAL_PIX_INVALID');
+ const parent=adminDb.doc('financialProfilesV1/'+uid);
+ const [p,d]=await tx.getAll(parent,parent.collection('receiving').doc('externalPix'));
+ if((p.exists&&(p.get('userId')!==uid||p.get('schemaVersion')!==1))||(!p.exists&&d.exists))throw Error('PERSONAL_PIX_CONFLICT');
+ const current=checked(d.data(),uid);
+ return {status:current?.status??'not_configured',ownershipVerified:false as const};
+}
