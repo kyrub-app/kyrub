@@ -103,6 +103,9 @@ const modality = { schemaVersion: 1, mode: 'subscription', subscription: { schem
 beforeEach(() => {
   posts = 0; payments = new Map(); lost = false; failCrm = false; beforeResponse = null; collector = '42'; queue = Promise.resolve();
   delete process.env.VERCEL_ENV;
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_COMMERCIAL_ENABLED;
+  delete process.env.VERCEL;
+  delete process.env.NODE_ENV;
   process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
@@ -260,4 +263,37 @@ test('pilot reservation allows only one provider POST even after payment rejecti
   const next = await accepted();
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: next.checkoutId }), /PILOT_ALREADY_USED/);
   assert.equal(posts, 1);
+});
+
+test('commercial checkout supports multiple buyers and canonical Business term without consuming pilot lock', async () => {
+  process.env.VERCEL='1'; process.env.VERCEL_ENV='production'; process.env.NODE_ENV='production';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_COMMERCIAL_ENABLED='true';
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
+  docs.set('stores/second-store',{ownerId:'second',legacyTenantId:'second',plan:'free'});
+  docs.set('users/second',{displayName:'Second'});
+  docs.set('users/second/stores/second',{plan:'free'});
+  docs.set('stores/official/products/business-product',{...docs.get('stores/official/products/pro-product'),name:'Kyrub Business',price:397,contractDiscounts:[{months:1,discountPercent:0},{months:3,discountPercent:20},{months:6,discountPercent:30},{months:12,discountPercent:40}]});
+  docs.set(`${ROOT}/official_plan_products/business-product`,{...docs.get(`${ROOT}/official_plan_products/pro-product`),productId:'business-product',planId:'business'});
+  const a=await accepted();
+  const b=await api.quoteOfficialPlanPix({authorization:'second',storeId:'official',productId:'business-product',selectedMonths:3});
+  assert.equal(b.quote.totalMinor,95280);
+  await api.acceptOfficialPlanPix({authorization:'second',checkoutId:b.checkoutId,acceptedTotalMinor:b.quote.totalMinor});
+  const results=await Promise.all([api.checkoutOfficialPlanPix({authorization:'buyer',checkoutId:a.checkoutId}),api.checkoutOfficialPlanPix({authorization:'second',checkoutId:b.checkoutId})]);
+  assert.equal(posts,2);
+  assert(results.every(x=>x.state==='awaiting_payment'));
+  assert(!docs.has(`${ROOT}/official_plan_pix_pilot/one_shot`));
+  for(const payment of payments.values()){payment.status='approved';payment.status_detail='accredited';payment.date_approved=new Date().toISOString();}
+  const active=await api.reconcileOfficialPlanPix({authorization:'second',checkoutId:b.checkoutId});
+  assert.equal(active.state,'activated');
+  assert.equal(docs.get(`${ROOT}/store_entitlements/second`).plan,'business');
+  assert.equal(docs.get('stores/second-store').plan,'business');
+  assert.equal((await api.reconcileOfficialPlanPix({authorization:'second',checkoutId:b.checkoutId})).state,'activated');
+  assert.equal(posts,2);
+});
+test('commercial issuance remains disabled without explicit production environment',async()=>{
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_COMMERCIAL_ENABLED='true';
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
+  const q=await accepted();
+  await assert.rejects(api.checkoutOfficialPlanPix({authorization:'buyer',checkoutId:q.checkoutId}),/OFFICIAL_PIX_PILOT_MODE_REQUIRED/);
+  assert.equal(posts,0);
 });
