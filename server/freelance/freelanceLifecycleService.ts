@@ -1,5 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
-import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
+import { createFreelanceOffer, createFreelanceApplication, validFreelanceId, selectFreelanceApplicant, confirmFreelanceSelection, type FreelanceSelectionResult, type FreelanceOffer, type FreelanceApplication } from '../../shared/freelanceLifecycle.js';
 
 const offers = 'freelanceOffersV1';
 const eligibility = (uid: string) => adminDb.doc('identity_verifications/' + uid);
@@ -44,5 +44,48 @@ export async function applyToFreelanceOffer(actorUid: string, offerId: string): 
     }
     tx.create(applicationRef,proposed);
     return {application:proposed,created:true};
+  });
+}
+
+/** Both actors are revalidated in the same transaction as the selection. */
+export async function selectFreelanceApplication(actorUid: string, offerId: string, applicantUid: string): Promise<FreelanceSelectionResult> {
+  if (![actorUid,offerId,applicantUid].every(validFreelanceId) || actorUid === applicantUid) throw new Error('FREELANCE_INVALID');
+  const offerRef = adminDb.doc(offers + '/' + offerId);
+  const applicationRef = offerRef.collection('applications').doc(applicantUid);
+  return adminDb.runTransaction(async tx => {
+    const [ownerIdentity,workerIdentity,offerSnap,applicationSnap] = await tx.getAll(eligibility(actorUid),eligibility(applicantUid),offerRef,applicationRef);
+    const offer = offerSnap.data() as FreelanceOffer | undefined;
+    const application = applicationSnap.data() as FreelanceApplication | undefined;
+    if (!offer || !application || offer.id !== offerId || offer.ownerUid !== actorUid || application.applicantUid !== applicantUid) throw new Error('FREELANCE_FORBIDDEN');
+    assertApproved(ownerIdentity.data(),'requester');
+    assertApproved(workerIdentity.data(),'freelancer');
+    const result = selectFreelanceApplicant(offer,application,actorUid,new Date().toISOString());
+    if (result.changed) {
+      tx.update(offerRef,{status:result.offer.status,selectedApplicantUid:result.offer.selectedApplicantUid!,selectedAt:result.offer.selectedAt!});
+      tx.update(applicationRef,{status:result.application.status,selectedAt:result.application.selectedAt!});
+    }
+    return result;
+  });
+}
+/** The selected worker must explicitly confirm; the owner cannot confirm for them. */
+export async function confirmFreelanceContract(actorUid: string, offerId: string, confirmed: unknown): Promise<FreelanceSelectionResult> {
+  if (!validFreelanceId(actorUid) || !validFreelanceId(offerId) || confirmed !== true) throw new Error('FREELANCE_INVALID');
+  const offerRef = adminDb.doc(offers + '/' + offerId);
+  const applicationRef = offerRef.collection('applications').doc(actorUid);
+  return adminDb.runTransaction(async tx => {
+    const [workerIdentity,offerSnap,applicationSnap] = await tx.getAll(eligibility(actorUid),offerRef,applicationRef);
+    const offer = offerSnap.data() as FreelanceOffer | undefined;
+    const application = applicationSnap.data() as FreelanceApplication | undefined;
+    if (!offer || !application || offer.id !== offerId || !validFreelanceId(offer.ownerUid) ||
+        offer.selectedApplicantUid !== actorUid || application.applicantUid !== actorUid) throw new Error('FREELANCE_FORBIDDEN');
+    const ownerIdentity = await tx.get(eligibility(offer.ownerUid));
+    assertApproved(ownerIdentity.data(),'requester');
+    assertApproved(workerIdentity.data(),'freelancer');
+    const result = confirmFreelanceSelection(offer,application,actorUid,confirmed,new Date().toISOString());
+    if (result.changed) {
+      tx.update(offerRef,{status:result.offer.status,contractedAt:result.offer.contractedAt!});
+      tx.update(applicationRef,{status:result.application.status,contractedAt:result.application.contractedAt!});
+    }
+    return result;
   });
 }
