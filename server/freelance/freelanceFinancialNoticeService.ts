@@ -5,6 +5,19 @@ import type {FreelancePaymentObligation} from '../../shared/freelancePaymentObli
 import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
 
 const messages={
+ fixed_cancellation_adjustment_pix_proposed:['Substituição Pix solicitada','Confira a obrigação e não aceite se já enviou o pagamento.'],
+ fixed_cancellation_adjustment_pix_replaced:['Substituição Pix aceita','A autorização anterior foi arquivada. Consulte somente o destino vigente.'],
+ fixed_cancellation_adjustment_admin_resolved:['Análise de regularização encerrada','Consulte a decisão. A restrição deste caso foi retirada, sem confirmação bancária ou extinção automática da obrigação.'],
+ fixed_cancellation_adjustment_statement:['Manifestação de regularização registrada','Consulte as declarações da obrigação específica. Nenhuma transferência foi verificada.'],
+ fixed_cancellation_adjustment_disputed:['Divergência na regularização','Novas contratações temporariamente restritas. Regularize ou solicite análise.'],
+ fixed_cancellation_adjustment_released:['Regularização confirmada pelas partes','A restrição deste caso foi removida. Não representa confirmação bancária.'],
+ fixed_cancellation_adjustment_received:['Recebimento da regularização informado pelas partes','Consulte o histórico. Nenhum pagamento foi verificado pelo banco.'],
+ fixed_cancellation_adjustment_review_requested:['Análise de regularização solicitada','A restrição permanece até resolução. Consulte o protocolo.'],
+ fixed_cancellation_adjustment_pix_authorized:['Pix de regularização autorizado','Consulte a obrigação específica. Se já transferiu, não repita o pagamento.'],
+ fixed_cancellation_adjustment_pix_revoked:['Pix de regularização revogado','Novas consultas foram bloqueadas. Não utilize a chave anterior.'],
+ fixed_cancellation_admin_resolved:['Análise de cancelamento concluída','Consulte os valores reconhecidos e a fundamentação. Nenhum pagamento ou devolução foi confirmado.'],
+ fixed_cancellation_disputed:['Divergência na apuração de cancelamento','Novas contratações temporariamente restritas. Busque acordo no financeiro do contrato.'],
+ fixed_cancellation_review_requested:['Análise de cancelamento solicitada','Consulte a situação financeira do contrato. A restrição permanece até resolução.'],
  pix_sharing_revoked:['Compartilhamento Pix revogado','A autorização de consulta da chave neste contrato foi retirada. Consulte o financeiro antes de qualquer novo pagamento; não repita transferências.'],
  hourly_excess_admin_resolved:['Análise de excedente concluída','Consulte o tempo reconhecido e a decisão. Nenhum pagamento foi confirmado.'],
  hourly_excess_disputed:['Divergência de excedente','Novas contratações temporariamente restritas. Busque acordo sobre o tempo registrado.'],
@@ -42,7 +55,7 @@ export function writeFreelanceFinancialNotices(tx:FirebaseFirestore.Transaction,
  !['127.0.0.1:8088','localhost:8088'].includes(process.env.FIRESTORE_EMULATOR_HOST??'')||getFirebaseAdminProjectId()!=='kyrub-security-test')throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
  if(!validFreelanceId(obligation.offerId)||!validFreelanceId(obligation.requesterUid)||!validFreelanceId(obligation.beneficiaryUid)||obligation.requesterUid===obligation.beneficiaryUid)throw Error('FREELANCE_INVALID');
  const replacement=kind==='pix_rebind_proposed'||kind==='pix_rebind_accepted';
- const accounting=kind==='pix_sharing_revoked'||kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_');
+ const accounting=kind==='pix_sharing_revoked'||kind.startsWith('fixed_cancellation_')||kind.startsWith('cancellation_accounting_')||kind.startsWith('hourly_cancellation_')||kind.startsWith('hourly_excess_');
  if(replacement?(typeof revision!=='number'||!Number.isSafeInteger(revision)||revision<1):accounting?!validFreelanceId(revision):revision!==undefined)throw Error('FREELANCE_INVALID');
  const sourceId=createHash('sha256').update(JSON.stringify(replacement||accounting?[obligation.offerId,kind,revision]:[obligation.offerId,kind])).digest('hex');
  const ids=recipient==='both'?[obligation.requesterUid,obligation.beneficiaryUid]:[recipient==='requester'?obligation.requesterUid:obligation.beneficiaryUid];

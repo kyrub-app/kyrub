@@ -435,7 +435,7 @@ try{
  const {sanitizeReceiptPng}=await import('../server/freelance/freelanceReceiptPng.ts');
  const png=sanitizeReceiptPng(receiptFixture()),now=new Date().toISOString();
  const item={offerId:directId,title:directTitle,amountMinor:15000,currency:'BRL',timing:'advance',requestedAt:now,requestedByRole:'freelancer',requesterUid:fp.uid,beneficiaryUid:fw.uid,restrictionActive:true,bankVerified:false,settlementEvidence:'participant_statements_only',statements:[{role:'requester',statement:'paid',recordedAt:now},{role:'freelancer',statement:'not_received',recordedAt:now}],evidenceRevision:2,evidenceNotes:[{role:'freelancer',note:'Nota privada fictícia.',recordedAt:now}],receipts:[{id:'fixture-png',role:'requester',recordedAt:now,size:png.bytes.length,mimeType:'image/png'}]};
- const cancelItem={offerId:'cancel-review-'+suffix,title:'Cancelamento horário fictício',sourceDigest:'a'.repeat(64),proposalDigest:'b'.repeat(64),evidenceDigest:'c'.repeat(64),notes:[],requestedAt:now,capMinor:12000,referenceMinor:7000,recordedMs:12600000,excessMs:0,proposal:{id:'p1',recognizedServiceMinor:7000,proposedBy:'worker',status:'declined'},bankVerified:false};
+ const cancelItem={offerId:'cancel-review-'+suffix,title:'Cancelamento horário fictício',sourceDigest:'a'.repeat(64),proposalDigest:'b'.repeat(64),evidenceDigest:'c'.repeat(64),notes:[],attachments:[],requestedAt:now,capMinor:12000,referenceMinor:7000,recordedMs:12600000,excessMs:0,proposal:{id:'p1',recognizedServiceMinor:7000,proposedBy:'worker',status:'declined'},bankVerified:false};
  let cancelPosts=0;
  let posts=0;
  await adminPage.route('**/api/admin/freelance-financial-review**',async route=>{

@@ -671,12 +671,18 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
  const payer=await account('cancel-pix-payer',['requester']),worker=await account('cancel-pix-worker',['freelancer']),admin=await account('cancel-pix-admin',[]),other=await account('cancel-pix-other',['requester']);
  await db.doc('kyrub_admin/control_plane/admins/'+admin.uid).set({uid:admin.uid,role:'super_admin',status:'active'});
- const id='cancel-pix-'+suffix,completionId='cancel-completion-'+suffix,staleId='cancel-stale-'+suffix;
- for(const [offerId,timing] of [[id,'advance'],[completionId,'on_completion'],[staleId,'advance']] as const){
+ const id='cancel-pix-'+suffix,completionId='cancel-completion-'+suffix,staleId='cancel-stale-'+suffix,adminId='cancel-admin-'+suffix,zeroId='cancel-zero-'+suffix,storeId='cancel-business-'+suffix,storeOffer='cancel-business-refund-'+suffix;
+ const store={storeId,displayName:'Loja fictícia de devolução',representativeRole:'owner'};
+ await db.doc('users/'+payer.uid+'/stores/'+payer.uid).set({id:payer.uid,ownerId:payer.uid,canonicalStoreId:storeId,name:store.displayName});
+ await db.doc('tenants/'+payer.uid).set({ownerId:payer.uid,canonicalStoreId:storeId});
+ await db.doc('stores/'+storeId).set({ownerId:payer.uid,legacyTenantId:payer.uid});
+ const storeMember=db.doc('stores/'+storeId+'/members/'+payer.uid);await storeMember.set({userId:payer.uid,status:'active',role:'owner'});
+ for(const [offerId,timing] of [[id,'advance'],[completionId,'on_completion'],[staleId,'advance'],[adminId,'on_completion'],[zeroId,'advance'],[storeOffer,'advance']] as const){
   const terms=createDirectPaymentTerms({method:'external_pix',timing,amountMinor:15000});
-  await act(payer,offerId,'publish',200,{terms:{title:'Cancelamento fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms}});
-  await act(worker,offerId,'apply',200,{expectedPaymentTerms:terms});await act(payer,offerId,'select',200,{applicantUid:worker.uid});
-  await act(worker,offerId,'confirm',200,{confirmed:true,expectedPaymentTerms:terms});
+  await act(payer,offerId,'publish',200,{terms:{title:'Cancelamento fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:terms},...(offerId===storeOffer?{requesterStoreId:storeId}:{})});
+  const expected={expectedPaymentTerms:terms,...(offerId===storeOffer?{expectedRequesterStore:store}:{})};
+  await act(worker,offerId,'apply',200,expected);await act(payer,offerId,'select',200,{applicantUid:worker.uid});
+  await act(worker,offerId,'confirm',200,{confirmed:true,...expected});
  }
  const url='http://127.0.0.1:'+address.port+'/api/freelance/finance';
  const finance=async(a:Actor,status:number,offerId:string,action?:string,extra:Record<string,unknown>={},view='case')=>{
@@ -687,10 +693,15 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(worker,200,id,'bind_pix',{expectedRevision:1});await finance(worker,200,id,'authorize_pix_share',{expectedRevision:1});
  await finance(payer,200,id,'statement',{eventId:'paid',statement:'paid'});
  await finance(worker,200,id,'statement',{eventId:'denied',statement:'not_received'});
- const first='cancel-advance-occurrence',second='cancel-completion-occurrence',third='cancel-stale-occurrence';
+ const first='cancel-advance-occurrence',second='cancel-completion-occurrence',third='cancel-stale-occurrence',fourth='cancel-admin-occurrence',fifth='cancel-zero-occurrence',sixth='cancel-business-occurrence';
  await act(worker,id,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:first});
  await act(worker,completionId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:second});
  await act(worker,staleId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:third});
+ await act(worker,adminId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:fourth});
+ await finance(worker,200,storeOffer,'bind_pix',{expectedRevision:1});await finance(worker,200,storeOffer,'authorize_pix_share',{expectedRevision:1});
+ await finance(payer,200,storeOffer,'statement',{eventId:'store-paid',statement:'paid'});await finance(worker,200,storeOffer,'statement',{eventId:'store-received',statement:'received'});
+ await act(worker,storeOffer,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:sixth});
+ await act(worker,zeroId,'report',200,{confirmed:true,kind:'cancellation_requested',occurrenceId:fifth});
  assert.equal((await finance(payer,200,id)).operationalStatus,'under_review');
  assert.equal((await finance(worker,200,id)).restrictionActive,true);
  await finance(other,403,id);await finance(payer,409,id,'reveal_pix',{expectedRevision:1});
@@ -703,7 +714,7 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
   const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;
  });
  try{
-  for(const [offerId,occurrenceId] of [[id,first],[completionId,second],[staleId,third]]){
+  for(const [offerId,occurrenceId] of [[id,first],[completionId,second],[staleId,third],[adminId,fourth],[zeroId,fifth],[storeOffer,sixth]]){
    await decideFreelanceReview('Bearer '+admin.token,{offerId,occurrenceId,outcome:'cancel',reason:'Cancelamento fictício fundamentado',confirmed:true});
    const ref=db.doc('freelanceOffersV1/'+offerId);
    assert.equal((await ref.get()).get('status'),'cancelled');
@@ -743,6 +754,12 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  assert.equal(refund.proposal.status,'accepted');assert.equal(refund.proposal.amounts.proposedRefundMinor,10000);
  assert.equal(refund.proposal.amounts.proposedAdditionalMinor,0);assert.equal(refund.proposal.amounts.bankVerified,false);
  assert.equal(refund.settlement,'not_verified');
+ assert.equal(refund.resolution.direction,'refund');assert.equal(refund.resolution.amountMinor,10000);
+ const adjustment=async(target:string)=>(await db.doc('freelanceOffersV1/'+target+'/directPayment/fixedCancellationAdjustment').get()).data();
+ const refundDebt=(await adjustment(id))!;
+ assert.equal(refundDebt.payerUid,worker.uid);assert.equal(refundDebt.recipientUid,payer.uid);assert.equal(refundDebt.amountMinor,10000);assert.equal(refundDebt.sourceDigest,refund.resolution.sourceDigest);
+ assert.equal(refundDebt.bankVerified,false);assert.equal(refundDebt.custody,'none');
+ assert.equal((await finance(payer,200,id)).originalHistoryFrozen,true);
  const acceptedNotices=(await inbox(payer.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_accepted');assert.equal(acceptedNotices.length,1);assert.equal(acceptedNotices[0].target.kind,'none');
  assert.ok(!JSON.stringify(acceptedNotices).includes('10000'));assert.ok(!JSON.stringify(acceptedNotices).includes('refund-proposal'));
  assert.equal((await inbox(other.uid)).notifications.length,0);
@@ -754,11 +771,271 @@ test('operational cancellation keeps advance dispute reachable, blocks new Pix d
  await finance(payer,200,completionId,'close_cancellation_accounting',{proposalId:'first-proposal'});
  await accept(worker,409,completionId,'first-proposal');
  assert.equal((await inbox(worker.uid)).notifications.filter(n=>n.eventType==='freelance_finance_cancellation_accounting_closed').length,1);
+ const declined=await accounting(worker,200,completionId);
+ assert.equal(declined.proposal.closure,'declined');assert.equal(declined.restrictionActive,false);
+ const restriction=async(a:Actor)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v;};
+ const df={snapshot:declined.snapshot};
+ await finance(other,403,completionId,'dispute_fixed_cancellation',df);
+ await finance(worker,409,completionId,'dispute_fixed_cancellation',{snapshot:'0'.repeat(64)});
+ await finance(worker,200,completionId,'dispute_fixed_cancellation',df);
+ await finance(worker,200,completionId,'dispute_fixed_cancellation',df);
+ for(const actor of [payer,worker])assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[completionId]});
+ await finance(payer,200,completionId,'request_fixed_cancellation_review',df);
+ await finance(payer,200,completionId,'request_fixed_cancellation_review',df);
+ assert.equal((await accounting(worker,200,completionId)).dispute.status,'review_requested');
+ assert.equal((await db.doc('freelanceFixedCancellationReviewsV1/'+completionId).get()).get('status'),'pending');
+ // Another cause on the same offer must survive the cancellation agreement.
+ for(const actor of [payer,worker])await db.doc('freelanceEngagementRestrictionsV1/'+actor.uid).update({openExcessOfferIds:[completionId]});
  await propose(payer,200,completionId,'second-proposal',4000,0);
  await accept(worker,200,completionId,'second-proposal');
+ await accept(worker,200,completionId,'second-proposal');
+ assert.equal((await db.doc('freelanceFixedCancellationReviewsV1/'+completionId).get()).get('status'),'resolved_voluntarily');
+ for(const actor of [payer,worker]){
+  assert.deepEqual(await restriction(actor),{restricted:true,openOfferIds:[completionId]});
+  const root=db.doc('freelanceEngagementRestrictionsV1/'+actor.uid),r=(await root.get()).data()!;
+  assert.equal(r.openCancellationOfferIds,undefined);assert.deepEqual(r.openExcessOfferIds,[completionId]);
+  await root.set({schemaVersion:1,uid:actor.uid,openOfferIds:[]});
+ }
  const additional=await accounting(worker,200,completionId);
+ assert.equal(additional.dispute.status,'resolved_voluntarily');assert.equal(additional.restrictionActive,false);
+ assert.equal(additional.resolution.direction,'additional');assert.equal(additional.resolution.amountMinor,4000);
+ const additionalDebt=(await adjustment(completionId))!;
+ assert.equal(additionalDebt.payerUid,payer.uid);assert.equal(additionalDebt.recipientUid,worker.uid);assert.equal(additionalDebt.amountMinor,4000);
  assert.equal(additional.proposal.amounts.proposedAdditionalMinor,4000);assert.equal(additional.proposal.amounts.proposedRefundMinor,0);
  assert.equal((await finance(payer,200,completionId)).due,false);
+ // Distinct directional consents: the original advance destination must not
+ // be reused for a refund. A requester may register a personal receiving key.
+ const personal=await fetch('http://127.0.0.1:'+address.port+'/api/personal-finance/pix',{method:'POST',headers:{authorization:'Bearer '+payer.token,'content-type':'application/json'},body:JSON.stringify({action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'refund-'+suffix+'@example.invalid'}})});
+ assert.equal(personal.status,200,JSON.stringify(await personal.json()));
+ const pix=(a:Actor,status:number,target:string)=>finance(a,status,target,undefined,{},'fixed_adjustment_pix');
+ const refundInput={sourceDigest:refund.resolution.sourceDigest,expectedAmountMinor:10000,expectedRevision:1};
+ const additionalInput={sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,expectedRevision:1};
+ await pix(other,403,id);
+ const before=await pix(worker,200,id);assert.equal(before.role,'payer');assert.equal(before.destination,null);
+ assert.equal((await pix(payer,200,id)).role,'recipient');
+ await finance(worker,403,id,'authorize_adjustment_pix',refundInput);
+ await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ await finance(payer,409,id,'authorize_adjustment_pix',{...refundInput,expectedAmountMinor:10001});
+ await finance(payer,200,id,'authorize_adjustment_pix',refundInput);
+ await finance(payer,200,id,'authorize_adjustment_pix',refundInput);
+ const masked=await pix(worker,200,id);assert.equal(masked.authorized,true);assert.ok(!JSON.stringify(masked).includes('refund-'+suffix));
+ await finance(worker,400,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:false});
+ await finance(payer,403,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ const secret=await finance(worker,200,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ assert.equal(secret.key,'refund-'+suffix+'@example.invalid');assert.equal(secret.amountMinor,10000);assert.equal(secret.bankVerified,false);
+ assert.equal((await pix(worker,200,id)).disclosed,true);
+ await finance(payer,200,id,'revoke_adjustment_pix',refundInput);
+ await finance(payer,200,id,'revoke_adjustment_pix',refundInput);
+ await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ assert.equal((await pix(worker,200,id)).destination,null);
+ await finance(payer,409,id,'authorize_adjustment_pix',refundInput);
+ // Recipient replaces a revoked personal destination only with the payer's explicit assent.
+ await changePersonalPixDestination(payer.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:'refund-new-'+suffix+'@example.invalid'}});
+ const replacement={sourceDigest:refundInput.sourceDigest,expectedAmountMinor:10000,oldRevision:1,newRevision:2};
+ assert.equal((await pix(worker,200,id)).replacement,null);
+ assert.deepEqual((await pix(payer,200,id)).replacement,{oldRevision:1,newRevision:2,pending:false,available:true});
+ await finance(worker,403,id,'propose_adjustment_pix_replacement',replacement);
+ await finance(payer,200,id,'propose_adjustment_pix_replacement',replacement);
+ await finance(payer,200,id,'propose_adjustment_pix_replacement',replacement);
+ assert.equal((await pix(worker,200,id)).replacement.pending,true);
+ assert.equal((await pix(worker,200,id)).destination,null);
+ await finance(worker,400,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:false});
+ await finance(payer,403,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:true});
+ await finance(worker,409,id,'accept_adjustment_pix_replacement',{...replacement,expectedAmountMinor:10001,paymentNotSent:true});
+ await finance(worker,200,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:true});
+ await finance(worker,200,id,'accept_adjustment_pix_replacement',{...replacement,paymentNotSent:true});
+ const archived=(await db.doc('freelanceOffersV1/'+id+'/directPayment/fixedAdjustmentPixArchive-1').get()).data()!;
+ assert.equal(archived.consent.revision,1);assert.equal(archived.disclosure.revision,1);assert.ok(archived.consent.revokedAt);
+ await finance(worker,409,id,'reveal_adjustment_pix',{...refundInput,paymentNotSent:true});
+ const newKey=await finance(worker,200,id,'reveal_adjustment_pix',{...refundInput,expectedRevision:2,paymentNotSent:true});
+ assert.equal(newKey.key,'refund-new-'+suffix+'@example.invalid');
+ // A second proposal can be withdrawn even after the recipient changes the key again.
+ await changePersonalPixDestination(payer.uid,{action:'declare',expectedRevision:2,confirmed:true,destination:{keyType:'email',key:'refund-third-'+suffix+'@example.invalid'}});
+ const secondReplacement={...replacement,oldRevision:2,newRevision:3};
+ await finance(payer,200,id,'propose_adjustment_pix_replacement',secondReplacement);
+ await changePersonalPixDestination(payer.uid,{action:'declare',expectedRevision:3,confirmed:true,destination:{keyType:'email',key:'refund-fourth-'+suffix+'@example.invalid'}});
+ assert.equal((await pix(worker,200,id)).replacement.available,false);
+ await finance(worker,409,id,'accept_adjustment_pix_replacement',{...secondReplacement,paymentNotSent:true});
+ await finance(payer,200,id,'withdraw_adjustment_pix_replacement',secondReplacement);
+ await finance(payer,200,id,'withdraw_adjustment_pix_replacement',secondReplacement);
+ assert.equal((await pix(worker,200,id)).destination,null);
+ // Store refund: never fall back to an active personal receiving key.
+ await propose(worker,200,storeOffer,'store-refund-proposal',5000,15000);await accept(payer,200,storeOffer,'store-refund-proposal');
+ const business=await accounting(payer,200,storeOffer),businessInput={sourceDigest:business.resolution.sourceDigest,expectedAmountMinor:10000,expectedRevision:1};
+ assert.equal((await pix(payer,200,storeOffer)).storeRefund,true);assert.equal((await pix(payer,200,storeOffer)).destination,null);
+ await finance(payer,403,storeOffer,'authorize_adjustment_pix',businessInput);
+ const setup={expectedRevision:0,destination:{keyType:'email',key:'business-'+suffix+'@example.invalid'},businessAccountDeclared:true};
+ const erp=async(a:Actor,status:number,input?:Record<string,unknown>,query='?view=own_store_refund_destination')=>{const r=await fetch(url+(input?'':query),{method:input?'POST':'GET',headers:{authorization:'Bearer '+a.token,...(input?{'content-type':'application/json'}:{})},...(input?{body:JSON.stringify({confirmed:true,...input})}:{})});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ const erpSetup={action:'declare_own_store_refund_pix',...setup};
+ assert.equal((await erp(payer,200)).status,'not_configured');await erp(worker,403);await erp(other,403);
+ await erp(payer,400,undefined,'?view=own_store_refund_destination&storeId='+storeId);
+ await erp(payer,400,{...erpSetup,storeId});await erp(payer,403,erpSetup);
+ await finance(payer,403,storeOffer,'declare_store_refund_pix',setup);
+ await finance(worker,403,storeOffer,undefined,{},'fixed_adjustment_store_destination');
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===payer.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
+ try{
+  await finance(payer,400,storeOffer,'declare_store_refund_pix',{...setup,businessAccountDeclared:false});
+  await erp(payer,200,erpSetup);
+  const erpView=await erp(payer,200);assert.equal(erpView.storeId,storeId);assert.equal(erpView.revision,1);assert.equal('key' in erpView,false);
+  await erp(payer,409,erpSetup);
+  const privateView=await finance(payer,200,storeOffer,undefined,{},'fixed_adjustment_store_destination');assert.equal(privateView.revision,1);assert.equal(privateView.ownershipVerified,false);assert.equal('key' in privateView,false);
+  assert.equal((await pix(worker,200,storeOffer)).destination,null);
+  await finance(payer,200,storeOffer,'authorize_adjustment_pix',businessInput);
+  const storeKey=await finance(worker,200,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});assert.equal(storeKey.key,'business-'+suffix+'@example.invalid');
+  await storeMember.update({status:'inactive'});
+  await erp(payer,403);await erp(payer,403,{action:'revoke_own_store_refund_pix',expectedRevision:1});
+  await finance(worker,403,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});
+  await storeMember.update({status:'active'});
+  await finance(payer,200,storeOffer,'revoke_store_refund_pix',{expectedRevision:1});
+  const revoked=await erp(payer,200);assert.equal(revoked.status,'revoked');assert.equal(revoked.revision,2);assert.equal('maskedKey' in revoked,false);
+  await finance(worker,409,storeOffer,'reveal_adjustment_pix',{...businessInput,paymentNotSent:true});
+ }finally{t.mock.restoreAll();}
+ // Complement still points to the professional, with new consent.
+ // Nonreceipt alone is not evidence of a transfer: allow the original
+ // recipient to authorize and the payer to consult with explicit nonpayment.
+ await finance(worker,200,completionId,'statement_adjustment',{sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,eventId:'complement-not-received',statement:'not_received'});
+ const early=await pix(payer,200,completionId);
+ assert.equal(early.financialState,'nonreceipt_reported');assert.equal(early.blocked,false);assert.equal(early.destination,null);
+ assert.equal((await pix(payer,200,completionId)).destination,null);
+ await finance(worker,200,completionId,'authorize_adjustment_pix',additionalInput);
+ const complementSecret=await finance(payer,200,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ assert.equal(complementSecret.key,'cancel-'+suffix+'@example.invalid');assert.equal(complementSecret.amountMinor,4000);
+ await finance(payer,200,completionId,'statement_adjustment',{sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,eventId:'complement-paid',statement:'paid'});
+ const blockedPix=await pix(payer,200,completionId);assert.equal(blockedPix.financialState,'disputed');assert.equal(blockedPix.blocked,true);assert.equal(blockedPix.destination,null);
+ await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[completionId]});
+ await finance(worker,200,completionId,'statement_adjustment',{sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000,eventId:'complement-received',statement:'received'});
+ for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:false,openOfferIds:[]});
+ await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:1,confirmed:true});
+ await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ await finance(worker,200,completionId,'revoke_adjustment_pix',additionalInput);
+ assert.equal((await pix(worker,200,completionId)).revoked,true);
+ // The adjustment is a separate obligation with direction-specific declarations.
+ const adj=(a:Actor,status:number,target:string)=>finance(a,status,target,undefined,{},'fixed_adjustment_statements');
+ const refundStatement={sourceDigest:refund.resolution.sourceDigest,expectedAmountMinor:10000};
+ const additionalStatement={sourceDigest:additional.resolution.sourceDigest,expectedAmountMinor:4000};
+ await adj(other,403,id);
+ assert.equal((await adj(worker,200,id)).role,'payer');
+ assert.equal((await adj(payer,200,id)).role,'recipient');
+ await finance(payer,403,id,'statement_adjustment',{...refundStatement,eventId:'wrong-payer',statement:'paid'});
+ await finance(worker,409,id,'statement_adjustment',{...refundStatement,expectedAmountMinor:10001,eventId:'wrong-amount',statement:'paid'});
+ await finance(worker,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-paid',statement:'paid'});
+ await finance(worker,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-paid',statement:'paid'});
+ assert.equal((await adj(payer,200,id)).state,'awaiting_receipt');
+ await finance(payer,409,id,'propose_adjustment_pix_replacement',{...replacement,oldRevision:2,newRevision:4});
+ await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-denied',statement:'not_received'});
+ assert.equal((await adj(worker,200,id)).state,'disputed');
+ for(const a of [payer,worker])assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[id]});
+ await finance(payer,200,id,'request_adjustment_review',refundStatement);
+ await finance(worker,200,id,'request_adjustment_review',refundStatement);
+ assert.equal((await adj(worker,200,id)).reviewStatus,'pending');
+ // Simulated independent restrictions on the same offer must survive voluntary closure.
+ for(const a of [payer,worker])await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).update({openExcessOfferIds:[id]});
+ await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-received',statement:'received'});
+ await finance(payer,200,id,'statement_adjustment',{...refundStatement,eventId:'refund-received',statement:'received'});
+ const done=await adj(worker,200,id);assert.equal(done.state,'bilaterally_reported_received');assert.equal(done.reviewStatus,'resolved_voluntarily');assert.equal(done.bankVerified,false);assert.equal(done.restrictionActive,false);
+ for(const a of [payer,worker]){
+  assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[id]});
+  const root=db.doc('freelanceEngagementRestrictionsV1/'+a.uid);
+  assert.equal((await root.get()).get('openAdjustmentOfferIds'),undefined);
+  await root.set({schemaVersion:1,uid:a.uid,openOfferIds:[]});
+ }
+ await finance(worker,409,id,'request_adjustment_review',refundStatement);
+ assert.equal((await accounting(payer,200,id)).resolution.sourceDigest,refund.resolution.sourceDigest);
+ // Complement reverses the refund roles; no original consent or amount is reused.
+ await finance(worker,403,completionId,'statement_adjustment',{...additionalStatement,eventId:'wrong-complement',statement:'paid'});
+ await finance(payer,200,completionId,'statement_adjustment',{...additionalStatement,eventId:'complement-paid',statement:'paid'});
+ await finance(worker,200,completionId,'statement_adjustment',{...additionalStatement,eventId:'complement-received',statement:'received'});
+ assert.equal((await adj(payer,200,completionId)).state,'bilaterally_reported_received');
+ assert.equal((await adj(worker,200,completionId)).role,'recipient');
+ await finance(payer,409,completionId,'reveal_adjustment_pix',{...additionalInput,paymentNotSent:true});
+ // Independent fixed-price administrative case, synthetic MFA only in emulator.
+ await propose(worker,200,adminId,'first-admin-proposal',6000,0);
+ await finance(payer,200,adminId,'close_cancellation_accounting',{proposalId:'first-admin-proposal'});
+ const open=await accounting(worker,200,adminId);
+ await finance(worker,200,adminId,'dispute_fixed_cancellation',{snapshot:open.snapshot});
+ await finance(payer,200,adminId,'request_fixed_cancellation_review',{snapshot:open.snapshot});
+ const pendingReview=await accounting(worker,200,adminId);
+ const note={kind:'fixed_cancellation',sourceDigest:pendingReview.evidenceSource,evidenceId:'fixed-note',note:'Manifestação fictícia de cancelamento por preço fechado.'};
+ const adminApi=async(a:Actor,status:number,input?:Record<string,unknown>)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=fixed_cancellation'),{method:input?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ await adminApi(admin,403);
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{const d=await original(token,checkRevoked);return token===admin.token?{...d,auth_time:Math.floor(Date.now()/1000),firebase:{...d.firebase,sign_in_second_factor:'totp'}}:d;});
+ try{
+  const item=(await adminApi(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(item);
+  const decision={action:'decide_fixed_cancellation',offerId:adminId,sourceDigest:item.sourceDigest,expectedRequestedAt:item.requestedAt,proposalDigest:item.proposalDigest,evidenceDigest:item.evidenceDigest,recognizedServiceMinor:5000,reportedReceivedMinor:0,reason:'Decisão fictícia fundamentada do cancelamento fixo',confirmed:true};
+  await finance(worker,200,adminId,'submit_hourly_review_note',note);
+  await adminApi(admin,409,decision);
+  const latest=(await adminApi(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.equal(latest.notes.length,1);
+  const next={...decision,evidenceDigest:latest.evidenceDigest};
+  await adminApi(other,403,next);await adminApi(admin,409,{...next,recognizedServiceMinor:15001});
+  assert.equal((await adminApi(admin,200,next)).replay,false);assert.equal((await adminApi(admin,200,next)).replay,true);
+  const settled=await accounting(worker,200,adminId);assert.equal(settled.dispute.status,'resolved_administratively');assert.equal(settled.dispute.decision.amounts.proposedAdditionalMinor,5000);assert.equal(settled.resolution.direction,'additional');assert.equal((await adjustment(adminId))?.amountMinor,5000);assert.equal(settled.restrictionActive,false);
+  await propose(payer,409,adminId,'late-proposal',1000,0);
+  await finance(worker,409,adminId,'submit_hourly_review_note',{...note,evidenceId:'late-note'});
+  assert.equal((await finance(payer,200,adminId)).due,false);
+  // Review of the adjustment is separate from the already decided cancellation.
+  const adjustInput={sourceDigest:settled.resolution.sourceDigest,expectedAmountMinor:5000};
+  await finance(payer,200,adminId,'statement_adjustment',{...adjustInput,eventId:'admin-adjust-paid',statement:'paid'});
+  await finance(worker,200,adminId,'statement_adjustment',{...adjustInput,eventId:'admin-adjust-denied',statement:'not_received'});
+  await finance(worker,200,adminId,'request_adjustment_review',adjustInput);
+  const adjustAdmin=async(a:Actor,status:number,input?:Record<string,unknown>)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review'+(input?'':'?view=fixed_adjustment'),{method:input?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(input?{body:JSON.stringify(input)}:{})});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+  await adjustAdmin(other,403);
+  const initial=(await adjustAdmin(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.ok(initial);
+  const adjustDecision={action:'decide_fixed_adjustment',offerId:adminId,...adjustInput,expectedRequestedAt:initial.requestedAt,statementDigest:initial.statementDigest,evidenceDigest:initial.evidenceDigest,outcome:'inconclusive',reason:'Evidências fictícias insuficientes para conclusão bancária.',confirmed:true};
+  const adjustNote={kind:'fixed_adjustment',sourceDigest:adjustInput.sourceDigest,evidenceId:'adjust-note',note:'Manifestação fictícia sobre a regularização complementar.'};
+  await finance(worker,200,adminId,'submit_hourly_review_note',adjustNote);
+  await adjustAdmin(admin,409,adjustDecision);
+  const reviewItem=(await adjustAdmin(admin,200)).items.find((x:any)=>x.offerId===adminId);assert.equal(reviewItem.notes.length,1);assert.equal(reviewItem.statements.length,2);
+  const finalDecision={...adjustDecision,evidenceDigest:reviewItem.evidenceDigest};
+  await adjustAdmin(other,403,finalDecision);
+  await adjustAdmin(admin,409,{...finalDecision,expectedAmountMinor:5001});
+  await adjustAdmin(admin,409,{...finalDecision,statementDigest:'0'.repeat(64)});
+  for(const a of [payer,worker])await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).update({openExcessOfferIds:[adminId]});
+  assert.equal((await adjustAdmin(admin,200,finalDecision)).replay,false);
+  assert.equal((await adjustAdmin(admin,200,finalDecision)).replay,true);
+  await adjustAdmin(admin,409,{...finalDecision,outcome:'payment_evidence_accepted'});
+  const closed=await adj(worker,200,adminId);
+  assert.equal(closed.state,'disputed');assert.equal(closed.reviewStatus,'resolved_administratively');assert.equal(closed.restrictionActive,false);assert.equal(closed.decision.outcome,'inconclusive');assert.equal(closed.bankVerified,false);assert.equal(closed.statements.length,2);
+  assert.equal('actorUid' in closed.decision,false);
+  await finance(worker,409,adminId,'statement_adjustment',{...adjustInput,eventId:'late-adjust-received',statement:'received'});
+  await finance(worker,409,adminId,'submit_hourly_review_note',{...adjustNote,evidenceId:'late-adjust-note'});
+  assert.equal((await adjustment(adminId))?.amountMinor,5000);
+  for(const a of [payer,worker]){assert.deepEqual(await restriction(a),{restricted:true,openOfferIds:[adminId]});const root=db.doc('freelanceEngagementRestrictionsV1/'+a.uid);assert.equal((await root.get()).get('openAdjustmentOfferIds'),undefined);await root.set({schemaVersion:1,uid:a.uid,openOfferIds:[]});}
+ }finally{t.mock.restoreAll();}
+ // Zero resolution: explicit zero amounts, no adjustment, original history frozen.
+ await propose(worker,200,zeroId,'zero-proposal',0,0);
+ await accept(payer,200,zeroId,'zero-proposal');
+ await accept(payer,200,zeroId,'zero-proposal');
+ const zero=await accounting(worker,200,zeroId);assert.equal(zero.resolution.direction,'none');assert.equal(zero.resolution.amountMinor,0);
+ assert.equal(await adjustment(zeroId),undefined);
+ await pix(payer,409,zeroId);
+ await adj(payer,409,zeroId);
+ assert.equal((await finance(payer,200,zeroId)).originalHistoryFrozen,true);
+ await finance(payer,409,zeroId,'statement',{eventId:'late-original-paid',statement:'paid'});
+ assert.equal((await accounting(worker,200,zeroId)).resolution.sourceDigest,zero.resolution.sourceDigest);
+ assert.equal((await db.doc('freelanceOffersV1/'+zeroId+'/directPayment/externalStatements').get()).exists,false);
+ // Movements: each contract appears once, with its own historical value and adjustment.
+ const moves=async(actor:Actor,role:string,status=200)=>{
+  const r=await fetch(url+'?view=movements&role='+role,{headers:{authorization:'Bearer '+actor.token}});
+  const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;
+ };
+ for(const [actor,role] of [[payer,'requester'],[worker,'freelancer']] as const){
+  const page=await moves(actor,role);assert.equal(page.bankVerifiedMinor,null);
+  const entry=(target:string)=>{const rows=page.entries.filter((e:any)=>e.offerId===target);assert.equal(rows.length,1);return rows[0];};
+  const refundEntry=entry(id);assert.equal(refundEntry.operationalStatus,'cancelled');assert.equal(refundEntry.amountMinor,15000);assert.equal(refundEntry.cancellation.recognizedServiceMinor,5000);assert.equal(refundEntry.cancellation.reportedReceivedMinor,15000);
+  assert.equal(refundEntry.cancellation.adjustment.flow,role==='requester'?'inflow':'outflow');assert.equal(refundEntry.cancellation.adjustment.amountMinor,10000);assert.equal(refundEntry.cancellation.adjustment.financialState,'bilaterally_reported_received');
+  const complement=entry(completionId);assert.equal(complement.cancellation.adjustment.flow,role==='requester'?'outflow':'inflow');assert.equal(complement.cancellation.adjustment.amountMinor,4000);
+  const administrative=entry(adminId);assert.equal(administrative.cancellation.adjustment.financialState,'administratively_closed_unverified');assert.equal(administrative.cancellation.adjustment.bankVerified,false);
+  const business=entry(storeOffer);assert.equal(business.requesterStoreId,storeId);assert.equal(business.cancellation.adjustment.direction,'refund');
+  const zeroEntry=entry(zeroId);assert.equal(zeroEntry.cancellation.recognizedServiceMinor,0);assert.equal(zeroEntry.cancellation.adjustment,null);
+  assert.equal(entry(staleId).cancellation.state,'pending');
+  assert.ok(!JSON.stringify(page).includes('@example.invalid'));assert.ok(!JSON.stringify(page).includes('pngBase64'));
+ }
+ assert.equal((await moves(other,'requester')).entries.some((e:any)=>[id,completionId,adminId,storeOffer,zeroId,staleId].includes(e.offerId)),false);
+ // A changed amount in the persisted adjustment cannot be presented as valid.
+ const adjustmentRef=db.doc('freelanceOffersV1/'+completionId+'/directPayment/fixedCancellationAdjustment');
+ await adjustmentRef.update({amountMinor:4001});await accounting(worker,409,completionId);await finance(payer,409,completionId);await moves(payer,'requester',409);
+ await adjustmentRef.set(additionalDebt);
  // Historical declarations can invalidate a proposal without erasing it.
  await propose(worker,200,staleId,'stale-proposal',3000,0);
  await finance(payer,200,staleId,'statement',{eventId:'late-paid',statement:'paid'});
@@ -1112,13 +1389,33 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
   await review(admin,409,{...decision,proposalDigest:fresh.proposalDigest});
   const latest=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
   assert.equal(latest.notes.length,1);assert.equal(latest.notes[0].note,note.note);assert.equal('actorUid' in latest.notes[0],false);
-  const next={...decision,proposalDigest:latest.proposalDigest,evidenceDigest:latest.evidenceDigest};
+  const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.js');
+  const attachment={kind:'excess',sourceDigest:ax.sourceDigest,attachmentId:'attachment-one',pngBase64:receiptFixture()};
+  await excessApi(worker,400,'submit_hourly_review_attachment',{...attachment,pngBase64:'YWJjZA=='},adminId);
+  await excessApi(other,403,'submit_hourly_review_attachment',attachment,adminId);
+  await excessApi(worker,200,'submit_hourly_review_attachment',attachment,adminId);
+  await excessApi(worker,200,'submit_hourly_review_attachment',attachment,adminId);
+  await excessApi(worker,409,'submit_hourly_review_attachment',{...attachment,attachmentId:'second-attachment'},adminId);
+  assert.equal((await own(worker,'excess',adminId)).attachments.length,1);
+  assert.deepEqual((await own(owner,'excess',adminId)).attachments,[]);
+  const getAttachment=async(actor:Actor,status:number,adminView=false)=>{
+   const endpoint=adminView?'/api/admin/freelance-financial-review?view=hourly_attachment':'/api/freelance/finance?view=hourly_review_attachment';
+   const r=await fetch('http://127.0.0.1:'+address.port+endpoint+'&kind=excess&offerId='+adminId+'&attachmentId=attachment-one',{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;
+  };
+  await getAttachment(owner,403);await getAttachment(other,403,true);
+  const img=await getAttachment(worker,200);assert.equal(img.mimeType,'image/png');assert.ok(!Buffer.from(img.pngBase64,'base64').includes(Buffer.from('fixture metadata')));
+  assert.equal((await getAttachment(admin,200,true)).pngBase64,img.pngBase64);
+  await review(admin,409,{...decision,proposalDigest:latest.proposalDigest,evidenceDigest:latest.evidenceDigest});
+  const withAttachment=(await review(admin,200)).items.find((x:any)=>x.offerId===adminId);
+  assert.equal(withAttachment.attachments.length,1);assert.ok(!JSON.stringify(withAttachment).includes('pngBase64'));
+  const next={...decision,proposalDigest:withAttachment.proposalDigest,evidenceDigest:withAttachment.evidenceDigest};
   await review(admin,409,{...next,recognizedExcessMs:3600001});
   await review(other,403,next);
   assert.equal((await review(admin,200,next)).replay,false);assert.equal((await review(admin,200,next)).replay,true);
   await review(admin,409,{...next,recognizedExcessMs:0});
   await excessApi(worker,409,'accept_hourly_excess',{...af,proposalId:'second'},adminId);
   await excessApi(worker,409,'submit_hourly_review_note',{...note,evidenceId:'late'},adminId);
+  await excessApi(worker,409,'submit_hourly_review_attachment',attachment,adminId);await getAttachment(worker,200);await getAttachment(admin,409,true);
   const av=await excessApi(worker,200,undefined,{},adminId);
   assert.equal(av.dispute.status,'resolved_administratively');assert.equal(av.resolved.recognizedServiceMinor,13000);assert.equal(av.restrictionActive,false);assert.equal(av.payable,true);
   assert.equal('actorUid' in av.dispute.decision,false);
@@ -1127,7 +1424,10 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
   for(const actor of [owner,worker])assert.deepEqual(await restriction(actor),{restricted:false,openOfferIds:[]});
   assert.ok(!(await review(admin,200)).items.some((x:any)=>x.offerId===adminId));
  }finally{mock.mock.restore();}
- await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);
+ const hourlyPage=async(actor:Actor,role:string,status=200)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=movements&role='+role,{headers:{authorization:'Bearer '+actor.token}});const v=await r.json();assert.equal(r.status,status,JSON.stringify(v));return v;};
+ const page=await hourlyPage(owner,'requester');const unresolved=page.hourlyEntries.find((e:any)=>e.offerId===id),resolvedExcess=page.hourlyEntries.find((e:any)=>e.offerId===excessId);assert.equal(unresolved.reason,'excess_review');assert.equal(unresolved.recognizedMinor,null);assert.equal(resolvedExcess.recognizedMinor,13000);assert.equal(resolvedExcess.recognizedExcessMs,1800000);assert.equal(resolvedExcess.financialState,'bilaterally_reported_received');
+ await er.collection('attendance').doc('timeline').delete();await excessApi(worker,409);await excessFinance(owner,409);await hourlyPage(owner,'requester',409);
+ await er.collection('attendance').doc('timeline').set({scheduleId:'schedule',events});
  // Positive contracted estimate rounded to zero on a short, bilaterally confirmed journey.
  const zeroId=id+'-zero',zr=db.doc('freelanceOffersV1/'+zeroId);
  const zeroPayment=createDirectPaymentTerms({method:'external_pix',amountMinor:1}),zeroWork={mode:'hourly',location:'remote',estimatedMinutes:60,hourlyRateMinor:1};
@@ -1159,6 +1459,7 @@ test('variable basis from persisted emulator-only hourly fixture: immutable sour
  assert.deepEqual(await withdrawal(worker,200),{revision:2,sharingAuthorized:false,sharingRevoked:true,sharingSequence:1});
  await excessFinance(worker,409,'restore_pix_share',{expectedRevision:2,expectedSequence:1},zeroId);
  assert.equal((await excessFinance(worker,200,undefined,{},zeroId)).financialState,'no_payment_required');
+ const zeroMovement=(await hourlyPage(worker,'freelancer')).hourlyEntries.find((e:any)=>e.offerId===zeroId);assert.equal(zeroMovement.recognizedMinor,0);assert.equal(zeroMovement.financialState,'no_payment_required');assert.equal(zeroMovement.estimatedMinor,1);
  await zr.collection('directPayment').doc('hourlyFinalObligation').set({fixture:true});
  await excessFinance(owner,409,undefined,{},zeroId);
  await zr.collection('directPayment').doc('hourlyFinalObligation').delete();
@@ -1233,6 +1534,8 @@ test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparatio
   await act(worker,id,'confirm',200,{confirmed:true,...expected});
   assert.equal((await ref.collection('directPayment').doc('hourlyCommitment').get()).get('estimatedMinor'),360000);
   assert.equal((await ref.collection('directPayment').doc('obligation').get()).exists,false);
+  const movement=async(a:Actor,role:string)=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=movements&role='+role,{headers:{authorization:'Bearer '+a.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));assert.equal(v.bankVerifiedMinor,null);return v.hourlyEntries.find((e:any)=>e.offerId===id);};
+  const before=await movement(owner,'requester');assert.equal(before.estimatedMinor,360000);assert.equal(before.recognizedMinor,null);assert.equal(before.reason,'attendance_pending');
   const finance=async(a:Actor,status:number,action?:string,extra:Record<string,unknown>={},view='case')=>{
    const url='http://127.0.0.1:'+address.port+'/api/freelance/finance'+(action?'':'?view='+view+'&offerId='+id);
    const res=await fetch(url,{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},...(action?{body:JSON.stringify({offerId:id,action,confirmed:true,...extra})}:{})});
@@ -1262,6 +1565,7 @@ test('hourly lifecycle test-only opt-in: actual HTTP contracting, Pix preparatio
   await finance(owner,200,'statement',{eventId:'paid',statement:'paid',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
   await finance(worker,200,'statement',{eventId:'received',statement:'received',expectedAmountMinor:final.amountMinor,sourceDigest:final.sourceDigest});
   assert.equal((await finance(owner,200)).financialState,'bilaterally_reported_received');
+  for(const [actor,role] of [[owner,'requester'],[worker,'freelancer']] as const){const row=await movement(actor,role);assert.equal(row.recognizedMinor,final.amountMinor);assert.equal(row.reason,'final');assert.equal(row.financialState,'bilaterally_reported_received');assert.equal(row.bankVerified,false);assert.equal(row.workMs,basis.accounting.workMs);}
  }finally{if(previous===undefined)delete process.env[gate];else process.env[gate]=previous;}
 });
 
@@ -1316,6 +1620,8 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
    const agreement=(a:Actor,status:number)=>finance(a,status,undefined,{},'hourly_cancellation_agreement');
    const financeRestrictions=async(a:Actor)=>{const response=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=restrictions',{headers:{authorization:'Bearer '+a.token}});const body=await response.json();assert.equal(response.status,200,JSON.stringify(body));return body;};
    await agreement(other,403);
+   const hourlyMovement=async()=>{const r=await fetch('http://127.0.0.1:'+address.port+'/api/freelance/finance?view=movements&role=requester',{headers:{authorization:'Bearer '+owner.token}});const v=await r.json();assert.equal(r.status,200,JSON.stringify(v));return v.hourlyEntries.find((e:any)=>e.offerId===id);};
+   const unresolvedMovement=await hourlyMovement();assert.equal(unresolvedMovement.reason,'cancellation_review');assert.equal(unresolvedMovement.recognizedMinor,null);
    const a=await agreement(worker,200);
    assert.equal(a.agreedMinor,null);assert.equal(a.payable,false);
    const proposal={proposalId:'p1',sourceDigest:a.sourceDigest,recognizedServiceMinor:started?Math.min(100,a.capMinor):0};
@@ -1408,6 +1714,7 @@ test('hourly cancellation: administrative suspension snapshot, pre-start and wor
     await finance(owner,409,'reveal_pix',{expectedRevision:1});await finance(owner,409,undefined,{},'case');
     await finance(owner,409,'statement',{eventId:'zero-paid',statement:'paid',expectedAmountMinor:0,sourceDigest:resolution.sourceDigest});
    }
+   const settledMovement=await hourlyMovement();assert.equal(settledMovement.recognizedMinor,proposal.recognizedServiceMinor);assert.equal(settledMovement.financialState,started?'bilaterally_reported_received':'no_payment_required');assert.equal(settledMovement.bankVerified,false);
    await finance(owner,409,'propose_hourly_cancellation',{...proposal,proposalId:'p3'});
    if(started){
     await ref.collection('attendance').doc('timeline').delete();
