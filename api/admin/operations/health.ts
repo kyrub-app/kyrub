@@ -47,6 +47,12 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'freelance-financial-review') {
+    const { handleFreelanceServerlessRequest } = await import('../../../server/freelance/freelanceServerlessTransport.js');
+    await handleFreelanceServerlessRequest(transport, request, response);
+    return;
+  }
+
   if (transport === 'freelance-review') {
     const {handleFreelanceReview}=await import('../../../server/admin/freelanceReviewTransport.js');
     await handleFreelanceReview(request,response);
