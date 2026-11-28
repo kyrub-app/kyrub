@@ -1,3 +1,5 @@
+import {freelanceContractPilotEnabled,freelanceEngagementPilotAllows,assertEngagementPilotAuthority,assertContractPilotTerms} from '../freelance/freelanceEngagementPilotAuthority.js';
+import {adminAuth} from '../firebaseAdmin.js';
 import {createHash} from 'node:crypto';
 import {FieldPath,FieldValue} from 'firebase-admin/firestore';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
@@ -9,6 +11,28 @@ import {writeFreelanceFinancialNotices} from '../freelance/freelanceFinancialNot
 import {readFinancialEvidence} from '../freelance/freelanceFinancialEvidenceService.js';
 import {assertFinancialCaseRestrictions,prepareAdministrativeDisputeRelease} from '../freelance/freelanceEngagementRestrictionService.js';
 
+export function financialReviewAdminPilotEnabled(env:NodeJS.ProcessEnv=process.env){
+ return freelanceContractPilotEnabled(env)&&env.KYRUB_FREELANCE_ADMIN_REVIEW_PILOT_ENABLED==='true';
+}
+function assertReviewGate(pilot:boolean){
+ if(pilot){
+  if(!financialReviewAdminPilotEnabled()||getFirebaseAdminProjectId()!=='kyrub-b8d0e'||adminAuth.app.options.projectId!=='kyrub-b8d0e'||(adminDb as typeof adminDb&{projectId?:string}).projectId!=='kyrub-b8d0e')throw Error('FREELANCE_FINANCIAL_REVIEW_DISABLED');
+ }else if(!financialReviewAdminEnabled())throw Error('FREELANCE_FINANCIAL_REVIEW_DISABLED');
+}
+async function reviewIdentity(authorization:string,pilot:boolean,mutation:boolean){
+ if(!pilot||mutation){
+  const identity=await requireKyrubSessionMfa(authorization,'administrative',300);
+  if(pilot&&identity.aud!=='kyrub-b8d0e')throw Error('FORBIDDEN');
+  return identity;
+ }
+ const token=/^Bearer ([^\s]+)$/i.exec(authorization)?.[1];
+ if(!token||token.length>8192)throw Error('authentication_required');
+ const identity=await adminAuth.verifyIdToken(token,true);
+ if(identity.aud!=='kyrub-b8d0e')throw Error('FORBIDDEN');
+ const user=await adminAuth.getUser(identity.uid);
+ if(user.disabled||!user.emailVerified)throw Error('FORBIDDEN');
+ return identity;
+}
 export function financialReviewAdminEnabled(){
  return process.env.KYRUB_FREELANCE_LOCAL_HOMOLOGATION==='true'&&process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION==='true'&&
  !process.env.VERCEL&&!process.env.VERCEL_ENV&&!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS&&
@@ -16,10 +40,10 @@ export function financialReviewAdminEnabled(){
  getFirebaseAdminProjectId()==='kyrub-security-test';
 }
 /** Distinct from operational review. Read-only candidate; no release or payment authority. */
-export async function listFreelanceFinancialReviews(authorization:string,cursor:unknown){
- if(!financialReviewAdminEnabled())throw Error('FREELANCE_FINANCIAL_REVIEW_DISABLED');
+export async function listFreelanceFinancialReviews(authorization:string,cursor:unknown,pilot=false){
+ assertReviewGate(pilot);
  if(cursor!==undefined&&cursor!==''&&!validFreelanceId(cursor))throw Error('FREELANCE_INVALID');
- const identity=await requireKyrubSessionMfa(authorization,'administrative',300);
+ const identity=await reviewIdentity(authorization,pilot,false);
  const uid=identity.uid;
  if(identity.email_verified!==true||!validFreelanceId(uid))throw Error('FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
@@ -34,14 +58,16 @@ export async function listFreelanceFinancialReviews(authorization:string,cursor:
    if(raw.offerId!==doc.id||!validFreelanceId(raw.requesterUid)||!validFreelanceId(raw.beneficiaryUid))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    // Conflict of interest: don't expose the admin's own case via this workspace.
    if(raw.requesterUid===uid||raw.beneficiaryUid===uid)continue;
+   if(pilot&&(!freelanceEngagementPilotAllows(raw.requesterUid)||!freelanceEngagementPilotAllows(raw.beneficiaryUid)))continue;
    const {offer,obligation,events,projection}=await readFinancialContext(tx,raw.requesterUid,doc.id);
+   if(pilot){assertContractPilotTerms(offer);assertEngagementPilotAuthority(obligation.requesterUid);assertEngagementPilotAuthority(obligation.beneficiaryUid);}
    const review=checkedReview(raw,obligation);
    if(!review||review.status!=='pending'||projection.state!=='disputed'||
       Date.parse(review.requestedAt)<Date.parse(events[events.length-1].recordedAt))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
    await assertFinancialCaseRestrictions(tx,obligation);
    if(typeof offer.title!=='string'||!offer.title.trim()||offer.title.length>120)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
-   const evidence=await readFinancialEvidence(tx,obligation,review.requestedAt);
-   const attachments=await readFinancialReceiptManifest(tx,obligation,review.requestedAt);
+   const evidence=await readFinancialEvidence(tx,obligation,review.requestedAt,pilot);
+   const attachments=await readFinancialReceiptManifest(tx,obligation,review.requestedAt,pilot);
    items.push({evidenceRevision:evidence.revision+attachments.revision,receipts:attachments.receipts.map(r=>({id:r.id,role:r.actorUid===obligation.requesterUid?'requester':'freelancer',recordedAt:r.recordedAt,size:r.size,mimeType:'image/png'})),evidenceNotes:evidence.notes.map(n=>({role:n.actorUid===obligation.requesterUid?'requester':'freelancer',note:n.note,recordedAt:n.recordedAt})),offerId:offer.id,title:offer.title,amountMinor:obligation.terms.amountMinor,currency:'BRL',timing:obligation.terms.timing,
     requestedAt:review.requestedAt,requestedByRole:review.requestedBy===obligation.requesterUid?'requester':'freelancer',
     requesterUid:obligation.requesterUid,beneficiaryUid:obligation.beneficiaryUid,
@@ -53,8 +79,8 @@ export async function listFreelanceFinancialReviews(authorization:string,cursor:
 }
 
 /** An administrative disposition is not a payment, a bank verification, or a debt waiver. */
-export async function decideFreelanceFinancialReview(authorization:string,input:unknown){
- if(!financialReviewAdminEnabled())throw Error('FREELANCE_FINANCIAL_REVIEW_DISABLED');
+export async function decideFreelanceFinancialReview(authorization:string,input:unknown,pilot=false){
+ assertReviewGate(pilot);
  if(!input||typeof input!=='object'||Array.isArray(input))throw Error('FREELANCE_INVALID');
  const b=input as Record<string,unknown>;
  if(Object.keys(b).length!==6||Object.keys(b).some(k=>!['offerId','expectedRequestedAt','expectedEvidenceRevision','outcome','reason','confirmed'].includes(k))||
@@ -62,7 +88,7 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
  !validFreelanceId(b.offerId)||typeof b.expectedRequestedAt!=='string'||!Number.isFinite(Date.parse(b.expectedRequestedAt))||
  !isFinancialReviewOutcome(b.outcome)||typeof b.reason!=='string'||b.reason.trim().length<10||b.reason.trim().length>1000||b.confirmed!==true)throw Error('FREELANCE_INVALID');
  const offerId=b.offerId,reason=b.reason.trim(),outcome=b.outcome;
- const identity=await requireKyrubSessionMfa(authorization,'administrative',300),uid=identity.uid;
+ const identity=await reviewIdentity(authorization,pilot,true),uid=identity.uid;
  if(identity.email_verified!==true||!validFreelanceId(uid))throw Error('FORBIDDEN');
  const ref=adminDb.doc('freelanceFinancialReviewsV1/'+offerId);
  const auditId='freelance_financial_review_'+createHash('sha256').update(offerId).digest('hex');
@@ -73,11 +99,12 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
   if(!role||role.uid!==uid||role.role!=='super_admin'||role.status!=='active')throw Error('FORBIDDEN');
   if(!raw||raw.offerId!==offerId||!validFreelanceId(raw.requesterUid)||!validFreelanceId(raw.beneficiaryUid))throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   if([raw.requesterUid,raw.beneficiaryUid].includes(uid))throw Error('FORBIDDEN');
-  const {obligation,events,projection}=await readFinancialContext(tx,raw.requesterUid,offerId);
+  const {offer,obligation,events,projection}=await readFinancialContext(tx,raw.requesterUid,offerId);
+  if(pilot){assertContractPilotTerms(offer);assertEngagementPilotAuthority(obligation.requesterUid);assertEngagementPilotAuthority(obligation.beneficiaryUid);}
   const review=checkedReview(raw,obligation);
   if(!review||review.requestedAt!==b.expectedRequestedAt)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
-  const evidence=await readFinancialEvidence(tx,obligation,review.requestedAt);
-  const evidenceRevision=evidence.revision+(await readFinancialReceiptManifest(tx,obligation,review.requestedAt)).revision;
+  const evidence=await readFinancialEvidence(tx,obligation,review.requestedAt,pilot);
+  const evidenceRevision=evidence.revision+(await readFinancialReceiptManifest(tx,obligation,review.requestedAt,pilot)).revision;
   if(evidenceRevision!==b.expectedEvidenceRevision)throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   const digest=createHash('sha256').update(reason).digest('hex');
   if(review.status==='resolved_administratively'){
@@ -104,8 +131,8 @@ export async function decideFreelanceFinancialReview(authorization:string,input:
 }
 
 /** No anonymous links, only scoped admin read while the review is pending. */
-export async function getFreelanceFinancialReceipt(authorization:string,offerId:unknown,receiptId:unknown){
- if(!financialReviewAdminEnabled())throw Error('FREELANCE_FINANCIAL_REVIEW_DISABLED');
+export async function getFreelanceFinancialReceipt(authorization:string,offerId:unknown,receiptId:unknown,pilot=false){
+ assertReviewGate(pilot);
  if(!validFreelanceId(offerId)||!validFreelanceId(receiptId))throw Error('FREELANCE_INVALID');
  const identity=await requireKyrubSessionMfa(authorization,'administrative',300),uid=identity.uid;
  if(identity.email_verified!==true||!validFreelanceId(uid))throw Error('FORBIDDEN');
@@ -115,10 +142,11 @@ export async function getFreelanceFinancialReceipt(authorization:string,offerId:
   const raw=queue.data();
   if(!raw||raw.offerId!==offerId||!validFreelanceId(raw.requesterUid)||!validFreelanceId(raw.beneficiaryUid)||
    [raw.requesterUid,raw.beneficiaryUid].includes(uid))throw Error('FORBIDDEN');
-  const {obligation,projection}=await readFinancialContext(tx,raw.requesterUid,offerId);
+  const {offer,obligation,projection}=await readFinancialContext(tx,raw.requesterUid,offerId);
+  if(pilot){assertContractPilotTerms(offer);assertEngagementPilotAuthority(obligation.requesterUid);assertEngagementPilotAuthority(obligation.beneficiaryUid);}
   const review=checkedReview(raw,obligation);
   if(!review||review.status!=='pending'||projection.state!=='disputed')throw Error('FREELANCE_FINANCIAL_REVIEW_CONFLICT');
   await assertFinancialCaseRestrictions(tx,obligation);
-  return readFinancialReceiptBytes(tx,obligation,review.requestedAt,receiptId);
+  return readFinancialReceiptBytes(tx,obligation,review.requestedAt,receiptId,pilot);
  },{readOnly:true});
 }
