@@ -20,6 +20,8 @@ const auth=getAuth(app),db=getFirestore(app);
 const {handleFreelanceWorkspace,freelanceWorkspaceEnabled}=await import('../server/freelance/freelanceWorkspaceTransport.js');
 const {confirmSimulatedFreelanceFunding}=await import('../server/freelance/freelanceFundingService.js');
 const {listFreelanceReviews,decideFreelanceReview}=await import('../server/admin/freelanceReviewService.js');
+const {handleFreelanceFinancialReview}=await import('../server/admin/freelanceFinancialReviewTransport.js');
+const {handleFreelanceFinance}=await import('../server/freelance/freelanceFinanceTransport.js');
 assert.equal(freelanceWorkspaceEnabled(),true);
 const {handlePersonalPix,personalPixTransportEnabled,personalPixRecentLogin}=await import('../server/payments/personalPixTransport.js');
 assert.equal(personalPixTransportEnabled(),true);
@@ -27,13 +29,13 @@ assert.equal(personalPixTransportEnabled(),true);
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url??'/','http://127.0.0.1');
-  if(!['/api/freelance/workspace','/api/personal-finance/pix'].includes(url.pathname)){res.statusCode=404;res.end();return;}
+  if(!['/api/freelance/workspace','/api/personal-finance/pix','/api/admin/freelance-financial-review','/api/freelance/finance'].includes(url.pathname)){res.statusCode=404;res.end();return;}
   const chunks:Buffer[]=[];
   for await(const chunk of req)chunks.push(Buffer.from(chunk));
   const raw=Buffer.concat(chunks).toString('utf8');
   const response={setHeader:(k:string,v:string)=>res.setHeader(k,v),status:(code:number)=>{res.statusCode=code;return response;},json:(value:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));}};
   const request={method:req.method,headers:req.headers,query:Object.fromEntries(url.searchParams),body:raw?JSON.parse(raw):undefined};
-  if(url.pathname==='/api/personal-finance/pix')await handlePersonalPix(request,response);else await handleFreelanceWorkspace(request,response);
+  if(url.pathname==='/api/freelance/finance')await handleFreelanceFinance(request,response);else if(url.pathname==='/api/admin/freelance-financial-review')await handleFreelanceFinancialReview(request,response);else if(url.pathname==='/api/personal-finance/pix')await handlePersonalPix(request,response);else await handleFreelanceWorkspace(request,response);
  }catch{res.statusCode=500;res.end(JSON.stringify({code:'TEST_HTTP_ERROR'}));}
 });
 server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -276,4 +278,225 @@ test('CID Pix import HTTP: private list, explicit confirmation, account isolatio
   assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),pix.key);
   console.log('PASS CID Pix HTTP: own masked list, foreign account rejected, recent session, stale source, explicit replacement, independent destination');
  }finally{await tag.delete();}
+});
+
+test('financial Control Plane queue: actual Auth emulator token, synthetic MFA, active admin only, private bounded read',async(t)=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer=await account('finqueue-payer',['requester']),worker=await account('finqueue-worker',['freelancer']),admin=await account('finqueue-admin',[]),inactive=await account('finqueue-inactive',[]);
+ for(const [a,status] of [[admin,'active'],[inactive,'inactive'],[payer,'active']] as const)await db.doc('kyrub_admin/control_plane/admins/'+a.uid).set({uid:a.uid,role:'super_admin',status});
+ const id='finqueue-'+suffix;
+ await publishFreelanceOffer(payer.uid,id,{title:'Freela financeiro fictício',description:'Teste isolado',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
+ await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
+ await record(worker.uid,id,{eventId:'denied',statement:'not_received',confirmed:true});
+ await request(worker.uid,id,{confirmed:true});
+ const url='http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review';
+ const call=async(a:Actor|null,status:number,query='',method='GET')=>{
+  const r=await fetch(url+query,{method,headers:a?{authorization:'Bearer '+a.token}:{}});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));assert.match(r.headers.get('cache-control')??'',/no-store/);return data;
+ };
+ await call(null,401);await call(admin,405,'','PUT');await call(admin,415,'','POST');
+ assert.equal((await call(admin,403)).code,'second_factor_required');
+ const original=auth.verifyIdToken.bind(auth),tokens=new Set([payer.token,worker.token,admin.token,inactive.token]);let stale=false;
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+  const decoded=await original(token,checkRevoked);
+  if(!tokens.has(token))return decoded;
+  assert.equal(checkRevoked,true);
+  return {...decoded,auth_time:Math.floor(Date.now()/1000)-(stale?301:0),firebase:{...decoded.firebase,sign_in_second_factor:'totp'}};
+ });
+ try{
+  stale=true;assert.equal((await call(admin,403)).code,'reauthentication_required');stale=false;
+  await call(worker,403);await call(inactive,403);await call(admin,400,'?uid='+worker.uid);
+  const mine=await call(payer,200);assert.ok(!mine.items.some(x=>x.offerId===id));
+  const list=await call(admin,200),item=list.items.find(x=>x.offerId===id);
+  assert.ok(item);assert.equal(item.amountMinor,15000);assert.equal(item.restrictionActive,true);assert.equal(item.bankVerified,false);
+  assert.deepEqual(item.statements.map(x=>x.statement),['paid','not_received']);assert.equal(item.requestedByRole,'freelancer');
+  assert.ok(!JSON.stringify(item).includes('@example.invalid'));assert.equal('events' in item,false);
+  await record(worker.uid,id,{eventId:'received',statement:'received',confirmed:true});
+  assert.ok(!(await call(admin,200)).items.some(x=>x.offerId===id));
+  const flag=process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;
+  try{delete process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;await call(admin,503);}finally{process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION=flag;}
+ }finally{t.mock.restoreAll();}
+ console.log('PASS private financial review queue: real emulator auth, synthetic TOTP policy, active admin, no self, voluntary removal; genuine MFA not tested');
+});
+
+test('financial administrative decision: protected, audited, no bank proof, one case only, later receipt preserved',async(t)=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer=await account('findec-payer',['requester']),worker=await account('findec-worker',['freelancer']),admin=await account('findec-admin',[]);
+ for(const a of [admin,payer])await db.doc('kyrub_admin/control_plane/admins/'+a.uid).set({uid:a.uid,role:'super_admin',status:'active'});
+ const ids=['findec-first-'+suffix,'findec-second-'+suffix];
+ for(const id of ids){
+  await publishFreelanceOffer(payer.uid,id,{title:'Teste decisão financeira',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
+  await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ }
+ for(const id of ids){
+  await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});await record(worker.uid,id,{eventId:'denied',statement:'not_received',confirmed:true});await request(worker.uid,id,{confirmed:true});
+ }
+ const id=ids[0],ref=db.doc('freelanceFinancialReviewsV1/'+id),history=db.doc('freelanceOffersV1/'+id+'/directPayment/externalStatements');
+ const initial=(await history.get()).data(),requestedAt=(await ref.get()).get('requestedAt');
+ const body={offerId:id,expectedRequestedAt:requestedAt,expectedEvidenceRevision:0,outcome:'inconclusive',reason:'Evidências fictícias insuficientes para conclusão bancária.',confirmed:true};
+ const call=async(a:Actor,status:number,input:Record<string,unknown>)=>{
+  const r=await fetch('http://127.0.0.1:'+address.port+'/api/admin/freelance-financial-review',{method:'POST',headers:{authorization:'Bearer '+a.token,'content-type':'application/json'},body:JSON.stringify(input)});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));return data;
+ };
+ assert.equal((await call(admin,403,body)).code,'second_factor_required');
+ const original=auth.verifyIdToken.bind(auth),tokens=new Set([payer.token,worker.token,admin.token]);let stale=false;
+ t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+  const decoded=await original(token,checkRevoked);
+  if(!tokens.has(token))return decoded;
+  assert.equal(checkRevoked,true);return {...decoded,auth_time:Math.floor(Date.now()/1000)-(stale?301:0),firebase:{...decoded.firebase,sign_in_second_factor:'totp'}};
+ });
+ try{
+  stale=true;assert.equal((await call(admin,403,body)).code,'reauthentication_required');stale=false;
+  await call(payer,403,body);await call(worker,403,body);
+  await call(admin,400,{...body,reason:'curto'});await call(admin,400,{...body,confirmed:false});
+  await call(admin,409,{...body,expectedRequestedAt:'2020-01-01T00:00:00Z'});
+  const {submitFreelanceFinancialEvidence:submit}=await import('../server/freelance/freelanceFinancialEvidenceService.js');
+  await submit(payer.uid,id,{evidenceId:'note-a',note:'Declaração fictícia sobre o horário do pagamento.',confirmed:true});
+  await call(admin,409,body);
+  const {submitFreelanceFinancialReceipt:submitReceipt}=await import('../server/freelance/freelanceFinancialReceiptService.js');
+  const {getFreelanceFinancialReceipt:getReceipt,listFreelanceFinancialReviews:listReviews}=await import('../server/admin/freelanceFinancialReviewService.js');
+  const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.js');
+  await submitReceipt(payer.uid,id,{receiptId:'receipt-a',pngBase64:receiptFixture(),confirmed:true});
+  await call(admin,409,{...body,expectedEvidenceRevision:1});
+  const list=await listReviews('Bearer '+admin.token,undefined);
+  const item=list.items.find(x=>x.offerId===id)!;
+  assert.equal(item.evidenceRevision,2);assert.equal(item.receipts.length,1);
+  assert.ok(!JSON.stringify(item).includes('pngBase64'));
+  await assert.rejects(getReceipt('Bearer '+payer.token,id,'receipt-a'),/FORBIDDEN/);
+  await assert.rejects(getReceipt('Bearer '+worker.token,id,'receipt-a'),/FORBIDDEN/);
+  const file=await getReceipt('Bearer '+admin.token,id,'receipt-a');
+  assert.equal(file.mimeType,'image/png');assert.equal(file.bankVerified,false);
+  assert.ok(!Buffer.from(file.pngBase64,'base64').includes(Buffer.from('fixture metadata')));
+  const current={...body,expectedEvidenceRevision:2};
+  const results=await Promise.all([call(admin,200,current),call(admin,200,current)]);
+  assert.deepEqual(results.map(x=>x.replay).sort(),[false,true]);assert.ok(results.every(x=>x.bankVerified===false));
+  assert.equal((await ref.get()).get('status'),'resolved_administratively');
+  assert.equal((await ref.get()).get('decision.reason'),body.reason);
+  assert.equal((await ref.get()).get('decision.evidenceRevision'),2);
+  const {listUserNotifications}=await import('../server/notifications/userNotificationService.js');
+  for(const a of [payer,worker])assert.equal((await listUserNotifications({recipientUserId:a.uid})).notifications.filter(n=>n.eventType==='freelance_finance_administrative_release').length,1);
+  assert.deepEqual((await history.get()).data(),initial);
+  const audit=await db.collection('kyrub_admin/control_plane/audit_logs').where('targetId','==',id).get();
+  assert.equal(audit.size,1);assert.equal(audit.docs[0].get('actorId'),admin.uid);assert.equal(audit.docs[0].get('bankVerified'),false);
+  for(const a of [payer,worker])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[ids[1]]);
+  await call(admin,409,{...body,expectedEvidenceRevision:2,outcome:'payment_evidence_accepted'});
+  await assert.rejects(submit(worker.uid,id,{evidenceId:'late',note:'Manifestação posterior ao encerramento.',confirmed:true}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+  await assert.rejects(getReceipt('Bearer '+admin.token,id,'receipt-a'),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+  await record(worker.uid,id,{eventId:'received',statement:'received',confirmed:true});
+  assert.equal((await history.get()).get('events').length,3);assert.equal((await ref.get()).get('status'),'resolved_administratively');
+  await record(worker.uid,ids[1],{eventId:'received',statement:'received',confirmed:true});
+  for(const a of [payer,worker])assert.deepEqual((await db.doc('freelanceEngagementRestrictionsV1/'+a.uid).get()).get('openOfferIds'),[]);
+ }finally{t.mock.restoreAll();}
+});
+
+test('participant finance HTTP: authenticated statements, private own evidence, receipt and release',async()=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.js');
+ const payer=await account('finhttp-payer',['requester']),worker=await account('finhttp-worker',['freelancer']),other=await account('finhttp-other',[]);
+ const id='finhttp-'+suffix;
+ await publishFreelanceOffer(payer.uid,id,{title:'Freela financeiro HTTP',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:15000})});
+ await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ const url='http://127.0.0.1:'+address.port+'/api/freelance/finance';
+ const call=async(a:Actor|null,status:number,query='',body?:Record<string,unknown>)=>{
+  const r=await fetch(url+query,{method:body?'POST':'GET',headers:{...(a?{authorization:'Bearer '+a.token}:{}),...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const data=await r.json();assert.equal(r.status,status,JSON.stringify(data));assert.match(r.headers.get('cache-control')??'',/no-store/);return data;
+ };
+ const q='?view=case&offerId='+id,receiptQ='?view=receipt&offerId='+id+'&receiptId=receipt-a';
+ const send=(a:Actor,status:number,action:string,extra:Record<string,unknown>={})=>call(a,status,'',{offerId:id,action,confirmed:true,...extra});
+ await call(null,401,q);await call(other,403,q);await call(payer,400,q+'&uid='+worker.uid);
+ assert.equal((await call(payer,200,q)).financialState,'awaiting_payment');
+ const movements=(a:Actor,role:string)=>call(a,200,'?view=movements&role='+role);
+ const movement=(p:Awaited<ReturnType<typeof movements>>)=>p.entries.find((e:{offerId:string})=>e.offerId===id);
+ assert.equal(movement(await movements(payer,'requester')).financialState,'awaiting_payment');
+ assert.equal(movement(await movements(worker,'freelancer')).amountMinor,15000);
+ assert.equal(movement(await movements(other,'freelancer')),undefined);
+ await call(payer,400,'?view=movements&role=requester&uid='+worker.uid);
+ await send(worker,403,'statement',{statement:'paid',eventId:'forged'});
+ await send(payer,400,'statement',{statement:'paid',eventId:'paid',actorUid:worker.uid});
+ await send(payer,200,'statement',{statement:'paid',eventId:'paid'});
+ await send(worker,200,'statement',{statement:'not_received',eventId:'denied'});
+ assert.equal((await call(payer,200,q)).financialState,'disputed');
+ assert.equal(movement(await movements(worker,'freelancer')).financialState,'disputed');
+ for(const a of [payer,worker])assert.deepEqual(await call(a,200,'?view=restrictions'),{restricted:true,openOfferIds:[id]});
+ const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
+ const {shouldDeliverUserNotificationToBrowser,buildDefaultUserCommunicationPreferences}=await import('../shared/userCommunicationPreferences.js');
+ const list=(uid:string)=>listUserNotifications({recipientUserId:uid});
+ const opened=(await list(payer.uid)).notifications.find(n=>n.eventType==='freelance_finance_dispute_opened')!;
+ assert.ok(opened);await markUserNotificationRead({recipientUserId:payer.uid,notificationId:opened.id});
+ await send(worker,200,'statement',{statement:'not_received',eventId:'denied'});
+ const afterReplay=await list(payer.uid);
+ assert.equal(afterReplay.notifications.filter(n=>n.eventType==='freelance_finance_dispute_opened').length,1);
+ assert.ok(afterReplay.notifications.find(n=>n.id===opened.id)?.readAt);
+ await send(worker,200,'request_review');
+ await send(payer,200,'submit_note',{evidenceId:'note-a',note:'Manifestação privada de teste.'});
+ await send(payer,400,'submit_receipt',{receiptId:'receipt-a',pngBase64:'YWJjZA=='});
+ await send(payer,200,'submit_receipt',{receiptId:'receipt-a',pngBase64:receiptFixture()});
+ assert.equal((await call(payer,200,q)).ownNotes.length,1);assert.equal((await call(payer,200,q)).ownReceipts.length,1);
+ assert.equal((await call(worker,200,q)).ownNotes.length,0);assert.equal((await call(worker,200,q)).ownReceipts.length,0);
+ await call(worker,403,receiptQ);await call(other,403,receiptQ);
+ assert.equal((await call(payer,200,receiptQ)).mimeType,'image/png');
+ await send(worker,200,'statement',{statement:'received',eventId:'received'});
+ const resolved=await call(payer,200,q);assert.equal(resolved.reviewStatus,'resolved_voluntarily');assert.equal(resolved.bankVerified,false);
+ for(const [actor,role] of [[payer,'requester'],[worker,'freelancer']] as const){const p=await movements(actor,role);assert.equal(p.bankVerifiedMinor,null);assert.equal(movement(p).financialState,'bilaterally_reported_received');assert.equal(movement(p).bankVerified,false);assert.ok(!JSON.stringify(p).includes('pngBase64'));}
+ await call(payer,403,receiptQ);
+ assert.deepEqual(await call(worker,200,'?view=restrictions'),{restricted:false,openOfferIds:[]});
+ for(const a of [payer,worker]){
+  const inbox=await list(a.uid);
+  for(const kind of ['dispute_opened','review_requested','voluntary_release'])assert.equal(inbox.notifications.filter(n=>n.eventType==='freelance_finance_'+kind).length,1);
+  const p=buildDefaultUserCommunicationPreferences(a.uid);p.browser.enabled=true;
+  for(const n of inbox.notifications){assert.equal(n.recipientUserId,a.uid);assert.equal(n.target.kind,'none');assert.equal(shouldDeliverUserNotificationToBrowser(p,n),false);}
+  assert.ok(!JSON.stringify(inbox).includes('Manifestação privada de teste.'));
+  assert.ok(!JSON.stringify(inbox).includes('pngBase64'));
+ }
+ assert.equal((await list(other.uid)).notifications.length,0);
+});
+
+test('contract Pix disclosure: explicit sharing, due, payer-only, recent session and pinned revision',async(t)=>{
+ const {publishFreelanceOffer,applyToFreelanceOffer,selectFreelanceApplication,confirmFreelanceContract}=await import('../server/freelance/freelanceLifecycleService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const payer=await account('share-payer',['requester']),worker=await account('share-worker',['freelancer']),other=await account('share-other',['requester']);
+ const ids=['share-advance-'+suffix,'share-completion-'+suffix,'share-revoked-'+suffix];
+ const key='share-'+suffix+'@example.invalid';
+ await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key}});
+ for(const [i,id] of ids.entries()){
+  await publishFreelanceOffer(payer.uid,id,{title:'Pix fictício',description:'Somente emulador',requirements:'',paymentMinor:15000,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:i===1?'on_completion':'advance',amountMinor:15000})});
+  await applyToFreelanceOffer(worker.uid,id);await selectFreelanceApplication(payer.uid,id,worker.uid);await confirmFreelanceContract(worker.uid,id,true);
+ }
+ const url='http://127.0.0.1:'+address.port+'/api/freelance/finance';
+ const call=async(a:Actor,status:number,id:string,action?:string,extra:Record<string,unknown>={})=>{
+  const r=await fetch(url+(action?'':'?view=pix_sharing&offerId='+id),{method:action?'POST':'GET',headers:{authorization:'Bearer '+a.token,...(action?{'content-type':'application/json'}:{})},...(action?{body:JSON.stringify({action,offerId:id,expectedRevision:1,confirmed:true,...extra})}:{})});
+  const b=await r.json();assert.equal(r.status,status,JSON.stringify(b));assert.match(r.headers.get('cache-control')??'',/no-store/);return b;
+ };
+ const id=ids[0];
+ await call(payer,409,id);await call(worker,200,id,'bind_pix');
+ assert.equal((await call(payer,200,id)).sharingAuthorized,false);
+ await call(payer,409,id,'reveal_pix');await call(other,403,id,'reveal_pix');await call(payer,403,id,'authorize_pix_share');
+ await call(worker,400,id,'authorize_pix_share',{confirmed:false});
+ await call(worker,200,id,'authorize_pix_share');await call(worker,200,id,'authorize_pix_share');
+ const mask=await call(payer,200,id);assert.equal(mask.sharingAuthorized,true);assert.equal(mask.due,true);assert.ok(!JSON.stringify(mask).includes(key));
+ await call(worker,403,id,'reveal_pix');await call(payer,409,id,'reveal_pix',{expectedRevision:2});
+ const original=auth.verifyIdToken.bind(auth);
+ t.mock.method(auth,'verifyIdToken',async(token:string,revoked?:boolean)=>{const decoded=await original(token,revoked);return {...decoded,auth_time:Math.floor(Date.now()/1000)-301};});
+ try{assert.equal((await call(payer,403,id,'reveal_pix')).code,'REAUTHENTICATION_REQUIRED');}finally{t.mock.restoreAll();}
+ const revealed=await call(payer,200,id,'reveal_pix');assert.equal(revealed.key,key);assert.equal(revealed.amountMinor,15000);assert.equal(revealed.bankVerified,false);
+ const direct=db.doc('freelanceOffersV1/'+id).collection('directPayment');
+ const audit=(await direct.doc('pixDisclosure').get()).data();assert.equal(audit?.requesterUid,payer.uid);assert.ok(!JSON.stringify(audit).includes(key));
+ await call(payer,200,id,'reveal_pix');assert.deepEqual((await direct.doc('pixDisclosure').get()).data(),audit);
+ const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ await record(payer.uid,id,{eventId:'paid',statement:'paid',confirmed:true});
+ await call(payer,409,id,'reveal_pix');
+ for(const otherId of ids.slice(1)){await call(worker,200,otherId,'bind_pix');await call(worker,200,otherId,'authorize_pix_share');}
+ assert.equal((await call(payer,200,ids[1])).due,false);await call(payer,409,ids[1],'reveal_pix');
+ await changePersonalPixDestination(worker.uid,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'email',key:'new-'+key}});
+ await call(payer,409,ids[2],'reveal_pix');
+ await changePersonalPixDestination(worker.uid,{action:'revoke',expectedRevision:2,confirmed:true});
+ await call(payer,409,ids[2],'reveal_pix');
+ assert.equal((await db.doc('freelanceOffersV1/'+ids[2]+'/directPayment/pixDisclosure').get()).exists,false);
 });

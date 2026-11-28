@@ -6,6 +6,7 @@ on:
       - 'server/payments/personalPix*.ts'
       - 'shared/personalPixDestination.ts'
       - 'server/admin/freelanceReview*.ts'
+      - 'server/admin/freelanceFinancialReview*.ts'
       - 'shared/freelance*.ts'
       - 'server/identity/kyrubMfaAuthorization.ts'
       - 'shared/kyrubMfaPolicy.ts'

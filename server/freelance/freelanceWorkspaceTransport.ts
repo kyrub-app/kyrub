@@ -1,5 +1,5 @@
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
-import {validFreelanceId} from '../../shared/freelanceLifecycle.js';
+import {validFreelanceId,normalizeFreelanceOffer} from '../../shared/freelanceLifecycle.js';
 import {readFreelanceWorkspace} from './freelanceWorkspaceReadService.js';
 import {readFreelancePersonalSummary} from './freelancePersonalReadService.js';
 import * as lifecycle from './freelanceLifecycleService.js';
@@ -17,7 +17,11 @@ export async function executeFreelanceWorkspaceAction(uid:string,input:unknown){
  if(!validFreelanceId(b.offerId))throw Error('FREELANCE_INVALID');
  const exact=(fields:string[])=>{if(Object.keys(b).some(k=>!['action','offerId',...fields].includes(k)))throw Error('FREELANCE_INVALID');};
  switch(b.action){
- case 'publish':exact(['terms']);return lifecycle.publishFreelanceOffer(uid,b.offerId,b.terms);
+ case 'publish':exact(['terms']);{
+  const terms=normalizeFreelanceOffer(b.terms);
+  if(terms.paymentTerms!==undefined)throw Error('FREELANCE_DIRECT_PAYMENT_NOT_ENABLED');
+  return lifecycle.publishFreelanceOffer(uid,b.offerId,terms);
+ }
  case 'apply':exact([]);return lifecycle.applyToFreelanceOffer(uid,b.offerId);
  case 'select':exact(['applicantUid']);if(!validFreelanceId(b.applicantUid))throw Error('FREELANCE_INVALID');return lifecycle.selectFreelanceApplication(uid,b.offerId,b.applicantUid);
  case 'confirm':exact(['confirmed']);return lifecycle.confirmFreelanceContract(uid,b.offerId,b.confirmed);
@@ -54,7 +58,7 @@ export async function handleFreelanceWorkspace(req:Request,res:Response,deps:Dep
  }catch(e){
   const code=e instanceof Error?e.message:'';
   const status=code==='FREELANCE_INVALID'?400:['FREELANCE_FORBIDDEN','IDENTITY_VERIFICATION_REQUIRED'].includes(code)?403:
-   ['FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT'].includes(code)?409:503;
+   ['FREELANCE_CONFLICT','FREELANCE_FUNDING_REQUIRED','FREELANCE_FUNDING_CONFLICT','FREELANCE_FINANCIAL_BASIS_CONFLICT','FREELANCE_DIRECT_PAYMENT_NOT_ENABLED','FREELANCE_PAYMENT_OBLIGATION_CONFLICT','FREELANCE_FINANCIAL_RESTRICTION','FREELANCE_RESTRICTION_CONFLICT'].includes(code)?409:503;
   res.status(status).json({code:status===503?'FREELANCE_UNAVAILABLE':code});
  }
 }

@@ -121,9 +121,10 @@ export const shouldReceiveUserNotificationInApp = (
 
 export const shouldDeliverUserNotificationToBrowser = (
   preferences: UserCommunicationPreferences,
-  notification: Pick<UserNotification, 'recipientUserId' | 'category'>
+  notification: Pick<UserNotification, 'recipientUserId' | 'category'> & Partial<Pick<UserNotification,'eventType'>>
 ): boolean => {
   if (notification.recipientUserId !== preferences.userId) return false;
+  if(notification.eventType?.startsWith('freelance_finance_'))return false;
   if (!shouldReceiveUserNotificationInApp(preferences, notification.category)) {
     return false;
   }

@@ -245,3 +245,311 @@ test('CID personal Pix import: authoritative linkage, masked choices, source ver
   await assert.rejects(importPersonalCidPixDestination(uid,{...fresh,expectedRevision:2,replaceExisting:true,sourceVersion:updated.sourceVersion}),/PERSONAL_CID_UNAVAILABLE/);
  }finally{await Promise.all([tag.delete(),corporate.delete()]);}
 });
+
+test('direct freelance terms: exact immutable offer and application snapshot; no funding bypass',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {normalizeFreelanceOffer}=await import('../shared/freelanceLifecycle.js');
+ const {readFreelanceWorkspace}=await import('../server/freelance/freelanceWorkspaceReadService.js');
+ const {executeFreelanceWorkspaceAction}=await import('../server/freelance/freelanceWorkspaceTransport.js');
+ const id='fixture-direct-terms',paymentTerms=createDirectPaymentTerms({method:'external_pix',amountMinor:input.paymentMinor});
+ const direct={...input,paymentTerms};
+ assert.equal(paymentTerms.timing,'on_completion');assert.equal(paymentTerms.platformCommissionMinor,0);
+ for(const patch of [{platformCommissionMinor:1},{amountMinor:1},{providerFeeResponsibility:'kyrub'},{settlement:'verified'},{timing:'partial'}])assert.throws(()=>normalizeFreelanceOffer({...direct,paymentTerms:{...paymentTerms,...patch}}),/FREELANCE_INVALID/);
+ await assert.rejects(executeFreelanceWorkspaceAction(owner,{action:'publish',offerId:id,terms:direct}),/FREELANCE_DIRECT_PAYMENT_NOT_ENABLED/);
+ assert.equal((await ref(id).get()).exists,false);
+ await s.publishFreelanceOffer(owner,id,direct);
+ const terms=(await ref(id).get()).get('paymentTerms');
+ assert.deepEqual(terms,paymentTerms);
+ const visible=await readFreelanceWorkspace(worker,'detail',id);
+ assert.deepEqual((visible as {item?:{paymentTerms?:unknown}}).item?.paymentTerms,paymentTerms);
+ await assert.rejects(s.publishFreelanceOffer(owner,id,input),/FREELANCE_CONFLICT/);
+ await assert.rejects(s.publishFreelanceOffer(owner,id,{...direct,paymentTerms:{...paymentTerms,timing:'advance'}}),/FREELANCE_CONFLICT/);
+ const application=(await s.applyToFreelanceOffer(worker,id)).application;
+ assert.deepEqual(application.paymentTerms,paymentTerms);
+ const app=ref(id).collection('applications').doc(worker);
+ await app.update({'paymentTerms.method':'mercado_pago'});
+ await assert.rejects(s.applyToFreelanceOffer(worker,id),/FREELANCE_CONFLICT/);
+ await assert.rejects(s.selectFreelanceApplication(owner,id,worker),/FREELANCE_CONFLICT/);
+ await app.update({paymentTerms});
+ await s.selectFreelanceApplication(owner,id,worker);
+ await s.confirmFreelanceContract(worker,id,true);
+ assert.deepEqual((await ref(id).get()).get('paymentTerms'),paymentTerms);
+ assert.deepEqual((await app.get()).get('paymentTerms'),paymentTerms);
+ await assert.rejects(s.recordFreelanceExecution(worker,id,'start',true),/FREELANCE_DIRECT_PAYMENT_NOT_ENABLED/);
+ assert.equal((await ref(id).get()).get('status'),'contracted');
+ assert.equal((await ref(id).collection('financialBasis').get()).size,0);
+});
+
+test('direct payment obligation is created atomically with bilateral contract, not settlement',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ for(const timing of ['advance','on_completion'] as const){
+  const id='fixture-obligation-'+timing,offer=ref(id),obligation=offer.collection('directPayment').doc('obligation');
+  const terms=createDirectPaymentTerms({method:'external_pix',timing,amountMinor:input.paymentMinor});
+  await s.publishFreelanceOffer(owner,id,{...input,paymentTerms:terms});
+  await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(owner,id,worker);
+  assert.equal((await obligation.get()).exists,false);
+  await assert.rejects(s.confirmFreelanceContract(owner,id,true),/FREELANCE_FORBIDDEN/);
+  await assert.rejects(s.confirmFreelanceContract(worker,id,false),/FREELANCE_INVALID/);
+  assert.equal((await obligation.get()).exists,false);
+  const results=await Promise.all([s.confirmFreelanceContract(worker,id,true),s.confirmFreelanceContract(worker,id,true)]);
+  assert.deepEqual(results.map(x=>x.changed).sort(),[false,true]);
+  const snapshot=(await obligation.get()).data()!;
+  assert.deepEqual(snapshot,{schemaVersion:1,offerId:id,requesterUid:owner,beneficiaryUid:worker,
+   terms,contractedAt:(await offer.get()).get('contractedAt'),dueTrigger:timing==='advance'?'contract_confirmation':'bilateral_service_completion',custody:'none'});
+  assert.equal((await offer.collection('directPayment').get()).size,1);
+  assert.equal((await offer.collection('financialBasis').get()).size,0);
+  assert.equal((await offer.collection('funding').get()).size,0);
+  await assert.rejects(funding.confirmSimulatedFreelanceFunding(id,'fixture-direct-funding-'+timing,input.paymentMinor,owner,worker),/FREELANCE_FUNDING_CONFLICT/);
+  await assert.rejects(s.recordFreelanceExecution(worker,id,'start',true),/FREELANCE_DIRECT_PAYMENT_NOT_ENABLED/);
+  for(const uid of [owner,worker,other]){
+   const db=env.authenticatedContext(uid).firestore();
+   await assertFails(getDoc(doc(db,obligation.path)));
+   await assertFails(setDoc(doc(db,obligation.path),{settlement:'verified'}));
+  }
+  await obligation.update({'terms.amountMinor':1});
+  await assert.rejects(s.confirmFreelanceContract(worker,id,true),/FREELANCE_PAYMENT_OBLIGATION_CONFLICT/);
+  await obligation.set(snapshot);
+  assert.equal((await s.confirmFreelanceContract(worker,id,true)).changed,false);
+ }
+ const legacy='fixture-obligation-legacy';
+ await s.publishFreelanceOffer(owner,legacy,input);await s.applyToFreelanceOffer(worker,legacy);
+ await s.selectFreelanceApplication(owner,legacy,worker);await s.confirmFreelanceContract(worker,legacy,true);
+ assert.equal((await ref(legacy).collection('directPayment').doc('obligation').get()).exists,false);
+});
+
+test('direct contract Pix destination pins revision, rejects foreign actors and never copies raw key',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {changePersonalPixDestination}=await import('../server/payments/personalPixDestinationService.js');
+ const {bindFreelancePixDestination}=await import('../server/freelance/freelancePixDestinationService.js');
+ const id='fixture-pinned-pix',offer=ref(id),binding=offer.collection('directPayment').doc('receivingDestination');
+ const terms=createDirectPaymentTerms({method:'external_pix',amountMinor:input.paymentMinor});
+ await s.publishFreelanceOffer(owner,id,{...input,paymentTerms:terms});
+ await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(owner,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const request={expectedRevision:1,confirmed:true};
+ await assert.rejects(bindFreelancePixDestination(owner,id,request),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(bindFreelancePixDestination(other,id,request),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(bindFreelancePixDestination(worker,id,request),/FREELANCE_PIX_DESTINATION_REQUIRED/);
+ const key='pinned-fixture@example.invalid';
+ await changePersonalPixDestination(worker,{action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key}});
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,confirmed:false}),/FREELANCE_INVALID/);
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,key}),/FREELANCE_INVALID/);
+ const results=await Promise.all([bindFreelancePixDestination(worker,id,request),bindFreelancePixDestination(worker,id,request)]);
+ assert.deepEqual(results.map(x=>x.created).sort(),[false,true]);
+ const saved=(await binding.get()).data()!;
+ assert.equal(saved.destinationRevision,1);assert.equal(saved.beneficiaryUid,worker);assert.equal(saved.ownershipVerified,false);
+ assert.ok(!JSON.stringify(saved).includes(key));assert.equal('key' in saved,false);
+ for(const uid of [owner,worker,other]){
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,binding.path)));
+  await assertFails(setDoc(doc(db,binding.path),{destinationRevision:2}));
+ }
+ await changePersonalPixDestination(worker,{action:'declare',expectedRevision:1,confirmed:true,destination:{keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000'}});
+ await assert.rejects(bindFreelancePixDestination(worker,id,request),/FREELANCE_PIX_DESTINATION_CHANGED/);
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,expectedRevision:2}),/FREELANCE_PIX_DESTINATION_CHANGED/);
+ await changePersonalPixDestination(worker,{action:'revoke',expectedRevision:2,confirmed:true});
+ await assert.rejects(bindFreelancePixDestination(worker,id,{...request,expectedRevision:3}),/FREELANCE_PIX_DESTINATION_REQUIRED/);
+ assert.deepEqual((await binding.get()).data(),saved);
+});
+
+test('bilateral financial restriction blocks new engagement in either role; each open case must be resolved',async()=>{
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const {prepareVoluntaryDisputeRestriction}=await import('../server/freelance/freelanceEngagementRestrictionService.js');
+ const {buildFreelancePaymentObligation}=await import('../shared/freelancePaymentObligation.js');
+ const {appendExternalPixStatement}=await import('../shared/freelanceExternalPaymentStatements.js');
+ const payer='fixture-restricted-payer',beneficiary='fixture-restricted-worker',unrelated='fixture-restricted-unrelated';
+ for(const uid of [payer,beneficiary,unrelated])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const cases=[];
+ for(const id of ['fixture-restriction-first','fixture-restriction-second']){
+  await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+  await s.applyToFreelanceOffer(beneficiary,id);await s.selectFreelanceApplication(payer,id,beneficiary);
+  const result=await s.confirmFreelanceContract(beneficiary,id,true);
+  cases.push(buildFreelancePaymentObligation(result.offer,result.application));
+ }
+ await s.publishFreelanceOffer(unrelated,'fixture-restriction-available',input);
+ await s.publishFreelanceOffer(payer,'fixture-restriction-open',input);
+ await s.applyToFreelanceOffer(beneficiary,'fixture-restriction-available');
+ await s.publishFreelanceOffer(unrelated,'fixture-restriction-selected',input);
+ await s.applyToFreelanceOffer(beneficiary,'fixture-restriction-selected');
+ await s.selectFreelanceApplication(unrelated,'fixture-restriction-selected',beneficiary);
+ const histories=new Map<string,import('../shared/freelanceExternalPaymentStatements.js').ExternalPixEvent[]>();
+ async function statement(o:typeof cases[number],kind:'paid'|'not_received'|'received',uid:string){
+  const before=histories.get(o.offerId)??[];
+  const next=appendExternalPixStatement(o,before,{id:'event-'+(before.length+1),actorUid:uid,statement:kind,recordedAt:new Date().toISOString()});
+  await adminDb.runTransaction(async tx=>{const write=await prepareVoluntaryDisputeRestriction(tx,o,before,next.events);write();});
+  histories.set(o.offerId,next.events);
+ }
+ await statement(cases[0],'paid',payer);await statement(cases[0],'not_received',beneficiary);
+ await statement(cases[1],'not_received',beneficiary);await statement(cases[1],'paid',payer);
+ for(const uid of [payer,beneficiary]){
+  const restriction=adminDb.doc('freelanceEngagementRestrictionsV1/'+uid);
+  assert.equal((await restriction.get()).get('openOfferIds').length,2);
+  await assert.rejects(s.publishFreelanceOffer(uid,'fixture-block-'+uid,input),/FREELANCE_FINANCIAL_RESTRICTION/);
+  await s.publishFreelanceOffer(unrelated,'fixture-new-application-'+uid,input);
+  await assert.rejects(s.applyToFreelanceOffer(uid,'fixture-new-application-'+uid),/FREELANCE_FINANCIAL_RESTRICTION/);
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,restriction.path)));
+  await assertFails(setDoc(doc(db,restriction.path),{openOfferIds:[]}));
+ }
+ await assert.rejects(s.applyToFreelanceOffer(unrelated,'fixture-restriction-open'),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await assert.rejects(s.selectFreelanceApplication(unrelated,'fixture-restriction-available',beneficiary),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await assert.rejects(s.confirmFreelanceContract(beneficiary,'fixture-restriction-selected',true),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await s.withdrawPendingFreelanceApplication(beneficiary,'fixture-restriction-available',true);
+ await s.releaseFreelanceReservation(unrelated,'fixture-restriction-selected',beneficiary,true);
+ await statement(cases[0],'received',beneficiary);
+ await assert.rejects(s.publishFreelanceOffer(payer,'fixture-still-blocked',input),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await statement(cases[1],'received',beneficiary);
+ for(const uid of [payer,beneficiary]){
+  assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+  await s.publishFreelanceOffer(uid,'fixture-restored-'+uid,input);
+ }
+});
+
+test('external statements persist with bilateral restrictions atomically, including concurrent declarations and voluntary release',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-statement-payer',beneficiary='fixture-statement-worker',outsider='fixture-statement-outsider';
+ for(const uid of [payer,beneficiary,outsider])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const create=async(id:string,timing:'advance'|'on_completion')=>{
+  await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing,amountMinor:input.paymentMinor})});
+  await s.applyToFreelanceOffer(beneficiary,id);await s.selectFreelanceApplication(payer,id,beneficiary);await s.confirmFreelanceContract(beneficiary,id,true);
+ };
+ const id='fixture-real-statements',hist=ref(id).collection('directPayment').doc('externalStatements');
+ await create(id,'advance');await create('fixture-statements-not-due','on_completion');
+ const paid={eventId:'payer-paid',statement:'paid',confirmed:true},notReceived={eventId:'worker-not-received',statement:'not_received',confirmed:true};
+ await assert.rejects(record(payer,'fixture-statements-not-due',paid),/FREELANCE_PAYMENT_NOT_DUE/);
+ await assert.rejects(record(outsider,id,paid),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(record(beneficiary,id,paid),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(record(payer,id,{...paid,amountMinor:1}),/FREELANCE_INVALID/);
+ assert.equal((await hist.get()).exists,false);
+ const results=await Promise.all([record(payer,id,paid),record(beneficiary,id,notReceived)]);
+ assert.ok(results.some(r=>r.state==='disputed'));assert.ok(results.every(r=>r.bankVerified===false));
+ const initial=(await hist.get()).get('events');assert.equal(initial.length,2);
+ for(const uid of [payer,beneficiary]){
+  assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[id]);
+  await assert.rejects(s.publishFreelanceOffer(uid,'fixture-statement-blocked-'+uid,input),/FREELANCE_FINANCIAL_RESTRICTION/);
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,hist.path)));await assertFails(setDoc(doc(db,hist.path),{events:[]}));
+ }
+ const replay=await record(payer,id,paid);assert.equal(replay.changed,false);assert.equal(replay.state,'disputed');
+ await assert.rejects(record(payer,id,{...paid,eventId:'payer-second-paid'}),/FREELANCE_PAYMENT_STATEMENT_CONFLICT/);
+ assert.deepEqual((await hist.get()).get('events'),initial);
+ const received={eventId:'worker-received',statement:'received',confirmed:true};
+ const resolved=await record(beneficiary,id,received);assert.equal(resolved.state,'bilaterally_reported_received');
+ assert.equal(resolved.hadDisagreement,true);assert.equal(resolved.bankVerified,false);
+ const final=(await hist.get()).get('events');assert.equal(final.length,3);assert.deepEqual(final.slice(0,2),initial);
+ assert.equal((await record(beneficiary,id,received)).changed,false);
+ for(const uid of [payer,beneficiary]){
+  assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+  await s.publishFreelanceOffer(uid,'fixture-statement-restored-'+uid,input);
+ }
+ assert.equal((await ref(id).get()).get('status'),'contracted');
+});
+
+test('financial review request is unique, restricted to parties, and closes on voluntary resolution',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-finreview-payer',beneficiary='fixture-finreview-worker',outsider='fixture-finreview-other';
+ for(const uid of [payer,beneficiary,outsider])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const create=async(id:string)=>{
+  await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+  await s.applyToFreelanceOffer(beneficiary,id);await s.selectFreelanceApplication(payer,id,beneficiary);await s.confirmFreelanceContract(beneficiary,id,true);
+ };
+ const paid={eventId:'paid',statement:'paid',confirmed:true},denied={eventId:'denied',statement:'not_received',confirmed:true},received={eventId:'received',statement:'received',confirmed:true};
+ const id='fixture-financial-review',queue=adminDb.doc('freelanceFinancialReviewsV1/'+id);
+ await create(id);
+ await assert.rejects(request(payer,id,{confirmed:true}),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+ await record(beneficiary,id,denied);
+ await assert.rejects(request(beneficiary,id,{confirmed:true}),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+ await record(payer,id,paid);
+ await assert.rejects(request(outsider,id,{confirmed:true}),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(request(payer,id,{confirmed:false}),/FREELANCE_INVALID/);
+ await assert.rejects(request(payer,id,{confirmed:true,status:'resolved'}),/FREELANCE_INVALID/);
+ const results=await Promise.all([request(payer,id,{confirmed:true}),request(beneficiary,id,{confirmed:true})]);
+ assert.deepEqual(results.map(x=>x.created).sort(),[false,true]);
+ const entry=(await queue.get()).data()!;
+ assert.equal(entry.status,'pending');assert.ok([payer,beneficiary].includes(entry.requestedBy));
+ assert.equal(entry.requesterUid,payer);assert.equal(entry.beneficiaryUid,beneficiary);
+ for(const uid of [payer,beneficiary,outsider]){
+  const db=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(db,queue.path)));await assertFails(setDoc(doc(db,queue.path),{status:'resolved_voluntarily'}));
+ }
+ await assert.rejects(s.publishFreelanceOffer(payer,'fixture-finreview-blocked',input),/FREELANCE_FINANCIAL_RESTRICTION/);
+ await record(beneficiary,id,received);
+ const closed=(await queue.get()).data()!;
+ assert.equal(closed.status,'resolved_voluntarily');assert.ok(closed.resolvedAt);
+ assert.deepEqual({...closed,status:'pending',resolvedAt:undefined},{...entry,resolvedAt:undefined});
+ await assert.rejects(request(payer,id,{confirmed:true}),/FREELANCE_FINANCIAL_REVIEW_CONFLICT/);
+ await s.publishFreelanceOffer(payer,'fixture-finreview-unblocked',input);
+ const raceId='fixture-finreview-race',raceRef=adminDb.doc('freelanceFinancialReviewsV1/'+raceId);
+ await create(raceId);await record(payer,raceId,paid);await record(beneficiary,raceId,denied);
+ const race=await Promise.allSettled([request(payer,raceId,{confirmed:true}),record(beneficiary,raceId,received)]);
+ assert.equal(race[1].status,'fulfilled',race[1].status==='rejected'?String(race[1].reason):undefined);
+ const raceEntry=await raceRef.get();
+ assert.ok(!raceEntry.exists||raceEntry.get('status')==='resolved_voluntarily');
+ for(const uid of [payer,beneficiary])assert.deepEqual((await adminDb.doc('freelanceEngagementRestrictionsV1/'+uid).get()).get('openOfferIds'),[]);
+});
+
+test('private financial evidence: participant-only, append-only, bounded and no direct client access',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {submitFreelanceFinancialEvidence:submit}=await import('../server/freelance/freelanceFinancialEvidenceService.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-evidence-payer',worker='fixture-evidence-worker',other='fixture-evidence-other';
+ for(const uid of [payer,worker,other])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const id='fixture-financial-evidence',path='freelanceFinancialReviewsV1/'+id+'/evidence/notes';
+ await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+ await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(payer,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ const note={evidenceId:'payer-note',note:'Relato fictício da tentativa de pagamento.',confirmed:true};
+ await record(payer,id,{eventId:'paid',statement:'paid',confirmed:true});await record(worker,id,{eventId:'denied',statement:'not_received',confirmed:true});
+ await assert.rejects(submit(payer,id,note),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await request(worker,id,{confirmed:true});
+ await assert.rejects(submit(other,id,note),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(submit(payer,id,{...note,note:'https://example.invalid/receipt'}),/FREELANCE_INVALID/);
+ await assert.rejects(submit(payer,id,{...note,actorUid:worker}),/FREELANCE_INVALID/);
+ const race=await Promise.all([submit(payer,id,note),submit(payer,id,note)]);
+ assert.deepEqual(race.map(x=>x.created).sort(),[false,true]);
+ await assert.rejects(submit(worker,id,note),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await submit(worker,id,{evidenceId:'worker-note',note:'Não identifiquei o recebimento correspondente.',confirmed:true});
+ await submit(payer,id,{...note,evidenceId:'payer-note-2'});
+ await assert.rejects(submit(payer,id,{...note,evidenceId:'payer-note-3'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ for(const uid of [payer,worker,other]){
+  const db=env.authenticatedContext(uid).firestore();await assertFails(getDoc(doc(db,path)));await assertFails(setDoc(doc(db,path),{notes:[]}));
+ }
+ const snapshot=(await adminDb.doc(path).get()).data()!;
+ assert.equal(snapshot.revision,3);assert.equal(snapshot.notes[0].actorUid,payer);
+ await record(worker,id,{eventId:'received',statement:'received',confirmed:true});
+ await assert.rejects(submit(worker,id,{...note,evidenceId:'late-note'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ assert.deepEqual((await adminDb.doc(path).get()).data(),snapshot);
+});
+
+test('private PNG receipt storage: one per party, server-only access, no raw metadata, replay and closure',async()=>{
+ const {recordFreelanceExternalPaymentStatement:record,requestFreelanceFinancialReview:request}=await import('../server/freelance/freelanceExternalPaymentStatementService.js');
+ const {submitFreelanceFinancialReceipt:submit}=await import('../server/freelance/freelanceFinancialReceiptService.js');
+ const {receiptFixture}=await import('./fixtures/freelance-receipt-fixture.js');
+ const {createDirectPaymentTerms}=await import('../shared/directPaymentTerms.js');
+ const payer='fixture-receipt-payer',worker='fixture-receipt-worker',other='fixture-receipt-other';
+ for(const uid of [payer,worker,other])await adminDb.doc('identity_verifications/'+uid).set({status:'approved',approvedProfiles:['requester','freelancer']});
+ const id='fixture-private-receipt',path='freelanceFinancialReviewsV1/'+id+'/evidence/receipts',file=path+'/files/receipt-a';
+ await s.publishFreelanceOffer(payer,id,{...input,paymentTerms:createDirectPaymentTerms({method:'external_pix',timing:'advance',amountMinor:input.paymentMinor})});
+ await s.applyToFreelanceOffer(worker,id);await s.selectFreelanceApplication(payer,id,worker);await s.confirmFreelanceContract(worker,id,true);
+ await record(payer,id,{eventId:'paid',statement:'paid',confirmed:true});await record(worker,id,{eventId:'denied',statement:'not_received',confirmed:true});
+ const receipt={receiptId:'receipt-a',pngBase64:receiptFixture(),confirmed:true};
+ await assert.rejects(submit(payer,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await request(worker,id,{confirmed:true});
+ await assert.rejects(submit(other,id,receipt),/FREELANCE_FORBIDDEN/);
+ await assert.rejects(submit(payer,id,{...receipt,pngBase64:'YWJjZA=='}),/FREELANCE_RECEIPT_INVALID/);
+ const results=await Promise.all([submit(payer,id,receipt),submit(payer,id,receipt)]);
+ assert.deepEqual(results.map(r=>r.created).sort(),[false,true]);assert.ok(results.every(r=>r.revision===1));
+ await assert.rejects(submit(worker,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await assert.rejects(submit(payer,id,{...receipt,receiptId:'receipt-b'}),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ await submit(worker,id,{...receipt,receiptId:'receipt-b'});
+ const stored=(await adminDb.doc(path).get()).data()!,blob=(await adminDb.doc(file).get()).data()!;
+ assert.equal(stored.revision,2);assert.equal('pngBase64' in stored,false);
+ assert.ok(!Buffer.from(blob.pngBase64,'base64').includes(Buffer.from('fixture metadata')));
+ for(const uid of [payer,worker,other]){
+  const db=env.authenticatedContext(uid).firestore();
+  for(const p of [path,file]){await assertFails(getDoc(doc(db,p)));await assertFails(setDoc(doc(db,p),{pngBase64:'fake'}));}
+ }
+ await record(worker,id,{eventId:'received',statement:'received',confirmed:true});
+ await assert.rejects(submit(worker,id,receipt),/FREELANCE_FINANCIAL_EVIDENCE_CONFLICT/);
+ assert.deepEqual((await adminDb.doc(path).get()).data(),stored);
+});
