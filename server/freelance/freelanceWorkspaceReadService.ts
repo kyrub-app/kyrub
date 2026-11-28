@@ -1,4 +1,3 @@
-import {readPersonalPixReadiness} from '../payments/personalPixDestinationService.js';
 import {assertFreelanceEngagementAllowed} from './freelanceEngagementRestrictionService.js';
 import {readOwnedFreelanceStore} from './freelanceStoreRepresentationService.js';
 import {readFreelanceStoreRepresentation} from '../../shared/freelanceStoreRepresentation.js';
@@ -33,10 +32,6 @@ export async function readFreelanceWorkspace(uid:string,view:unknown,offerId?:un
  const after=validFreelanceId(cursor)?cursor:undefined;
  if(!validFreelanceId(uid))throw Error('FREELANCE_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
-  if(view==='personal_pix_readiness'){
-   if(offerId!==undefined||cursor!==undefined)throw Error('FREELANCE_INVALID');
-   return readPersonalPixReadiness(tx,uid);
-  }
   if(view==='engagement_preflight'){
    if(offerId!==undefined||cursor!==undefined)throw Error('FREELANCE_INVALID');
    const identity=await tx.get(adminDb.doc('identity_verifications/'+uid));
