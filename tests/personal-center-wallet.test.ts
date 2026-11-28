@@ -197,3 +197,71 @@ test('management reputation uses bounded forward pages with the current report s
  assert.match(ui,/fetch\(url\(pageCursor\)/);
  assert.match(ui,/encodeURIComponent\(cursor\)/);
 });
+
+test('public profile experience uses canonical address and isolated authenticated consultation',()=>{
+ const page=read('src/components/PublicSocialDestinationPage.tsx'),ui=read('src/components/PublicProfileExperience.tsx');
+ assert.match(page,/data.kind==='profile'&&publicExperienceCandidateEnabled\(\)/);
+ assert.match(page,/data.identifier===identifier/);
+ assert.match(ui,/reputation_public_address_experience&identifier=/);
+ assert.match(ui,/cache:'no-store'/);assert.match(ui,/VITE_KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY/);
+ assert.match(ui,/auth.currentUser!==user/);assert.match(ui,/validPublicExperienceResponse/);
+ assert.doesNotMatch(ui,/targetUid|localStorage|method:'POST'|criteria|authorUid/);
+ assert.match(ui,/reputation_public_address_summary&identifier=/);
+ assert.match(ui,/VITE_KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY/);
+ assert.match(ui,/validPublicSummaryResponse/);
+ assert.match(ui,/r.ratingCount<=max/);
+});
+
+test('reputation sharing uses a server-derived card preview instead of a profile link',()=>{
+ const modal=read('src/components/modals/UserProfileModal.tsx'),panel=read('src/components/modals/PersonalReputationPanel.tsx'),preview=read('src/components/ReputationSquarePreview.tsx');
+ assert.match(modal,/visibleIdentifier=\{profileVisibilityReady&&isProfileVisible&&!visibilityBusy/);
+ assert.match(panel,/<ReputationSquarePreview/);
+ assert.match(preview,/reputation_square_preview&identifier=/);
+ assert.match(preview,/validPublicSummaryResponse/);
+ assert.match(preview,/Serviços concluídos/);assert.match(preview,/Contratações concluídas/);
+ assert.match(preview,/Semear/);assert.match(preview,/Comentar/);assert.match(preview,/Encaminhar/);
+ assert.doesNotMatch(panel+preview,/navigator.clipboard|buildPublicDestinationUrl|setDoc\(|addDoc\(|localStorage|rewardXp/);
+ assert.match(preview,/action:'publish_reputation_square',identifier,requestId:requestId.current,confirmed:true/);
+ assert.match(preview,/requestId.current\?\?=crypto.randomUUID/);
+ assert.match(preview,/value\?\.confirmed!==true/);
+});
+
+test('reputation square publication renders verified indicators only in the visible feed card',()=>{
+ const feed=read('src/components/PublicSocialFeedPanel.tsx'),preview=read('src/components/ReputationSquarePreview.tsx');
+ assert.match(feed,/<ReputationSquarePostGate/);assert.match(feed,/<ReputationPublicationIndicators summary=\{summary\}/);
+ assert.match(preview,/new IntersectionObserver/);assert.match(preview,/reputation_square_post&offerId=/);
+ assert.match(preview,/Date.now\(\)<expiresAt/);assert.match(preview,/visible&&tabVisible&&summary\?render\(summary\)/);
+ assert.match(preview,/VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY/);
+ assert.match(feed,/<SemearButton kind="personal"/);assert.match(feed,/toggleComments\(post.id\)/);
+});
+
+test('reputation forwarding uses one original post and separate distribution time',()=>{
+ const feed=read('src/components/PublicSocialFeedPanel.tsx'),preview=read('src/components/ReputationSquarePreview.tsx'),hook=read('src/hooks/usePublicSocialFeed.ts');
+ assert.match(hook,/reputationSquareDistribution:/);assert.match(hook,/squareDistributedAtIso/);
+ assert.match(feed,/createdAt: squareDistributionTime\(post\), post/);
+ assert.match(feed,/createdAt=\{squareDistributionTime\(post\)\}/);
+ assert.match(feed,/Encaminhada à Praça por/);
+ assert.match(feed,/<ReputationSquareForwardButton postId=\{post.id\}/);
+ assert.match(preview,/action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true/);
+ assert.match(preview,/VITE_KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY/);
+ assert.doesNotMatch(preview,/setDoc\(|addDoc\(|localStorage/);
+});
+
+test('connected reputation share uses accepted contacts and protected chat read',()=>{
+ const ui=read('src/components/ReputationSquarePreview.tsx'),chat=read('src/components/modals/ChatModal.tsx'),hook=read('src/hooks/useChatMessages.ts');
+ assert.match(ui,/f.connectionStatus==='accepted'/);assert.match(ui,/action:'forward_reputation_connected'/);
+ assert.match(ui,/reputation_connected_card&offerId=/);assert.match(chat,/<ConnectedReputationCard/);
+ assert.match(hook,/reputationPostId:/);assert.match(ui,/VITE_KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY/);
+});
+
+test('chat card preserves all four original indicators and identifies the original author',()=>{
+ const ui=read('src/components/ReputationSquarePreview.tsx');
+ const renderer=ui.slice(ui.indexOf('export function ReputationPublicationIndicators'),ui.indexOf('export function ReputationSquarePreview'));
+ for(const field of ['completedServices','completedHires','reputations.professional','reputations.personalRequester'])assert.ok(renderer.includes(field),field);
+ const chat=ui.slice(ui.indexOf('export function ConnectedReputationCard'));
+ assert.match(chat,/<ReputationPublicationIndicators summary=\{summary\}/);
+ assert.match(chat,/summary.publication.authorName/);
+ assert.match(chat,/Autor original/);
+ assert.match(chat,/Math.min\(60_000,/);
+ assert.match(chat,/validConnectedReputationCard/);
+});

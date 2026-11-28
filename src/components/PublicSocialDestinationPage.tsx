@@ -1,3 +1,4 @@
+import {PublicProfileExperience,publicExperienceCandidateEnabled} from './PublicProfileExperience';
 import {useEffect,useState} from 'react';
 type Data={kind:'profile'|'community';identifier:string;name:string;description:string;image:string};
 export function PublicSocialDestinationPage({kind,identifier}:{kind?:'profile'|'community';identifier?:string}) {
@@ -22,12 +23,13 @@ export function PublicSocialDestinationPage({kind,identifier}:{kind?:'profile'|'
   return <main className="min-h-screen bg-slate-950 px-4 py-8 text-slate-100">
     <div className="mx-auto max-w-md space-y-4">
       <a href="/" className="flex items-center gap-2 text-lg font-black text-orange-400"><img src="/kyrub-logo.svg" alt="" className="h-10 w-10"/>Kyrub</a>
-      {state==='ready'&&data?<article className="space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
+      {state==='ready'&&data&&data.kind===kind&&data.identifier===identifier?<article className="space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
         <p className="text-xs font-bold uppercase text-slate-400">{data.kind==='profile'?'Kairubido':'Comunidade'}</p>
         {data.image&&<img src={data.image} alt="" referrerPolicy="no-referrer" className={data.kind==='profile'?'h-24 w-24 rounded-full object-cover':'h-40 w-full rounded-xl object-cover'}/>}
         <h1 className="break-words text-2xl font-black">{data.name}</h1>
         <p className="text-sm text-orange-300">{data.identifier}</p>
         <p className="whitespace-pre-wrap break-words text-sm text-slate-300">{data.description}</p>
+        {data.kind==='profile'&&publicExperienceCandidateEnabled()&&<PublicProfileExperience key={data.identifier} identifier={data.identifier}/>}
       </article>:<p role="status" className="rounded-xl bg-slate-900 p-4">{state==='loading'?'Consultando endereço…':state==='missing'?'Este endereço não está disponível.':'Não foi possível carregar o endereço. Tente atualizar a página.'}</p>}
       <a href="/" className="block rounded-xl bg-orange-500 p-3 text-center font-bold text-slate-950">Explorar Kyrub</a>
     </div>

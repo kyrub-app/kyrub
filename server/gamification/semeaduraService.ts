@@ -1,3 +1,4 @@
+import {assertReputationSquareInteraction} from '../freelance/freelanceReputationIndexAudit.js';
 import { createHash } from 'node:crypto';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
 import type { Firestore } from 'firebase-admin/firestore';
@@ -52,6 +53,9 @@ export const seedVerifiedPost = async (
       throw new Error('SEMEADURA_POST_NOT_ELIGIBLE');
     }
 
+    if(kind==='personal'&&postId.startsWith('reputation_')){
+      try{await assertReputationSquareInteraction(tx,postId);}catch{throw Error('SEMEADURA_POST_NOT_ELIGIBLE');}
+    }
     let communityId = '';
     if (kind === 'community') {
       communityId = postData?.communityId;
@@ -180,6 +184,9 @@ export const readVerifiedPostSemeadura = async (
   const postData = post.data();
   const authorId = postData?.authorId;
   if (!safeUid(authorId) || postData?.postId !== postId) throw new Error('SEMEADURA_POST_INVALID');
+  if(kind==='personal'&&postId.startsWith('reputation_')){
+    try{await db.runTransaction(tx=>assertReputationSquareInteraction(tx,postId),{readOnly:true});}catch{throw Error('SEMEADURA_POST_NOT_ELIGIBLE');}
+  }
   let canParticipate = true;
   if (kind === 'personal') {
     if (postData?.visibility !== 'public' || postData?.publicationType === 'status') {

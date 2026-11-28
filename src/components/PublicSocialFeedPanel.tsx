@@ -1,3 +1,4 @@
+import {isReputationSquarePost,reputationSquarePublishEnabled,ReputationSquarePostGate,ReputationPublicationIndicators,ReputationSquareForwardButton,reputationSquareForwardEnabled,type Summary} from './ReputationSquarePreview';
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
@@ -30,6 +31,8 @@ import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import {
   subscribeCommunitySquareFeed, withinCommunitySquareWindow, type CommunitySquareEntry,
 } from '../utils/communitySquareFeed';
+
+const squareDistributionTime=(post:SocialPost)=>isReputationSquarePost(post.id)?post.reputationSquareDistribution?.distributedAt||post.createdAt||'':post.createdAt||'';
 
 interface PublicSocialFeedPanelProps {
   posts: SocialPost[];
@@ -195,8 +198,8 @@ export function PublicSocialFeedPanel({
   const [feedNow, setFeedNow] = useState(Date.now());
   const { communities: directoryCommunities } = useCommunityDirectory();
   const liveSocialAuthors = useLiveAuthorIdentities(
-    posts.filter(post => withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow))
-      .map(post => post.authorId),
+    posts.filter(post => (isReputationSquarePost(post.id)?withinCommunitySquareWindow(Date.parse(squareDistributionTime(post)), feedNow):withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow)))
+      .flatMap(post => [post.authorId,post.reputationSquareDistribution?.forwardedById]),
   );
   const currentNamePosts = useMemo(() => posts.map(post => {
     const identity = liveSocialAuthors[post.authorId];
@@ -253,7 +256,8 @@ export function PublicSocialFeedPanel({
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
     return currentNamePosts.filter(post => {
       // The 24h window affects only discovery in Praça, never the source post.
-      if (!withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow)) return false;
+      if (!(isReputationSquarePost(post.id)?withinCommunitySquareWindow(Date.parse(squareDistributionTime(post)), feedNow):withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow))) return false;
+      if (isReputationSquarePost(post.id)&&!reputationSquarePublishEnabled())return false;
       if (normalizedSearch) {
         const matches =
           matchesSearch(post.user, normalizedSearch) ||
@@ -286,7 +290,7 @@ export function PublicSocialFeedPanel({
         return true;
       });
     return [
-      ...visiblePosts.map(post => ({ kind: 'social' as const, id: 'social:' + post.id, createdAt: post.createdAt || '', post })),
+      ...visiblePosts.map(post => ({ kind: 'social' as const, id: 'social:' + post.id, createdAt: squareDistributionTime(post), post })),
       ...communityItems.map(entry => ({ kind: 'community' as const, id: 'community:' + entry.post.id, createdAt: entry.distributedAt, entry })),
     ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [communityEntries, currentUserId, feedNow, filter, friends, searchQuery, visiblePosts]);
@@ -359,7 +363,8 @@ export function PublicSocialFeedPanel({
         const suggestedAuthor = suggestedUsers.find(friend => friend.id === post.authorId);
         const canReport = Boolean(post.authorId && post.authorId !== currentUserId);
 
-        return (
+        const canForward= isReputationSquarePost(post.id)&&reputationSquareForwardEnabled();
+        const renderPost=(summary?:Summary)=>(
           <article
             key={post.id}
             className={`space-y-3 rounded-3xl border p-4 shadow-lg ${
@@ -476,7 +481,8 @@ export function PublicSocialFeedPanel({
               </p>
             )}
 
-            {post.content && !post.storePromotion && (
+            {summary&&post.reputationSquareDistribution&&<p className="text-sm text-slate-400">Encaminhada à Praça por <strong>{displayAuthorName(post.reputationSquareDistribution.forwardedById,'Kairubido',liveSocialAuthors)}</strong></p>}
+            {summary?<ReputationPublicationIndicators summary={summary}/>:post.content && !post.storePromotion && (
               <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
                 {post.content}
               </p>
@@ -524,7 +530,7 @@ export function PublicSocialFeedPanel({
                 {post.likes} {post.likes === 1 ? 'curtida' : 'curtidas'}
               </button>
               )}
-              <button
+              {!canForward&&(<button
                 type="button"
                 onClick={async () => {
                   const isSaved = savedPostIds.has(post.id);
@@ -551,6 +557,7 @@ export function PublicSocialFeedPanel({
                 <Bookmark className={`h-4 w-4 ${savedPostIds.has(post.id) ? 'fill-current' : ''}`} />
                 {savedPostIds.has(post.id) ? 'Salvo' : 'Salvar'}
               </button>
+              )}
               <button
                 type="button"
                 onClick={() => toggleComments(post.id)}
@@ -559,6 +566,7 @@ export function PublicSocialFeedPanel({
                 <MessageCircle className="h-4 w-4" />
                 {comments.length} {comments.length === 1 ? 'comentário' : 'comentários'}
               </button>
+              {canForward&&<ReputationSquareForwardButton postId={post.id} viewerId={currentUserId} friends={friends}/>}
             </div>
 
             {commentsOpen && (
@@ -659,6 +667,7 @@ export function PublicSocialFeedPanel({
             )}
           </article>
         );
+        return isReputationSquarePost(post.id)?<ReputationSquarePostGate key={post.id+':'+currentUserId+':'+squareDistributionTime(post)} postId={post.id} viewerId={currentUserId} createdAt={squareDistributionTime(post)} render={renderPost}/>:renderPost();
       })}
 
       {feedRows.length === 0 && (

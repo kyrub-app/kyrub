@@ -1,3 +1,4 @@
+import {ReputationSquarePreview,reputationSquareCandidateEnabled} from '../ReputationSquarePreview';
 import {useEffect,useRef,useState} from 'react';
 import {onAuthStateChanged,type User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -11,7 +12,7 @@ const button='min-h-11 rounded-xl border border-slate-700 px-3 py-2 text-sm font
 export function personalReputationCandidateEnabled(){
  return freelaReputationCandidateEnabled()&&import.meta.env.VITE_KYRUB_FREELANCE_REPUTATION_INDEX_TEST_ONLY==='true';
 }
-export function PersonalReputationPanel({user}:{user:User}){
+export function PersonalReputationPanel({user,visibleIdentifier=null}:{user:User;visibleIdentifier?:string|null}){
  const [kind,setKind]=useState<Kind>('professional'),[data,setData]=useState<VerifiedReputationView|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[authorized,setAuthorized]=useState(auth.currentUser===user);
  const pending=useRef<AbortController|null>(null);
  useEffect(()=>{
@@ -61,6 +62,7 @@ export function PersonalReputationPanel({user}:{user:User}){
     return <div key={key} className="rounded-lg border border-slate-800 p-2"><div className="flex justify-between gap-2"><dt className="font-bold text-white">{label}</dt><dd className="shrink-0 text-amber-300">{c.mean===null?'—':format(c.mean)+' / 5'}</dd></div><dd className="text-slate-400">{reputationCriterionDescriptions(kind)[key]}</dd><dd className="text-slate-400">{format(c.count)} avaliações aplicáveis</dd></div>;
    })}</dl>
    <p className="text-slate-400">Conferido nesta consulta. Não altera Cocares, Pitangas ou saldo de sementes.</p>
+   {visibleIdentifier&&reputationSquareCandidateEnabled()&&<ReputationSquarePreview key={user.uid+':'+visibleIdentifier} user={user} identifier={visibleIdentifier}/>} 
   </div>}
  </section>;
 }

@@ -2089,6 +2089,196 @@ test('reputation index batched audit: real completed contracts, mixed ratings, e
   assert.deepEqual((await call(worker,'?view=reputation_verified_professional',200)).projection,baseline.projection);
   assert.equal((await call(payer,'?view=reputation_verified_personal',200)).projection,null);
   await assert.rejects(finishReputationMaintenance(maintenance.epoch),/CONFLICT/);
+  const publicFlag='KYRUB_FREELANCE_PUBLIC_EXPERIENCE_TEST_ONLY',priorPublic=process.env[publicFlag];
+  const profile=db.doc('users/'+worker.uid),query='?view=reputation_public_experience&targetUid='+worker.uid;
+  try{
+   delete process.env[publicFlag];await call(payer,query,403);
+   process.env[publicFlag]='true';
+   await call(null,query,401);
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+   await profile.set({isProfileVisible:true,email:'private-test@example.invalid',name:'Perfil fictício'});
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+   assert.equal((await certifyOwnFreelanceReputationIndex(worker.uid,'personal_requester')).certified,true);
+   assert.deepEqual(await call(payer,query,200),{experience:{completedServices:3,completedHires:0}});
+   const identifier='batch-experience-'+suffix,record={kind:'profile',identifier,targetId:worker.uid};
+   const forward=db.doc('public_social_addresses/profile:'+identifier),reverse=db.doc('public_social_address_targets/profile:'+worker.uid);
+   const byAddress='?view=reputation_public_address_experience&identifier='+identifier;
+   assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+   await forward.set(record);
+   try{
+    assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+    await reverse.set(record);
+    assert.deepEqual(await call(payer,byAddress,200),{experience:{completedServices:3,completedHires:0}});
+    await call(null,byAddress,401);await call(payer,byAddress+'&targetUid='+worker.uid,400);
+    const reputationFlag='KYRUB_FREELANCE_PUBLIC_REPUTATION_TEST_ONLY',oldReputationFlag=process.env[reputationFlag];
+    const summary='?view=reputation_public_address_summary&identifier='+identifier;
+    try{
+     delete process.env[reputationFlag];await call(payer,summary,403);
+     process.env[reputationFlag]='true';
+     await call(null,summary,401);
+     assert.deepEqual(await call(payer,summary,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+     assert.deepEqual(await call(payer,byAddress,200),{experience:{completedServices:3,completedHires:0}});
+     await call(payer,summary+'&targetUid='+worker.uid,400);
+     const squareFlag='KYRUB_FREELANCE_REPUTATION_SQUARE_TEST_ONLY',oldSquare=process.env[squareFlag];
+     const preview='?view=reputation_square_preview&identifier='+identifier;
+     try{
+      delete process.env[squareFlag];await call(worker,preview,403);
+      process.env[squareFlag]='true';
+      await call(null,preview,401);
+      assert.deepEqual(await call(payer,preview,200),{experience:null,reputations:null});
+      assert.deepEqual(await call(worker,preview,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+      await call(worker,preview+'&ratingCount=999',400);
+      const publishFlag='KYRUB_FREELANCE_REPUTATION_SQUARE_PUBLISH_TEST_ONLY',oldPublish=process.env[publishFlag];
+      const input={action:'publish_reputation_square',identifier,requestId:'square-'+suffix,confirmed:true};
+      try{
+       delete process.env[publishFlag];await call(worker,'',403,input);
+       process.env[publishFlag]='true';
+       await call(payer,'',403,input);await call(worker,'',400,{...input,confirmed:false});await call(worker,'',400,{...input,mean:5});
+       await Promise.all([call(worker,'',200,input),call(worker,'',200,input)]);
+       const records=await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get();
+       assert.equal(records.size,1);
+       const postId=records.docs[0].id,post=db.doc('social_posts/'+postId),proof=records.docs[0].ref;
+       try{
+        const stored=(await post.get()).data()!;
+        assert.equal(stored.authorId,worker.uid);assert.equal(stored.visibility,'public');
+        assert.equal(stored.experience,undefined);assert.equal(stored.reputations,undefined);
+        assert.equal(stored.content,'Conheça minha Experiência e Reputações no Kyrub!');
+        const read='?view=reputation_square_post&offerId='+postId;
+        await call(null,read,401);
+        assert.deepEqual(await call(payer,read,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+        const comment={action:'comment_reputation_square',offerId:postId,text:'Parabéns pela experiência!'};
+        await call(null,'',401,comment);await call(payer,'',400,{...comment,authorId:worker.uid});
+        await call(payer,'',200,comment);
+        const comments=await db.collection('social_post_comments').where('postId','==',postId).get();
+        assert.equal(comments.size,1);assert.equal(comments.docs[0].get('authorId'),payer.uid);
+        await call(worker,'',200,{...comment,parentCommentId:comments.docs[0].id});
+        await call(worker,'',400,{...comment,parentCommentId:'missing-parent'});
+        const {seedVerifiedPost,readVerifiedPostSemeadura}=await import('../server/gamification/semeaduraService.js');
+        const seedInput={authenticatedUserId:payer.uid,kind:'personal' as const,postId};
+        assert.equal((await seedVerifiedPost(db,seedInput)).status,'accepted');
+        assert.equal((await seedVerifiedPost(db,seedInput)).status,'already_seeded');
+        assert.equal((await readVerifiedPostSemeadura(db,seedInput)).count,1);
+        const forwardFlag='KYRUB_FREELANCE_REPUTATION_SQUARE_FORWARD_TEST_ONLY',oldForwardFlag=process.env[forwardFlag];
+        const distribution={action:'forward_reputation_square',offerId:postId,destination:'square',confirmed:true};
+        const receipt=proof.collection('squareForwards').doc(payer.uid);
+        try{
+         delete process.env[forwardFlag];await call(payer,'',403,distribution);
+         process.env[forwardFlag]='true';
+         await call(null,'',401,distribution);await call(payer,'',400,{...distribution,destination:'unknown'});await call(payer,'',400,{...distribution,confirmed:false});
+         const directFlag='KYRUB_FREELANCE_REPUTATION_DIRECT_FORWARD_TEST_ONLY',oldDirect=process.env[directFlag];
+         const connectionId=payer.uid+'_'+worker.uid,connection=db.doc('connections/'+connectionId);
+         const direct={action:'forward_reputation_connected',offerId:postId,connectionId,recipientId:worker.uid,confirmed:true};
+         const chat=db.collection('social_chats/'+connectionId+'/messages');
+         const notices=db.collection('users/'+worker.uid+'/notifications').where('eventType','==','reputation_forward_received');
+         try{
+          delete process.env[directFlag];await call(payer,'',403,direct);
+          process.env[directFlag]='true';
+          await call(null,'',401,direct);await call(payer,'',403,direct);
+          await connection.set({senderId:payer.uid,receiverId:worker.uid,participantIds:[payer.uid,worker.uid],status:'pending'});
+          await call(payer,'',403,direct);
+          await connection.update({status:'accepted'});
+          await call(payer,'',400,{...direct,recipientId:payer.uid});
+          await call(payer,'',400,{...direct,reputationPostId:'fake'});
+          await call(payer,'',400,{...direct,confirmed:false});
+          await call(payer,'',200,direct);await call(payer,'',409,direct);
+          const messages=await chat.get();assert.equal(messages.size,1);
+          const inbox=await notices.get();assert.equal(inbox.size,1);
+          const notice=inbox.docs[0].data();
+          assert.equal(notice.recipientUserId,worker.uid);assert.equal(notice.actorPrincipalId,payer.uid);
+          assert.equal(notice.category,'social_chat');assert.equal(notice.target.kind,'social_chat');assert.equal(notice.target.connectionId,connectionId);
+          assert.equal(notice.readAt,'');assert.equal(notice.reputations,undefined);
+          const {listUserNotifications,markUserNotificationRead}=await import('../server/notifications/userNotificationService.js');
+          assert.ok((await listUserNotifications({recipientUserId:worker.uid})).notifications.some(n=>n.id===inbox.docs[0].id));
+          assert.ok(!(await listUserNotifications({recipientUserId:payer.uid})).notifications.some(n=>n.id===inbox.docs[0].id));
+          await markUserNotificationRead({recipientUserId:worker.uid,notificationId:inbox.docs[0].id});
+          assert.ok((await inbox.docs[0].ref.get()).get('readAt'));
+          await call(payer,'',409,direct);
+          assert.equal((await notices.get()).size,1);
+          assert.equal((await chat.get()).size,1);
+          assert.equal(messages.docs[0].get('senderId'),payer.uid);assert.equal(messages.docs[0].get('receiverId'),worker.uid);
+          assert.equal(messages.docs[0].get('reputationPostId'),postId);assert.equal(messages.docs[0].get('reputations'),undefined);
+          assert.deepEqual((await post.get()).data(),stored);
+          const card='?view=reputation_connected_card&offerId='+connectionId+'&cursor='+messages.docs[0].id;
+          await call(null,card,401);
+          const publicSummary=await call(worker,read,200);
+          const received=await call(worker,card,200);
+          assert.deepEqual({experience:received.experience,reputations:received.reputations},publicSummary);
+          assert.deepEqual(received.publication,{authorName:'Perfil fictício',authorImage:'',createdAtIso:stored.createdAtIso,expiresAtIso:new Date(Date.parse(stored.createdAtIso)+86400000).toISOString()});
+          assert.deepEqual(await call(payer,card,200),received);
+          assert.equal(received.publication.email,undefined);
+          await profile.update({name:'Nome público atualizado'});
+          assert.equal((await call(worker,card,200)).publication.authorName,'Nome público atualizado');
+          await profile.update({name:'Perfil fictício'});
+          assert.deepEqual(await call(worker,card+'&targetUid='+worker.uid,400),{code:'FREELANCE_INVALID'});
+          await profile.update({isProfileVisible:false});assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});await call(payer,'',403,direct);await profile.update({isProfileVisible:true});
+          await connection.delete();await call(payer,'',403,direct);
+          assert.deepEqual(await call(worker,card,200),{experience:null,reputations:null,publication:null});
+          assert.equal((await chat.get()).size,1);
+         }finally{
+          await connection.delete();
+          for(const d of (await chat.get()).docs)await d.ref.delete();
+          for(const d of (await notices.get()).docs)await d.ref.delete();
+          for(const d of (await proof.collection('directForwards').get()).docs)await d.ref.delete();
+          if(oldDirect===undefined)delete process.env[directFlag];else process.env[directFlag]=oldDirect;
+         }
+         await call(payer,'',200,distribution);await call(payer,'',409,distribution);
+         const changed=(await post.get()).data()!;
+         assert.equal(changed.authorId,worker.uid);assert.equal(changed.createdAtIso,stored.createdAtIso);assert.equal(changed.postId,postId);
+         assert.equal(changed.squareForwardedById,payer.uid);assert.equal(changed.squareDistributedAtIso,(await receipt.get()).get('forwardedAtIso'));
+         assert.equal((await db.collection('freelanceReputationSquarePostsV1').where('authorId','==',worker.uid).get()).size,1);
+         assert.equal((await readVerifiedPostSemeadura(db,seedInput)).count,1);
+         assert.equal((await seedVerifiedPost(db,seedInput)).status,'already_seeded');
+         assert.equal((await db.collection('social_post_comments').where('postId','==',postId).get()).size,2);
+         assert.deepEqual(await call(payer,read,200),{experience:{completedServices:3,completedHires:0},reputations:{professional:{ratingCount:2,mean:4},personalRequester:{ratingCount:0,mean:null}}});
+         await profile.update({isProfileVisible:false});await call(payer,'',403,distribution);await profile.update({isProfileVisible:true});
+         const expiredDistribution=new Date(Date.now()-86400001).toISOString();
+         await receipt.update({forwardedAtIso:expiredDistribution});await post.update({squareDistributedAtIso:expiredDistribution});
+         assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});await call(payer,'',403,distribution);
+        }finally{
+         await receipt.delete();
+         await post.set(stored);
+         if(oldForwardFlag===undefined)delete process.env[forwardFlag];else process.env[forwardFlag]=oldForwardFlag;
+        }
+        await profile.update({isProfileVisible:false});assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
+        await call(payer,'',403,comment);
+        await assert.rejects(seedVerifiedPost(db,seedInput),/POST_NOT_ELIGIBLE/);
+        await profile.update({isProfileVisible:true});
+        const expired=new Date(Date.now()-86400001).toISOString();
+        await proof.update({createdAtIso:expired});await post.update({createdAtIso:expired});
+        assert.deepEqual(await call(payer,read,200),{experience:null,reputations:null});
+        await call(payer,'',403,comment);
+        await assert.rejects(readVerifiedPostSemeadura(db,seedInput),/POST_NOT_ELIGIBLE/);
+       }finally{await post.delete();await proof.delete();}
+      }finally{if(oldPublish===undefined)delete process.env[publishFlag];else process.env[publishFlag]=oldPublish;}
+      await profile.update({isProfileVisible:false});
+      assert.deepEqual(await call(worker,preview,200),{experience:null,reputations:null});
+      await profile.update({isProfileVisible:true});
+     }finally{if(oldSquare===undefined)delete process.env[squareFlag];else process.env[squareFlag]=oldSquare;}
+     await profile.update({isProfileVisible:false});
+     assert.deepEqual(await call(payer,summary,200),{experience:null,reputations:null});
+     await profile.update({isProfileVisible:true});
+     await reverse.update({identifier:'wrong-address'});
+     assert.deepEqual(await call(payer,summary,200),{experience:null,reputations:null});
+     await reverse.set(record);
+    }finally{if(oldReputationFlag===undefined)delete process.env[reputationFlag];else process.env[reputationFlag]=oldReputationFlag;}
+    await profile.update({isProfileVisible:false});
+    assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+    await profile.update({isProfileVisible:true});
+    await reverse.update({identifier:'wrong-address'});
+    assert.deepEqual(await call(payer,byAddress,200),{experience:null});
+   }finally{await forward.delete();await reverse.delete();}
+   await call(payer,query+'&offerId='+ids[0],400);
+   await call(payer,'?view=reputation_public_experience&targetUid=invalid%2Fid',400);
+   await profile.update({isProfileVisible:false});
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+   await profile.update({isProfileVisible:true});
+   const maintenance2=await beginReputationMaintenance();
+   try{assert.deepEqual(await call(payer,query,200),{experience:null});}finally{await finishReputationMaintenance(maintenance2.epoch);}
+   assert.deepEqual(await call(payer,query,200),{experience:null});
+  }finally{
+   await profile.delete();
+   if(priorPublic===undefined)delete process.env[publicFlag];else process.env[publicFlag]=priorPublic;
+  }
  }finally{
   for(const [i,k] of flags.entries()){if(prior[i]===undefined)delete process.env[k];else process.env[k]=prior[i];}
  }

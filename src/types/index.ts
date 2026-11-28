@@ -275,6 +275,7 @@ export interface SocialPost {
   commentCount?: number;
   storePromotion?: { storeId: string; promotionId: string };
   storeReview?: { storeId: string; reviewId: string; rating: number; storeName: string };
+  reputationSquareDistribution?: { distributedAt: string; forwardedById: string };
 }
 
 export interface DeliveryJob {

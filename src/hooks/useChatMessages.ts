@@ -14,6 +14,7 @@ interface SocialChatMessage {
   senderId: string;
   receiverId: string;
   text: string;
+  reputationPostId?: string;
   createdAt: Timestamp | null;
 }
 
@@ -96,6 +97,7 @@ export function useChatMessages({
               senderId: typeof data.senderId === 'string' ? data.senderId : '',
               receiverId: typeof data.receiverId === 'string' ? data.receiverId : '',
               text: typeof data.text === 'string' ? data.text : '',
+              reputationPostId: typeof data.reputationPostId==='string'&&/^reputation_[a-f0-9]{64}$/.test(data.reputationPostId)?data.reputationPostId:undefined,
               createdAt:
                 data.createdAt instanceof Timestamp ? data.createdAt : null
             };
@@ -105,6 +107,7 @@ export function useChatMessages({
         setError(null);
       },
       listenerError => {
+        setMessages([]);
         setIsLoading(false);
         setError(getErrorMessage(listenerError));
       }

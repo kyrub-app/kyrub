@@ -160,12 +160,14 @@
         && request.auth.uid in existing().audienceIds;
 
       allow create: if isSignedIn()
+        && !postId.matches('^reputation_.*')
         && incoming().authorId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && hasValidSocialPostShape(incoming());
 
       allow update: if isSignedIn()
+        && !postId.matches('^reputation_.*')
         && existing().authorId == request.auth.uid
         && incoming().authorId == existing().authorId
         && incoming().postId == existing().postId
@@ -374,6 +376,7 @@
         && incoming().postId is string
         && incoming().postId.size() > 0
         && incoming().postId.size() <= 500
+        && !incoming().postId.matches('^reputation_.*')
         && incoming().authorId == request.auth.uid
         && incoming().authorName is string
         && incoming().authorName.size() > 0
