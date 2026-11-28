@@ -1,4 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
+import {storeOrderDistributionEnabled} from '../../shared/storeOrderDistributionPolicy.js';
 import { projectPublicDeliveryOpportunity } from '../../shared/publicDeliveryDiscovery.js';
 
 /**
@@ -8,6 +9,8 @@ import { projectPublicDeliveryOpportunity } from '../../shared/publicDeliveryDis
  * unchanged. This endpoint cannot reserve or accept a job.
  */
 export const listPublicDeliveryOpportunities = async () => {
+  // This legacy projection only describes integrated store-order offers.
+  if(!storeOrderDistributionEnabled())return {opportunities:[]};
   const snapshot = await adminDb
     .collection('hub/renda/deliveries')
     .where('status', '==', 'available')

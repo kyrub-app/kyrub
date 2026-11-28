@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
+import {mayAcceptNewDelivery} from '../../../shared/storeOrderDistributionPolicy';
 import { db } from '../../utils/firebase';
 import { deleteDoc, doc } from 'firebase/firestore';
 import { DeliveryJob } from '../../types';
@@ -102,6 +103,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   };
 
   const handleAcceptDelivery = (jobId: string) => {
+    const job=deliveries.find(d=>d.id===jobId);
+    if(!job||!mayAcceptNewDelivery(job)){triggerToast('Distribuição de pedidos de lojas indisponível no lançamento.','warning');return;}
     setDeliveries(prev =>
       prev.map(d => {
         if (d.id !== jobId) return d;
@@ -178,7 +181,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
             {deliveryModalTab === 'solicitar' && (
               <form onSubmit={handleCreateDelivery} className="space-y-4 text-xs">
                 <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] leading-relaxed text-cyan-100">
-                  Este formulário é para entregas avulsas. Pedidos feitos no Kyrub Shop entram automaticamente na logística pelo KDS quando a loja escolher “Entregador Kyrub”.
+                  Este formulário é para entregas avulsas. No lançamento, pedidos das lojas são atendidos por entregador próprio ou retirada. A distribuição integrada pelo Kyrub está indisponível.
                 </div>
                 <div className="space-y-3">
                   <div>
@@ -285,9 +288,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
             {fazerEntregasModalTab === 'solicitacoes' && (
               <div className="space-y-3 text-xs">
-                {deliveries.filter(d => d.status === 'available' && d.requestedBy !== (profileName || 'Usuário')).length === 0 ? (
+                {deliveries.filter(d => d.status === 'available' && mayAcceptNewDelivery(d) && d.requestedBy !== (profileName || 'Usuário')).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Nenhuma oferta de entrega disponível no momento.</div>
-                ) : deliveries.filter(d => d.status === 'available' && d.requestedBy !== (profileName || 'Usuário')).map(job => {
+                ) : deliveries.filter(d => d.status === 'available' && mayAcceptNewDelivery(d) && d.requestedBy !== (profileName || 'Usuário')).map(job => {
                   const operational = job as OperationalDeliveryJob;
                   return (
                     <div key={job.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-850 hover:border-slate-800 transition-colors space-y-3">

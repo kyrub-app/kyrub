@@ -10,6 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { DeliveryJob, FreelanceJob } from '../../types';
+import {mayAcceptNewDelivery} from '../../../shared/storeOrderDistributionPolicy';
 import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
@@ -284,13 +285,13 @@ export function RendaTab({
             >
               <span>Fazer entregas</span>
               {deliveries.filter(
-                delivery => delivery.status === 'available'
+                delivery => delivery.status === 'available' && mayAcceptNewDelivery(delivery)
               ).length > 0 && (
                 <span className="rounded-full bg-orange-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
                   {
                     deliveries.filter(
                       delivery =>
-                        delivery.status === 'available'
+                        delivery.status === 'available' && mayAcceptNewDelivery(delivery)
                     ).length
                   }
                 </span>
