@@ -84,3 +84,22 @@ export function tagPasskeyUnitOrigin(id:string,data:Record<string,unknown>|undef
  }
  return origin;
 }
+
+/** Reconciled CID Pix is intentionally restricted to existing throwaway emulator pilots. */
+export function cidPixEmulatorEnabled():boolean{
+ if(process.env.VERCEL||process.env.VERCEL_ENV==='production'||process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS)return false;
+ try{return currentTagPilotIsolation()==='emulator'||cidFinanceIntegratedTestEnabled();}catch{return false;}
+}
+
+/** A fixed synthetic RP for the signed CID -> financial emulator journey.
+ * Not a public HTTP release gate and not a general exemption from pilot isolation.
+ */
+export const CID_FINANCE_TEST_ORIGIN='https://kyrub-cid-finance-e2e.vercel.app';
+export function cidFinanceIntegratedTestEnabled():boolean{
+ if(process.env.NODE_ENV!=='test'||process.env.KYRUB_CID_FINANCE_INTEGRATED_TEST!=='true'||
+ process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION!=='true'||process.env.VERCEL||process.env.VERCEL_ENV||
+ process.env.FIREBASE_SERVICE_ACCOUNT_JSON||process.env.GOOGLE_APPLICATION_CREDENTIALS||
+ process.env.FIRESTORE_EMULATOR_HOST!=='127.0.0.1:8088'||process.env.FIREBASE_AUTH_EMULATOR_HOST!=='127.0.0.1:9099'||
+ process.env.FIREBASE_PROJECT_ID!=='kyrub-security-test'||process.env.GCLOUD_PROJECT!=='kyrub-security-test')return false;
+ try{return getFirebaseAdminProjectId()==='kyrub-security-test';}catch{return false;}
+}

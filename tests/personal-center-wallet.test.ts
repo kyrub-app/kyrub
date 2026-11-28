@@ -123,3 +123,27 @@ describe('Carteira e Central Pessoal', () => {
     assert.doesNotMatch(planner, /social_posts|community_posts/);
   });
 });
+
+test('personal receiving settings remain isolated, private and inside Movimentações',()=>{
+ const settings=read('src/components/modals/PersonalPixSettings.tsx');
+ assert.match(wallet,/personalFinanceCandidateEnabled\(\) && <PersonalPixSettings/);
+ assert.match(settings,/import\.meta\.env\.DEV/);
+ assert.match(settings,/VITE_KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION/);
+ assert.match(settings,/VITE_KYRUB_FIREBASE_EMULATOR_E2E/);
+ assert.match(settings,/kyrub-security-test/);
+ assert.match(settings,/onAuthStateChanged/);
+ assert.match(settings,/expectedRevision:current\.revision/);
+ assert.match(settings,/ownershipVerified===false/);
+ assert.doesNotMatch(settings,/localStorage|sessionStorage|console\./);
+});
+
+test('CID import in Movimentações uses server candidates and separate confirmation',()=>{
+ const settings=read('src/components/modals/PersonalPixSettings.tsx');
+ assert.match(settings,/view=cid_candidates/);
+ assert.match(settings,/validCandidates\(list\)/);
+ assert.match(settings,/cidConfirmed/);
+ assert.match(settings,/sourceVersion:candidate.sourceVersion/);
+ assert.match(settings,/replaceExisting:current.status==='declared'/);
+ assert.match(settings,/Utilizar chave Pix do meu CID/);
+ assert.match(settings,/setCandidates\(\[\]\)/);
+});

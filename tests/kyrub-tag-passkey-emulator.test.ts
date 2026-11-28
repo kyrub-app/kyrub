@@ -46,12 +46,14 @@ test('isolated Passkey journey with real signatures and Firestore transactions',
  await assert.rejects(finish(origin,tagId,registration.challengeId,answers[winner]));
  await assert.rejects(claimPromotionalKyrubTag(ownerId,tagId,'verified@example.test'));
  await assert.rejects(disableKyrubTag(ownerId,tagId));
- const edited={...card,name:'Nome atualizado'};
+ const pix={keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000',recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true};
+ const edited={...card,name:'Nome atualizado',pix};
  const edit=await begin(origin,tagId,'edit',edited);
  // Malicious proof claims the original credential ID, but has another key.
  await assert.rejects(finish(origin,tagId,edit.challengeId,finder.assert(edit.options,{credentialId:owner.id,handle:owner.handle})));
  await assert.rejects(finish(origin,tagId,edit.challengeId,owner.assert(edit.options,{uv:false})));
  assert.equal((await ref.get()).get('presentation.name'),card.name);
+ assert.equal((await ref.get()).get('presentation.pix'),undefined);
  await finish(origin,tagId,edit.challengeId,owner.assert(edit.options));
  assert.equal((await resolveKyrubTag(tagId))?.presentation?.name,edited.name);
  const link=await begin(origin,tagId,'link-account',undefined,undefined,account);
@@ -80,5 +82,8 @@ test('isolated Passkey journey with real signatures and Firestore transactions',
  assert.equal((await resolveKyrubTag(tagId))?.status,'active');
  assert.equal((await resolveKyrubTag(tagId))?.presentation?.name,edited.name);
  assert.equal((await listLinkedPasskeyTags(account)).tags[0]?.blocked,false);
+ assert.deepEqual((await resolveKyrubTag(tagId))?.presentation?.pix,pix);
+ assert.equal('pix' in (await listLinkedPasskeyTags(account)).tags[0].presentation,false);
+ console.info('PASSKEY_E2E CID Pix: rejected foreign proof, persisted consented edit, blocked projection hidden, recovery preserved Pix, linked directory excludes key');
  console.info('PASSKEY_E2E: first claim race, foreign signature, required UV, replay, account binding, blocked privacy, recovery rotation, old credential rejection, unblock');
 });

@@ -31,6 +31,7 @@ interface UserProfileModalProps {
   onClose: () => void;
   walletHistory: any[];
   openSavedInitially?: boolean;
+  onPersonalFinanceActivity?:(uid:string,active:boolean)=>void;
   profileName: string;
   setProfileName: React.Dispatch<React.SetStateAction<string>>;
   profileEmail: string;
@@ -208,7 +209,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   }, [isOpen, openSavedInitially]);
 
   const financeCards = [
-    { id: 'movements', label: 'Movimentações', description: 'Saldo e operações quando disponíveis', icon: ArrowLeftRight },
+    { id: 'movements', label: 'Movimentações', description: 'Configurações e registros financeiros', icon: ArrowLeftRight },
     { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
     { id: 'xp', label: 'Conquistas', description: 'XP, Pitangas e recompensas', icon: KyrubCocarIcon },
     { id: 'devices', label: 'Dispositivos', description: 'Smartphone, NFC e LoRa', icon: RadioTower },
@@ -367,7 +368,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   <h4 className="mb-2 text-base font-black text-white">
                     {financeCards.find(card => card.id === personalPanel)?.label}
                   </h4>
-                  {personalPanel === 'movements' && <WalletMovementsPanel walletHistory={walletHistory} />}
+                  {personalPanel === 'movements' && <WalletMovementsPanel walletHistory={walletHistory} onPersonalFinanceActivity={props.onPersonalFinanceActivity} />}
                   {personalPanel === 'finance' && <PersonalFinancePlanner userId={currentUserId} />}
                   {personalPanel === 'xp' && <PitangaAccount mode="xp" />}
                   {personalPanel === 'devices' && <KyrubDevicesPanel userId={currentUserId} key={currentUserId} />}

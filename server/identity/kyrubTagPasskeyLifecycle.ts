@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {Timestamp} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
-import {assertTagPilotWriteIsolated,stableTagPilotHost,productionTagPasskeyTestId} from './kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,stableTagPilotHost,productionTagPasskeyTestId,cidPixEmulatorEnabled,cidFinanceIntegratedTestEnabled,CID_FINANCE_TEST_ORIGIN} from './kyrubTagPilotIsolation.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {isBoundTarget,parseCardTargets} from './publicCardPolicy.js';
 import {resolveTarget} from './publicVisitCardService.js';
@@ -9,7 +9,7 @@ import {assertProductionPasskeyUnit} from './kyrubTagPasskeyReleasePolicy.js';
 import {productionTagPasskeyScope,isolatedTagPasskeyScope,issueTagPasskeyChallenge,assertUnusedTagPasskeyChallenge,newTagPasskeyRecoveryCode,tagPasskeyRecoveryHash,matchesTagPasskeyRecovery,type TagPasskeyChallenge} from './kyrubTagPasskeyPolicy.js';
 import {tagRegistrationOptions,tagAuthenticationOptions,verifyTagRegistration,verifyTagAuthentication,type StoredTagPasskey} from './kyrubTagPasskeyVerifier.js';
 import {assertPasskeyTagState,isPasskeyMutation,normalizePasskeyMutation,assertSamePasskeyCredential,assertRecoveryCredentialReplacement,assertTagAccountLink,type PasskeyMutation} from './kyrubTagPasskeyState.js';
-import type {PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
+import {preserveCidPixOnEdit,type PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import type {RegistrationResponseJSON,AuthenticationResponseJSON} from '@simplewebauthn/server';
 
 // Isolated lifecycle. No Firebase custom token or
@@ -21,6 +21,7 @@ const indexes=()=>adminDb.collection('kyrub_tag_passkey_credential_index');
 const quotas=()=>adminDb.collection('kyrub_tag_passkey_quotas');
 type RecordData=TagPasskeyChallenge&{presentation:PromotionalTagPresentation|null;tagVersion:string;credentialVersion:string|null;linkedAccountActor?:string};
 function scope(origin:string,tagId:string){
+ if(cidFinanceIntegratedTestEnabled())return isolatedTagPasskeyScope(CID_FINANCE_TEST_ORIGIN,origin);
  if(process.env.VERCEL_ENV==='production'){
   const approved=productionTagPasskeyTestId();
   if(!approved||approved!==tagId)throw Error('TAG_PASSKEY_DISABLED');
@@ -60,6 +61,7 @@ export async function beginTagPasskeyMutation(origin:string,tagId:string,purpose
  requireRecoveryInput(purpose,recoverySecret);
  if((purpose==='link-account')!==!!accountActor)throw Error('TAG_FORBIDDEN');
  const presentation=normalizePasskeyMutation(purpose,input);
+ if(presentation?.pix!==undefined&&!cidPixEmulatorEnabled())throw Error('TAG_PRESENTATION_INVALID');
  const issued=await adminDb.runTransaction(async tx=>{
   const tagRef=tags().doc(tagId),credentialRef=credentials().doc(tagId),quotaRef=quotas().doc(purpose==='recover'?tagId+'-recover':tagId);
   const [tag,credential,quota]=await Promise.all([tx.get(tagRef),tx.get(credentialRef),tx.get(quotaRef)]);
@@ -125,6 +127,7 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
  const ownerId=registering?'tagpk_'+record.id:data!.ownerId as string;
  const marker=adminDb.doc('kyrub_tag_minimal_identities/'+ownerId),account=adminDb.doc('users/'+ownerId),index=indexes().doc(credentialIndexId(nextCredential.id));
  const presentation=normalizePasskeyMutation(record.purpose,record.presentation);
+ if(presentation?.pix!==undefined&&!cidPixEmulatorEnabled())throw Error('TAG_PRESENTATION_INVALID');
  const existing=Array.isArray(data!.targets)?data!.targets.filter(isBoundTarget):[];
  const targets=presentation?.destinations!==undefined?await Promise.all((presentation.destinations.length?parseCardTargets(presentation.destinations):[]).map(t=>resolveTarget(typeof data!.linkedAccountId==='string'?data!.linkedAccountId:ownerId,t,existing.find(e=>e.kind===t.kind&&e.identifier===t.identifier)?.bindingId))):null;
  if(targets?.some(t=>!t))throw Error('CARD_TARGET_UNAVAILABLE');
@@ -167,7 +170,10 @@ export async function finishTagPasskeyMutation(origin:string,tagId:string,challe
    if(!stored||current!.ownerId!==ownerId||currentIndex.get('tagId')!==tagId||currentIndex.get('ownerId')!==ownerId||currentIndex.get('revokedAt')!=null)throw Error('TAG_FORBIDDEN');
    assertSamePasskeyCredential(stored,readCredential(currentCredential.data(),ownerId));
    tx.update(credentialRef,{credential:nextCredential,lastVerifiedAt:stamp});
-   if(record.purpose==='edit'&&presentation)tx.update(tagRef,{presentation,targets:bound,enabled:true,updatedAt:stamp});
+   if(record.purpose==='edit'&&presentation){
+    const next=preserveCidPixOnEdit(presentation,current!.presentation?.pix);
+    tx.update(tagRef,{presentation:next,targets:bound,enabled:true,updatedAt:stamp});
+   }
    else if(record.purpose==='block')tx.update(tagRef,{blocked:true,enabled:false,blockedAt:stamp,updatedAt:stamp});
    else if(record.purpose==='unblock')tx.update(tagRef,{blocked:false,enabled:true,blockedAt:null,updatedAt:stamp});
    else if(record.purpose==='link-account'&&accountActor)tx.update(tagRef,{linkedAccountId:accountActor,linkedAccountAt:current!.linkedAccountAt??stamp,updatedAt:stamp});

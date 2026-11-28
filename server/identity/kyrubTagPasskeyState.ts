@@ -27,6 +27,8 @@ export function normalizePasskeyMutation(purpose:PasskeyMutation,input:unknown):
  }
  const result=normalizePromotionalPresentation(input);
  if(result.emergencyContacts!==undefined||result.coverPath!==undefined||result.avatarPath!==undefined)throw Error('TAG_PRESENTATION_INVALID');
+ // Registration and edit use the same validated presentation. The lifecycle
+ // independently gates Pix before challenge issuance and proof completion.
  if(!result.name)throw Error('TAG_PRESENTATION_INVALID');
  return result;
 }

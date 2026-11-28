@@ -3,6 +3,13 @@ on:
   pull_request:
     paths:
       - 'src/components/modals/*Freela*.tsx'
+      - 'src/components/modals/PersonalPixSettings.tsx'
+      - 'src/components/modals/WalletModal.tsx'
+      - 'src/components/modals/UserProfileModal.tsx'
+      - 'server/payments/personalPix*.ts'
+      - 'server/identity/kyrubTagPasskey*.ts'
+      - 'server/identity/kyrubTagPilotIsolation.ts'
+      - 'tests/fixtures/kyrub-tag-software-authenticator.ts'
       - 'src/components/renda/*Freelance*.tsx'
       - 'src/components/renda/RendaActivityAlertsBell.tsx'
       - 'src/components/tabs/RendaTab.tsx'
@@ -30,6 +37,8 @@ jobs:
       KYRUB_FREELANCE_LOCAL_HOMOLOGATION: 'true'
       VITE_KYRUB_FREELANCE_LOCAL_HOMOLOGATION: 'true'
       VITE_KYRUB_FIREBASE_EMULATOR_E2E: 'true'
+      KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION: 'true'
+      VITE_KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

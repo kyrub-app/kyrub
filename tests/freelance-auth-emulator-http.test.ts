@@ -21,16 +21,19 @@ const {handleFreelanceWorkspace,freelanceWorkspaceEnabled}=await import('../serv
 const {confirmSimulatedFreelanceFunding}=await import('../server/freelance/freelanceFundingService.js');
 const {listFreelanceReviews,decideFreelanceReview}=await import('../server/admin/freelanceReviewService.js');
 assert.equal(freelanceWorkspaceEnabled(),true);
+const {handlePersonalPix,personalPixTransportEnabled,personalPixRecentLogin}=await import('../server/payments/personalPixTransport.js');
+assert.equal(personalPixTransportEnabled(),true);
 
 const server=createServer(async(req,res)=>{
  try{
   const url=new URL(req.url??'/','http://127.0.0.1');
-  if(url.pathname!=='/api/freelance/workspace'){res.statusCode=404;res.end();return;}
+  if(!['/api/freelance/workspace','/api/personal-finance/pix'].includes(url.pathname)){res.statusCode=404;res.end();return;}
   const chunks:Buffer[]=[];
   for await(const chunk of req)chunks.push(Buffer.from(chunk));
   const raw=Buffer.concat(chunks).toString('utf8');
   const response={setHeader:(k:string,v:string)=>res.setHeader(k,v),status:(code:number)=>{res.statusCode=code;return response;},json:(value:unknown)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));}};
-  await handleFreelanceWorkspace({method:req.method,headers:req.headers,query:Object.fromEntries(url.searchParams),body:raw?JSON.parse(raw):undefined},response);
+  const request={method:req.method,headers:req.headers,query:Object.fromEntries(url.searchParams),body:raw?JSON.parse(raw):undefined};
+  if(url.pathname==='/api/personal-finance/pix')await handlePersonalPix(request,response);else await handleFreelanceWorkspace(request,response);
  }catch{res.statusCode=500;res.end(JSON.stringify({code:'TEST_HTTP_ERROR'}));}
 });
 server.listen(0,'127.0.0.1');await once(server,'listening');
@@ -189,4 +192,88 @@ test('administrative transaction: role, synthetic MFA claim policy, resume, canc
    console.log('PASS admin transaction with synthetic TOTP claim: role, recent session, resume, cancel, replay, audit; genuine TOTP login NOT tested');
  }finally{t.mock.restoreAll();}
  await assert.rejects(listFreelanceReviews(authz(admin),undefined),/second_factor_required/);
+});
+
+test('personal Pix authenticated HTTP: own masked destination, eligibility, revision, revocation and disabled runtime',async()=>{
+ const worker=await account('pix-worker',['freelancer']),other=await account('pix-other',['bicycle_courier']),unapproved=await account('pix-unapproved',[]);
+ const url='http://127.0.0.1:'+address.port+'/api/personal-finance/pix';
+ const request=async(actor:Actor|null,status:number,body?:Record<string,unknown>,query='')=>{
+  const res=await fetch(url+query,{method:body?'POST':'GET',headers:{...(actor?{authorization:'Bearer '+actor.token}:{}),...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));assert.match(res.headers.get('cache-control')??'',/no-store/);return data;
+ };
+ const declaration={action:'declare',expectedRevision:0,confirmed:true,destination:{keyType:'email',key:'fixture@example.invalid'}};
+ await request(null,401);
+ assert.equal((await request(unapproved,403,declaration)).code,'IDENTITY_VERIFICATION_REQUIRED');
+ assert.equal((await request(worker,200)).status,'not_configured');
+ await request(worker,400,{...declaration,userId:other.uid});
+ const saved=await request(worker,200,declaration);
+ assert.equal(saved.status,'declared');assert.equal(saved.ownershipVerified,false);assert.equal(saved.revision,1);assert.equal('key' in saved,false);
+ assert.equal((await request(other,200)).status,'not_configured');
+ await request(other,400,undefined,'?uid='+worker.uid);
+ await request(worker,409,declaration);
+ assert.equal(personalPixRecentLogin(700,1000),true);
+ assert.equal(personalPixRecentLogin(699,1000),false);
+ assert.equal(personalPixRecentLogin(1001,1000),false);
+ assert.equal(personalPixRecentLogin(undefined,1000),false);
+ await db.doc('identity_verifications/'+worker.uid).update({status:'rejected'});
+ const revoked=await request(worker,200,{action:'revoke',expectedRevision:1,confirmed:true});
+ assert.equal(revoked.status,'revoked');assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),undefined);
+ const flag=process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;
+ try{delete process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION;await request(worker,503);}
+ finally{process.env.KYRUB_PERSONAL_FINANCE_LOCAL_HOMOLOGATION=flag;}
+ console.log('PASS personal Pix HTTP: authenticated UID, masked declaration, eligibility, stale revision, revocation, disabled gate; real MFA and bank ownership not tested');
+});
+
+test('CID Pix import HTTP: private list, explicit confirmation, account isolation, stale origin and replacement',async(t)=>{
+ const worker=await account('cid-worker',['freelancer']),other=await account('cid-other',['freelancer']),unapproved=await account('cid-unapproved',[]);
+ const url='http://127.0.0.1:'+address.port+'/api/personal-finance/pix';
+ const request=async(actor:Actor|null,status:number,body?:Record<string,unknown>,query='')=>{
+  const res=await fetch(url+query,{method:body?'POST':'GET',headers:{...(actor?{authorization:'Bearer '+actor.token}:{}),...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});
+  const data=await res.json();assert.equal(res.status,status,JSON.stringify(data));assert.match(res.headers.get('cache-control')??'',/no-store/);return data;
+ };
+ const tagId=randomUUID().replaceAll('-',''),ownerId='tagpk_'+'x'.repeat(43);
+ const tag=db.doc('kyrub_official_tags/'+tagId);
+ const pix={keyType:'email',key:'fixture-cid@example.invalid',recipientName:'Pessoa Teste',recipientCity:'BRASILIA',publicConsent:true};
+ const record={distribution:'promotional',model:'adesivo',manufacturingState:'released',ownerAuthMode:'passkey',ownerId,firstOwnerId:ownerId,linkedAccountId:worker.uid,linkedAccountAt:new Date().toISOString(),enabled:true,blocked:false,presentation:{name:'Teste',occupation:'',about:'',pix}};
+ await Promise.all([tag.set(record),...([worker,other,unapproved].map(a=>db.doc('users/'+a.uid).set({uid:a.uid})))]);
+ try{
+  const query='?view=cid_candidates';
+  await request(null,401,undefined,query);
+  await request(worker,400,undefined,query+'&uid='+other.uid);
+  assert.deepEqual(await request(other,200,undefined,query),{candidates:[]});
+  const list=await request(worker,200,undefined,query);
+  assert.equal(list.candidates.length,1);
+  const choice=list.candidates[0];assert.equal(choice.cidId,tagId);assert.equal(choice.maskedKey,'••••alid');assert.equal(choice.ownershipVerified,false);
+  assert.ok(!JSON.stringify(list).includes(pix.key));
+  const input={action:'import_cid',cidId:tagId,sourceVersion:choice.sourceVersion,expectedRevision:0,confirmed:true,replaceExisting:false};
+  await request(other,403,input);
+  await request(unapproved,403,input);
+  await request(worker,400,{...input,confirmed:false});
+  await request(worker,400,{...input,key:pix.key});
+  await request(worker,400,input,query);
+  const original=auth.verifyIdToken.bind(auth);
+  t.mock.method(auth,'verifyIdToken',async(token:string,checkRevoked?:boolean)=>{
+   const decoded=await original(token,checkRevoked);
+   return token===worker.token?{...decoded,auth_time:Math.floor(Date.now()/1000)-301}:decoded;
+  });
+  try{assert.equal((await request(worker,403,input)).code,'REAUTHENTICATION_REQUIRED');}finally{t.mock.restoreAll();}
+  await tag.update({blocked:true,enabled:false});
+  assert.equal((await request(worker,403,input)).code,'PERSONAL_CID_UNAVAILABLE');
+  await tag.update({blocked:false,enabled:true});
+  assert.equal((await request(worker,409,input)).code,'PERSONAL_CID_CHANGED');
+  const fresh=(await request(worker,200,undefined,query)).candidates[0];
+  const declaration={...input,sourceVersion:fresh.sourceVersion};
+  const imported=await request(worker,200,declaration);
+  assert.equal(imported.revision,1);assert.equal(imported.status,'declared');assert.equal(imported.ownershipVerified,false);
+  assert.ok(!JSON.stringify(imported).includes(pix.key));
+  await request(worker,409,declaration);
+  await request(worker,409,{...declaration,expectedRevision:1});
+  const replacement=await request(worker,200,{...declaration,expectedRevision:1,replaceExisting:true});
+  assert.equal(replacement.revision,2);
+  await tag.update({'presentation.pix':null});
+  assert.deepEqual(await request(worker,200,undefined,query),{candidates:[]});
+  assert.equal((await request(worker,200)).revision,2);
+  assert.equal((await db.doc('financialProfilesV1/'+worker.uid+'/receiving/externalPix').get()).get('key'),pix.key);
+  console.log('PASS CID Pix HTTP: own masked list, foreign account rejected, recent session, stale source, explicit replacement, independent destination');
+ }finally{await tag.delete();}
 });

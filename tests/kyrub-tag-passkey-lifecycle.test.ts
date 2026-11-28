@@ -110,3 +110,23 @@ test('owner identification is scoped to active passkey stock and carries no pres
  assert.equal(normalizePasskeyMutation('identify-owner',undefined),null);
  assert.throws(()=>normalizePasskeyMutation('identify-owner',{name:'Ana',occupation:'Autônoma',about:'Olá'}));
 });
+
+test('CID Pix reconciliation: activation and edit, explicit consent, omission preservation and removal',async()=>{
+ const {normalizePromotionalPresentation,publicPromotionalPresentation,preserveCidPixOnEdit}=await import('../shared/kyrubTagPromotional.js');
+ const card={name:'Pessoa teste',occupation:'',about:''};
+ const pix={keyType:'random',key:'123e4567-e12b-12d1-a456-426655440000',recipientName:'Fulano de Tal',recipientCity:'BRASILIA',publicConsent:true};
+ assert.deepEqual(normalizePasskeyMutation('register',{...card,pix})?.pix,pix);
+ assert.throws(()=>normalizePasskeyMutation('register',{...card,pix:{...pix,publicConsent:false}}));
+ assert.throws(()=>normalizePasskeyMutation('edit',{...card,pix:{...pix,publicConsent:false}}));
+ const edited=normalizePasskeyMutation('edit',{...card,pix})!;
+ assert.deepEqual(edited.pix,pix);
+ assert.equal(publicPromotionalPresentation(edited).pix,undefined);
+ assert.deepEqual(publicPromotionalPresentation(edited,true).pix,pix);
+ assert.deepEqual(preserveCidPixOnEdit(card,pix).pix,pix);
+ assert.equal(preserveCidPixOnEdit(normalizePromotionalPresentation({...card,pix:null}),pix).pix,null);
+ assert.equal(publicPromotionalPresentation({...card,pix:null},true).pix,undefined);
+ const svc=readFileSync('server/identity/kyrubTagPasskeyLifecycle.ts','utf8');
+ assert.equal(svc.match(/presentation\?\.pix!==undefined&&!cidPixEmulatorEnabled\(\)/g)?.length,2);
+ const legacy=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ assert.match(legacy,/if\(presentation.pix!==undefined\)throw Error\('TAG_PRESENTATION_INVALID'\)/);
+});
