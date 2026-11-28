@@ -15,6 +15,7 @@ import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { FreelanceEarningsPlanningCard } from '../renda/FreelanceEarningsPlanningCard';
+import { RendaActivityAlertsBell } from '../renda/RendaActivityAlertsBell';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
 import { ErpManagementAlertsBell } from '../store/ErpManagementAlertsBell';
 
@@ -234,12 +235,13 @@ export function RendaTab({
                   Kyrub Entregas
                 </h3>
               </div>
+              <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row">
               <button
                 type="button"
                 onClick={() => guestReadOnly
                   ? onGuestLoginRequired?.('consultar seus ganhos')
                   : setIsDeliveryEarningsOpen(true)}
-                className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] text-orange-300 transition hover:border-orange-400/35 hover:bg-orange-500/[0.14] active:scale-95"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] text-orange-300 transition hover:border-orange-400/35 hover:bg-orange-500/[0.14] active:scale-95"
                 id="btn-delivery-earnings"
                 aria-label="Ver ganhos em entregas"
                 aria-haspopup="dialog"
@@ -249,6 +251,8 @@ export function RendaTab({
               >
                 <CircleDollarSign className="h-4 w-4" />
               </button>
+                <RendaActivityAlertsBell kind="delivery" guestReadOnly={guestReadOnly} onLoginRequired={onGuestLoginRequired}/>
+              </div>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
               Gerencie entregas locais do seu negócio ou faça
@@ -300,16 +304,19 @@ export function RendaTab({
                 <Briefcase className="h-4 w-4 shrink-0 text-orange-400" />
                 <h3 className="text-xs font-black uppercase tracking-wider text-white">Kyrub Freelas</h3>
               </div>
+              <div className="flex shrink-0 flex-col items-end gap-1 sm:flex-row">
               <button type="button"
                 onClick={() => guestReadOnly || !auth.currentUser
                   ? onGuestLoginRequired?.('planejar seus ganhos')
                   : setIsFreelanceEarningsOpen(true)}
-                className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] text-orange-300 transition hover:border-orange-400/35 hover:bg-orange-500/[0.14] active:scale-95"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] text-orange-300 transition hover:border-orange-400/35 hover:bg-orange-500/[0.14] active:scale-95"
                 id="btn-freelance-earnings" aria-label="Ver ganhos em freelas"
                 aria-haspopup="dialog" aria-controls="freelance-earnings-sheet"
                 aria-expanded={isFreelanceEarningsOpen} title="Ganhos em freelas">
                 <CircleDollarSign className="h-4 w-4" />
               </button>
+                <RendaActivityAlertsBell kind="freelance" guestReadOnly={guestReadOnly} onLoginRequired={onGuestLoginRequired}/>
+              </div>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
               Contrate profissionais para sua loja ou preste

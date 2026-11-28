@@ -191,3 +191,34 @@ test('freelance planning remains separate from canonical delivery earnings', asy
   assert.match(freelancer, /Histórico financeiro confirmado ainda indisponível/);
   assert.doesNotMatch(freelancer, /fetch\(|localStorage|freelanceJobs|setDoc\(|addDoc\(/);
 });
+
+test('Renda activity alerts are separate and project only authenticated server claims', async () => {
+  const { projectCourierActivityAlert } = await import('../shared/rendaActivityAlerts');
+  const claim = {id:'d1',deliveryJobId:'d1',courierId:'a',status:'accepted',courierName:'private'};
+  assert.deepEqual(projectCourierActivityAlert('d1',claim,'a'),{id:'d1',status:'accepted'});
+  assert.equal(projectCourierActivityAlert('d1',claim,'b'),null);
+  assert.equal(projectCourierActivityAlert('d2',claim,'a'),null);
+  assert.equal(projectCourierActivityAlert('d1',{...claim,status:'available'},'a'),null);
+  assert.match(renda, /RendaActivityAlertsBell kind="delivery"/);
+  assert.match(renda, /RendaActivityAlertsBell kind="freelance"/);
+  const bell = readFileSync('src/components/renda/RendaActivityAlertsBell.tsx','utf8');
+  assert.doesNotMatch(bell,/localStorage|freelanceJobs|setDoc\(|addDoc\(/);
+  assert.match(bell,/Avisos do solicitante ainda não integrados/);
+  assert.match(bell,/não estão disponíveis/);
+  const transport = readFileSync('server/delivery/courierActivityAlertsTransport.ts','utf8');
+  assert.match(transport,/collection\('deliveryClaims'\).where\('courierId','==',uid\)/);
+  assert.match(transport,/verifyIdToken\(token, true\)/);
+  const { handleCourierActivityAlerts } = await import('../server/delivery/courierActivityAlertsTransport');
+  let status = 0;
+  const calls: string[] = [];
+  const response = {setHeader(){},status(code:number){status=code;return {json(){}};}};
+  const deps = {verify:async()=>({uid:'a'}),list:async(uid:string)=>{calls.push(uid);return [];}};
+  await handleCourierActivityAlerts({method:'GET',headers:{}},response,deps);
+  assert.equal(status,401);
+  await handleCourierActivityAlerts({method:'POST',headers:{authorization:'Bearer fixture'}},response,deps);
+  assert.equal(status,405);
+  assert.deepEqual(calls,[]);
+  await handleCourierActivityAlerts({method:'GET',headers:{authorization:'Bearer fixture'}},response,deps);
+  assert.equal(status,200);
+  assert.deepEqual(calls,['a']);
+});
